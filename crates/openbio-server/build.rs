@@ -26,16 +26,11 @@ fn main() {
     let schema_path = std::path::Path::new(&manifest_dir).join("../../database/schema.prisma");
     std::env::set_var("PRISMA_SCHEMA_PATH", schema_path.display().to_string());
 
-    // Skip Prisma generation in CI (npx prisma generate handles it there)
-    // For local dev, the build script runs it automatically
-    let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
-    
-    if is_ci {
-        println!("cargo:warning=Skipping Prisma generator in CI (handled by npx prisma generate)");
-    } else {
-        println!("cargo:warning=Running Prisma generator...");
-        prisma_client_rust_cli::run();
-    }
+    // Run Prisma generator - this generates prisma.rs before compilation
+    // Works both locally and in CI because it runs as part of the build script
+    // (before the main crate compilation, avoiding the chicken-and-egg problem)
+    println!("cargo:warning=Running Prisma generator...");
+    prisma_client_rust_cli::run();
 
     // Auto-generate migrations module from database/migrations directory
     generate_migrations_module();
