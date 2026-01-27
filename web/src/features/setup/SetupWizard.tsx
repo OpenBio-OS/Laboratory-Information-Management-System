@@ -17,7 +17,6 @@ import {
   ArrowRight,
   ArrowLeft,
   Check,
-  FlaskConical,
   Loader2,
   RefreshCw,
   Server

@@ -68,30 +68,14 @@ export function InventoryPage() {
     return path.join(' → ') + (sample.slotPosition ? ` → ${sample.slotPosition}` : '');
   };
 
-  const childContainers = selectedContainerId
-    ? containers.filter(c => c.parentId === selectedContainerId)
-    : containers.filter(c => !c.parentId);
+  // const childContainers = selectedContainerId
+  //   ? containers.filter(c => c.parentId === selectedContainerId)
+  //   : containers.filter(c => !c.parentId);
 
   const handleCreateRequest = (parentId: string | null) => {
     setCreateParentId(parentId);
     setIsCreateModalOpen(true);
   };
-
-  // Mock create sample mutation
-  const createSampleMutation = useMutation({
-    mutationFn: async () => {
-      const randomSlot = `${['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'][Math.floor(Math.random() * 9)]}${Math.ceil(Math.random() * 9)}`;
-      return inventoryApi.createSample({
-        name: `Sample ${Math.floor(Math.random() * 1000)}`,
-        type: "cell_line",
-        slotPosition: selectedContainer?.type === 'box' ? randomSlot : undefined,
-        containerId: selectedContainerId || undefined
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['samples'] });
-    }
-  });
 
   const deleteSampleMutation = useMutation({
     mutationFn: (id: string) => inventoryApi.deleteSample(id),

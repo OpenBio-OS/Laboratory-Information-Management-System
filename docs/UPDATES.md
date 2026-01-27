@@ -39,10 +39,6 @@ This creates:
   ]
   ```
 
-**Option B: Self-hosted**
-- Host `latest.json` and installers on your own server
-- Update endpoint to your server URL
-
 ### Release Process
 
 1. **Update version** in:
@@ -50,26 +46,22 @@ This creates:
    - `src-tauri/Cargo.toml`
    - `package.json`
 
-2. **Build release**:
+2. **Commit and tag**:
 ```bash
-npm run tauri build
+git add .
+git commit -m "Release v0.1.1"
+git tag v0.1.1
+git push origin main
+git push origin v0.1.1
 ```
 
-3. **Sign the update** (if using GitHub):
-```bash
-npm run tauri signer sign target/release/bundle/macos/openbio.app \
-  --private-key ~/.tauri/openbio.key
+3. **GitHub Actions handles the rest**:
+   - Builds for macOS (ARM + Intel), Linux, and Windows
+   - Signs the installers using `TAURI_SIGNING_PRIVATE_KEY` secret
+   - Creates GitHub Release automatically
+   - Uploads all platform installers
 
-npm run tauri signer sign target/release/bundle/msi/openbio_0.1.0_x64_en-US.msi \
-  --private-key ~/.tauri/openbio.key
-```
-
-4. **Create GitHub Release**:
-   - Tag version (e.g., `v0.1.1`)
-   - Upload signed installers
-   - Tauri GitHub Action can automate this
-
-5. **Users get updates**:
+4. **Users get updates**:
    - App checks for updates on startup
    - Shows dialog prompting user to install
    - Downloads and installs automatically

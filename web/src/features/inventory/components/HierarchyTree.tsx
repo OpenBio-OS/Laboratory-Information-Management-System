@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, ChevronDown, Plus, Box, Folder, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Box, Trash2 } from 'lucide-react';
 import { Container } from '../../../lib/api';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 
