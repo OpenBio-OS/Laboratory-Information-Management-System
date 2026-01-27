@@ -22,6 +22,10 @@ fn main() {
         std::env::var("PATH").unwrap_or_default()
     );
 
+    // Set schema path for prisma-client-rust
+    let schema_path = std::path::Path::new(&manifest_dir).join("../../database/schema.prisma");
+    std::env::set_var("PRISMA_SCHEMA_PATH", schema_path);
+
     // Execute the Prisma generator
     prisma_client_rust_cli::run();
 
