@@ -1,0 +1,3 @@
+[alias]
+# Prisma commands - run Prisma CLI through our binary
+prisma = "run --bin prisma-generate --"

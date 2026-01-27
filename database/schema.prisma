@@ -1,0 +1,176 @@
+// OpenBio Prisma Schema
+// Database models for inventory, experiments, and digital assets
+
+// Prisma Client Rust - generates a Rust client
+// Database URL is passed at RUNTIME when constructing PrismaClient
+// Run: cargo prisma generate (from project root) to generate the client
+generator client {
+  provider = "cargo prisma"
+  output   = "../crates/openbio-server/src/db/prisma.rs"
+}
+
+// NOTE: prisma-client-rust (v0.6.x) uses Prisma 4/5 schema format.
+// The VS Code Prisma extension may show warnings for Prisma 7 - these can be ignored.
+// Database URL is passed at RUNTIME via PrismaClient::_builder().with_url()
+datasource db {
+  provider = "sqlite"
+  // Development database - actual runtime uses user's app data folder in production
+  url      = "file:../.dev/openbio.db"
+}
+
+// ============================================
+// Module A: Inventory (Freezer)
+// ============================================
+
+/// Physical sample (e.g., tube, cell line, tissue, reagent, chemical)
+model Sample {
+  id         String  @id @default(cuid())
+  externalId String? @unique // QR code or barcode
+  name       String
+  type       String // e.g., "cell_line", "tissue", "plasmid", "reagent", "chemical"
+  metadata   String? // Free-form notes and description
+
+  // Location tracking
+  containerId  String?
+  container    Container? @relation(fields: [containerId], references: [id])
+  slotPosition String? // e.g., "A1", "B3" for box grids
+
+  // Audit
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  // Relations
+  experiments ExperimentSample[]
+  assets      DigitalAsset[]
+}
+
+/// Container (freezer, shelf, box, rack)
+model Container {
+  id           String  @id @default(cuid())
+  externalId   String? @unique // QR code
+  name         String
+  type         String // e.g., "freezer", "shelf", "box", "rack"
+  layoutConfig String? // JSON for grid dimensions, slot config
+
+  // Hierarchy
+  parentId String?
+  parent   Container?  @relation("ContainerHierarchy", fields: [parentId], references: [id])
+  children Container[] @relation("ContainerHierarchy")
+
+  // Contents
+  samples Sample[]
+
+  // Audit
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// Module B: Experiments & Notebooks
+// ============================================
+
+/// Experiment linking samples to procedures and outputs
+model Experiment {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  status      String  @default("DRAFT") // Values: DRAFT, SCHEDULED, IN_PROGRESS, COMPLETED, FAILED
+
+  // Scheduling (for instrument booking)
+  scheduledAt DateTime?
+  machineId   String?
+
+  // Audit
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  // Relations
+  samples      ExperimentSample[]
+  notebook     Notebook?
+  assets       DigitalAsset[]
+  pipelineRuns PipelineRun[]
+}
+
+/// Many-to-many: Experiment <-> Sample
+model ExperimentSample {
+  experimentId String
+  sampleId     String
+  role         String? // e.g., "input", "control", "treatment"
+
+  experiment Experiment @relation(fields: [experimentId], references: [id])
+  sample     Sample     @relation(fields: [sampleId], references: [id])
+
+  @@id([experimentId, sampleId])
+}
+
+/// Git-backed notebook for experiment protocols
+model Notebook {
+  id           String     @id @default(cuid())
+  experimentId String     @unique
+  experiment   Experiment @relation(fields: [experimentId], references: [id])
+
+  // Git info
+  repoPath      String // Path to git repo/directory
+  currentCommit String? // Latest commit hash
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// Module C & D: Digital Assets & Pipelines
+// ============================================
+
+/// Digital file (raw data, processed results, etc.)
+model DigitalAsset {
+  id         String  @id @default(cuid())
+  filename   String
+  storageKey String // S3 key or local path
+  mimeType   String?
+  sizeBytes  Int? // Changed from BigInt for SQLite compat
+  checksum   String? // SHA256 hash
+
+  // Lineage
+  experimentId String?
+  experiment   Experiment? @relation(fields: [experimentId], references: [id])
+  sampleId     String?
+  sample       Sample?     @relation(fields: [sampleId], references: [id])
+
+  // Pipeline output
+  pipelineRunId String?
+  pipelineRun   PipelineRun? @relation(fields: [pipelineRunId], references: [id])
+
+  // Type classification
+  assetType String @default("RAW") // Values: RAW, PROCESSED, ANALYSIS, REPORT
+
+  // Audit
+  createdAt  DateTime @default(now())
+  uploadedBy String?
+  machineId  String? // Which instrument produced this
+}
+
+/// Pipeline execution record
+model PipelineRun {
+  id           String     @id @default(cuid())
+  experimentId String
+  experiment   Experiment @relation(fields: [experimentId], references: [id])
+
+  pipelineType String // e.g., "nf-core/rnaseq"
+  status       String @default("PENDING") // Values: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
+
+  // Execution details
+  startedAt   DateTime?
+  completedAt DateTime?
+  exitCode    Int?
+  logPath     String?
+
+  // Config used
+  configJson String? // JSON string
+
+  // Outputs
+  outputs DigitalAsset[]
+
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,50 @@
+[workspace]
+resolver = "2"
+members = [
+    "src-tauri",
+    "crates/openbio-core",
+    "crates/openbio-server",
+    "crates/openbio-agent",
+    "crates/openbio-wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["OpenBio Team"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/openbio/openbio-os"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Web framework
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
+
+# Database
+# prisma-client-rust will be added after schema setup
+
+# mDNS for discovery
+mdns-sd = "0.11"
+
+# File watching
+notify = "7"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# WASM (for openbio-wasm crate)
+wasm-bindgen = "0.2"

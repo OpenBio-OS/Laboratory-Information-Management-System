@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* OpenBio Design System - Custom App Variables */
+/* Using 'app-' prefix to avoid conflicts with Tailwind variables */
+:root {
+  --app-color-primary: #17b978;
+  --app-color-primary-hover: #118c5b;
+  --app-color-secondary: #20e395;
+  --app-color-accent: #17b978;
+  --app-color-background: #111111;
+  --app-color-surface: #2a2a2a;
+  --app-color-surface-elevated: #333333;
+  --app-color-text: #ffffff;
+  --app-color-text-muted: #a0a0a0;
+  --app-color-border: #444444;
+  --app-radius: 0.75rem;
+  --app-font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: var(--app-font-sans);
+  background-color: var(--app-color-background);
+  color: var(--app-color-text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Utility classes */
+.surface {
+  background-color: var(--app-color-surface);
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius);
+}
+
+.surface-elevated {
+  background-color: var(--app-color-surface-elevated);
+  border: 1px solid var(--app-color-border);
+  border-radius: var(--app-radius);
+}
