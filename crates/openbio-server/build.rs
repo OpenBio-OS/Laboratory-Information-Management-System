@@ -24,10 +24,17 @@ fn main() {
 
     // Set schema path for prisma-client-rust
     let schema_path = std::path::Path::new(&manifest_dir).join("../../database/schema.prisma");
-    std::env::set_var("PRISMA_SCHEMA_PATH", schema_path);
+    std::env::set_var("PRISMA_SCHEMA_PATH", schema_path.display().to_string());
 
-    // Execute the Prisma generator
-    prisma_client_rust_cli::run();
+    // Only run Prisma generator if the generated file doesn't exist
+    // (CI runs `npx prisma generate` separately to avoid conflicts)
+    let prisma_output = std::path::Path::new(&manifest_dir).join("src/db/prisma.rs");
+    if !prisma_output.exists() {
+        println!("cargo:warning=Running Prisma generator...");
+        prisma_client_rust_cli::run();
+    } else {
+        println!("cargo:warning=Prisma client already generated, skipping");
+    }
 
     // Auto-generate migrations module from database/migrations directory
     generate_migrations_module();
