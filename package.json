@@ -2,6 +2,7 @@
   "name": "openbio",
   "private": true,
   "version": "0.1.1",
+  "repository": { "url": "https://github.com/OpenBio-OS/Laboratory-Information-Management-System" },
   "type": "module",
   "scripts": {
     "dev": "cd web && vite",

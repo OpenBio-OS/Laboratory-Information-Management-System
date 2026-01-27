@@ -13,7 +13,7 @@ version = "0.1.1"
 authors = ["OpenBio Team"]
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/openbio/openbio-os"
+repository = "https://github.com/OpenBio-OS/Laboratory-Information-Management-System"
 
 [workspace.dependencies]
 # Serialization
