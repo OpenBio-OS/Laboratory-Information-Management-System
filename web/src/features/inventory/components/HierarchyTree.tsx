@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, ChevronDown, Plus, Box, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Box, Trash2, Building2, Warehouse, Thermometer, Layers } from 'lucide-react';
 import { Container } from '../../../lib/api';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 
@@ -27,6 +27,19 @@ function TreeNode({ container, allContainers, level, selectedId, onSelect, onCre
   const children = allContainers.filter(c => c.parentId === container.id);
   const hasChildren = children.length > 0;
   const isSelected = selectedId === container.id;
+
+  const getIcon = (type: string) => {
+    switch (type) {
+      case 'facility': return Building2;
+      case 'room': return Warehouse;
+      case 'freezer': return Thermometer;
+      case 'shelf': return Layers;
+      case 'box': return Box;
+      default: return Box;
+    }
+  };
+
+  const Icon = getIcon(container.type);
 
   const handleExpand = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -59,7 +72,7 @@ function TreeNode({ container, allContainers, level, selectedId, onSelect, onCre
           {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
 
-        <Box size={14} className={isSelected ? 'text-brand-primary' : 'text-white/50'} />
+        <Icon size={14} className={isSelected ? 'text-brand-primary' : 'text-white/50'} />
         <span className="text-sm truncate flex-1">{container.name}</span>
 
         <button

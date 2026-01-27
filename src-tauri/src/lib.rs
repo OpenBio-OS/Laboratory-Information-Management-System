@@ -358,13 +358,16 @@ pub fn run() {
             scan_for_hubs,
         ])
         .setup(move |app| {
-            // Check for updates on startup (non-blocking)
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = check_for_updates(app_handle).await {
-                    tracing::error!("Failed to check for updates: {}", e);
-                }
-            });
+            // Check for updates on startup (non-blocking) - only in release builds
+            #[cfg(not(debug_assertions))]
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = check_for_updates(app_handle).await {
+                        tracing::error!("Failed to check for updates: {}", e);
+                    }
+                });
+            }
 
             // Emit final config to frontend
             // config is moved into this closure since it's a clone

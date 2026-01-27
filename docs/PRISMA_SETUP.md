@@ -14,16 +14,7 @@ When you modify `database/schema.prisma`:
    - A migration SQL file in `database/migrations/`
    - Updates the Prisma client
 
-2. **Update the migrations module:**
-   Add the new migration to `crates/openbio-server/src/db/migrations.rs`:
-   ```rust
-   Migration {
-       name: "YYYYMMDDHHMMSS_your_migration".to_string(),
-       sql: include_str!("../../../../database/migrations/YYYYMMDDHHMMSS_your_migration/migration.sql"),
-   },
-   ```
-
-3. **Build and test:**
+2. **Build and test:**
    ```bash
    cargo build
    ```

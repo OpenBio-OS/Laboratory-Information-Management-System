@@ -44,6 +44,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,4 +58,7 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false
+          includeRelease: true
+          includeDebug: false
+          includeUpdaterJson: true
           args: ${{ matrix.args }}

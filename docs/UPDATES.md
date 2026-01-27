@@ -70,40 +70,6 @@ git push origin v0.1.1
 
 Create `.github/workflows/release.yml`:
 
-```yaml
-name: Release
-on:
-  push:
-    tags:
-      - 'v*'
-
-jobs:
-  release:
-    strategy:
-      matrix:
-        platform: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.platform }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-      - uses: dtolnay/rust-toolchain@stable
-      
-      - name: Install dependencies
-        run: npm install
-      
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'OpenBio ${{ github.ref_name }}'
-          releaseBody: 'See CHANGELOG.md for details'
-          releaseDraft: false
-          prerelease: false
-```
-
 Add secrets to GitHub:
 - `TAURI_PRIVATE_KEY`: Content of `~/.tauri/openbio.key`
 - `TAURI_KEY_PASSWORD`: Password if you set one
