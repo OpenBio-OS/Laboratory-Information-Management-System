@@ -3,9 +3,9 @@
 
 // Prisma Client Rust - generates a Rust client
 // Database URL is passed at RUNTIME when constructing PrismaClient
-// Run: cargo prisma generate (from project root) to generate the client
+// Run: cargo run -p prisma-cli -- generate --schema=database/schema.prisma
 generator client {
-  provider = "cargo prisma"
+  provider = "cargo run -p prisma-cli --"
   output   = "../crates/openbio-server/src/db/prisma.rs"
 }
 

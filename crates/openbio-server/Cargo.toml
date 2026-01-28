@@ -25,9 +25,5 @@ anyhow.workspace = true
 
 # Prisma Client Rust - database ORM
 prisma-client-rust = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.11", default-features = false, features = ["sqlite", "migrations"] }
-prisma-client-rust-cli = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.11", default-features = false, features = ["sqlite"] }
 uuid = { version = "1.7", features = ["v4"] }
 rusqlite = "0.25"
-
-[build-dependencies]
-prisma-client-rust-cli = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.11", default-features = false, features = ["sqlite", "migrations"] }

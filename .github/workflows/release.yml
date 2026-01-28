@@ -46,13 +46,10 @@ jobs:
 
       - name: Generate Prisma Client
         run: |
-          # Create stub file so the crate can compile initially
-          mkdir -p crates/openbio-server/src/db
-          echo "// Stub - will be replaced by prisma generate" > crates/openbio-server/src/db/prisma.rs
-          # Build just the prisma-generate binary (which compiles prisma-client-rust-cli)
-          cargo build --package openbio-server --bin prisma-generate
-          # Now run the generator to create the actual prisma.rs
-          cargo run --package openbio-server --bin prisma-generate -- generate
+          # Build the standalone prisma-cli (no dependency on generated code)
+          cargo build --package prisma-cli --release
+          # Generate prisma.rs
+          cargo run --package prisma-cli --release -- generate --schema=database/schema.prisma
 
       - uses: tauri-apps/tauri-action@v0
         env:
