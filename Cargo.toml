@@ -6,10 +6,11 @@ members = [
     "crates/openbio-server",
     "crates/openbio-agent",
     "crates/openbio-wasm",
+    "crates/prisma-cli",
 ]
 
 [workspace.package]
-version = "0.1.12"
+version = "0.1.14"
 authors = ["OpenBio Team"]
 edition = "2021"
 license = "MIT"
