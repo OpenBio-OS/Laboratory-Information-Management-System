@@ -1,6 +1,6 @@
 [package]
 name = "openbio"
-version = "0.1.16"
+version = "0.1.161"
 description = "Laboratory Information Management System"
 authors = ["OpenBio-OS"]
 edition = "2021"

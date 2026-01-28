@@ -4,6 +4,11 @@ on:
     tags:
       - 'v*'
 
+# Workflow-level permissions (required for some GitHub configurations)
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   release:
     permissions:
@@ -61,7 +66,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'OpenBio ${{ github.ref_name }}'
           releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           includeRelease: true
           includeDebug: false
