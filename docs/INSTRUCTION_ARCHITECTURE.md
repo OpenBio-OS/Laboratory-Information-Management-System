@@ -45,7 +45,7 @@ Problem 2 OpenBio Solution:
 
 Module A (Inventory): The "Source of Truth" is the database, not Steve's memory.
 
-Module B (Notebook): Git-backed protocols mean every change is timestamped and authored. We know exactly what changed and when.
+Module B (Experiment notebook): Git-backed protocols mean every change is timestamped and authored. We know exactly what changed and when.
 
 Problem 3: The "IT Barrier" (The Deployment Problem)
 
@@ -319,7 +319,7 @@ QR Workflow:
 
 4. DB records location.
 
-#### Module B: The Notebook (Protocol)
+#### Module B: The Experiment Notebook (Protocol)
 
 Backend: Git-backed Markdown.
 

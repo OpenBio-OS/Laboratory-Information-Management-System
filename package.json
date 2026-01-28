@@ -1,7 +1,7 @@
 {
   "name": "openbio",
   "private": true,
-  "version": "0.1.165",
+  "version": "0.1.17",
   "repository": {
     "url": "https://github.com/OpenBio-OS/Laboratory-Information-Management-System"
   },
@@ -10,6 +10,7 @@
     "dev": "cd web && vite",
     "build": "cd web && tsc && vite build",
     "preview": "cd web && vite preview",
+    "release": "node ./scripts/bump-version.js",
     "tauri": "tauri",
     "prisma:generate": "cargo run -p prisma-cli -- generate --schema=database/schema.prisma"
   },

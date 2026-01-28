@@ -16,14 +16,14 @@
 - No license required
 - Forever free
 
-### Hub Mode ($99-$990/year)
+### Hub Mode ($99/month-$990/year)
 - Multi-researcher lab deployments
 - Shared server
 - $99/month or $990/year per instance
 - 14-day free trial
 - License key required after trial
 
-### Enterprise Docker ($499-$4,990/year)
+### Enterprise Docker ($499/month-$4,990/year)
 - Docker containerized deployment
 - $499/month or $4,990/year per instance
 - 14-day free trial
