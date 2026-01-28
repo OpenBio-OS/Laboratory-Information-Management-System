@@ -66,3 +66,85 @@ jobs:
           includeDebug: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+  create-updater-json:
+    name: Create unified updater JSON
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release assets
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: ${{ github.ref_name }}
+          fileName: '*.sig'
+          out-file-path: 'signatures'
+
+      - name: Create latest.json from signatures
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          REPO="OpenBio-OS/Laboratory-Information-Management-System"
+          
+          # Read signatures
+          DARWIN_X64_SIG=""
+          DARWIN_ARM64_SIG=""
+          WINDOWS_X64_SIG=""
+          LINUX_X64_SIG=""
+          
+          if [ -f "signatures/openbio_${VERSION}_x64.dmg.sig" ]; then
+            DARWIN_X64_SIG=$(cat "signatures/openbio_${VERSION}_x64.dmg.sig")
+          fi
+          
+          if [ -f "signatures/openbio_${VERSION}_aarch64.dmg.sig" ]; then
+            DARWIN_ARM64_SIG=$(cat "signatures/openbio_${VERSION}_aarch64.dmg.sig")
+          fi
+          
+          if [ -f "signatures/openbio_${VERSION}_x64-setup.exe.sig" ]; then
+            WINDOWS_X64_SIG=$(cat "signatures/openbio_${VERSION}_x64-setup.exe.sig")
+          fi
+          
+          if [ -f "signatures/openbio_${VERSION}_amd64.AppImage.sig" ]; then
+            LINUX_X64_SIG=$(cat "signatures/openbio_${VERSION}_amd64.AppImage.sig")
+          fi
+          
+          # Create latest.json
+          cat > latest.json << EOF
+          {
+            "version": "$VERSION",
+            "notes": "See release notes at https://github.com/$REPO/releases/tag/${{ github.ref_name }}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "darwin-x86_64": {
+                "signature": "$DARWIN_X64_SIG",
+                "url": "https://github.com/$REPO/releases/download/${{ github.ref_name }}/openbio_${VERSION}_x64.dmg"
+              },
+              "darwin-aarch64": {
+                "signature": "$DARWIN_ARM64_SIG",
+                "url": "https://github.com/$REPO/releases/download/${{ github.ref_name }}/openbio_${VERSION}_aarch64.dmg"
+              },
+              "windows-x86_64": {
+                "signature": "$WINDOWS_X64_SIG",
+                "url": "https://github.com/$REPO/releases/download/${{ github.ref_name }}/openbio_${VERSION}_x64-setup.exe"
+              },
+              "linux-x86_64": {
+                "signature": "$LINUX_X64_SIG",
+                "url": "https://github.com/$REPO/releases/download/${{ github.ref_name }}/openbio_${VERSION}_amd64.AppImage"
+              }
+            }
+          }
+          EOF
+          
+          echo "Generated latest.json:"
+          cat latest.json
+
+      - name: Upload latest.json to release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

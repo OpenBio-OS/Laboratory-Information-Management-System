@@ -1,24 +1,32 @@
 {
   "name": "openbio",
   "private": true,
-  "version": "0.1.14",
-  "repository": { "url": "https://github.com/OpenBio-OS/Laboratory-Information-Management-System" },
+  "version": "0.1.15",
+  "repository": {
+    "url": "https://github.com/OpenBio-OS/Laboratory-Information-Management-System"
+  },
   "type": "module",
   "scripts": {
     "dev": "cd web && vite",
     "build": "cd web && tsc && vite build",
     "preview": "cd web && vite preview",
     "tauri": "tauri",
-    "db:generate": "prisma generate --schema=database/schema.prisma"
+    "prisma:generate": "cargo run -p prisma-cli -- generate --schema=database/schema.prisma"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.20",
     "@tanstack/react-router": "^1.157.7",
     "@tauri-apps/api": "^2.9.1",
     "@tauri-apps/plugin-opener": "^2",
+    "@tiptap/extension-mention": "^3.17.1",
+    "@tiptap/pm": "^3.17.1",
+    "@tiptap/react": "^3.17.1",
+    "@tiptap/starter-kit": "^3.17.1",
+    "@tiptap/suggestion": "^3.17.1",
     "lucide-react": "^0.563.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "tippy.js": "^6.3.7"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

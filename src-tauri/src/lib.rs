@@ -273,6 +273,8 @@ fn load_config_from_disk() -> AppConfig {
 }
 
 /// Check for app updates and install if available
+/// Only used in release builds, so allow dead_code in debug
+#[allow(dead_code)]
 async fn check_for_updates(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let updater = app.updater_builder().build()?;
     

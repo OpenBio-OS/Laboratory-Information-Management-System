@@ -22,7 +22,7 @@ export default function App() {
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "freezer", label: "Freezer", icon: Refrigerator },
-  { id: "library", label: "Library", icon: SquareLibrary },
+  { id: "notebooks", label: "Notebooks", icon: SquareLibrary },
   { id: "experiments", label: "Experiments", icon: FlaskConical },
   { id: "insight", label: "Insight", icon: ChartScatter },
   { id: "equipment", label: 'Equipment', icon: Microscope },
@@ -151,9 +151,11 @@ function AppContent() {
           <div className="max-w-7xl mx-auto w-full animate-fade-in">
             {activeTab === "dashboard" && <DashboardView />}
             {activeTab === "freezer" && <InventoryPage />}
+            {activeTab === "notebooks" && <NotebookPage />}
             {activeTab === "library" && <LibraryView />}
             {activeTab === "experiments" && <ExperimentsView />}
             {activeTab === "insight" && <InsightView />}
+            {activeTab === "equipment" && <EquipmentPage />}
             {activeTab === "settings" && <SettingsView onResetSetup={() => setNeedsSetup(true)} />}
           </div>
         </div>
@@ -184,6 +186,8 @@ const Button = ({ children, variant = "primary", className = "", ...props }: any
 };
 
 import { InventoryPage } from "./features/inventory/InventoryPage";
+import { NotebookPage } from "./features/notebooks/NotebookPage";
+import { EquipmentPage } from "./features/equipment/EquipmentPage";
 
 // ... existing imports
 

@@ -146,7 +146,7 @@ export interface Experiment {
     description?: string;
     status: 'DRAFT' | 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
     scheduledAt?: string;
-    machineId?: string;
+    equipmentId?: string;
     createdAt: string;
     updatedAt: string;
 }
@@ -160,6 +160,145 @@ export const experimentsApi = {
             body: JSON.stringify(data),
         }),
 };
+
+// ============================================
+// Notebooks API
+// ============================================
+
+export interface Notebook {
+    id: string;
+    experimentId: string;
+    content: string;
+    title: string;
+    description?: string;
+    createdAt: string;
+    updatedAt: string;
+    createdBy?: string;
+}
+
+export interface NotebookEntry {
+    id: string;
+    notebookId: string;
+    content: string;
+    timestamp: string;
+    author?: string;
+    attachedAssetId?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface NotebookMention {
+    id: string;
+    notebookId: string;
+    entityType: 'sample' | 'equipment' | 'paper';
+    entityId: string;
+    snapshotData: string;
+    position?: number;
+    createdAt: string;
+}
+
+export interface SearchResult {
+    entityType: 'sample' | 'equipment' | 'paper';
+    id: string;
+    name: string;
+    metadata?: any;
+}
+
+export const notebooksApi = {
+    list: () => apiRequest<Notebook[]>('/api/notebooks'),
+    get: (id: string) => apiRequest<Notebook>(`/api/notebooks/${id}`),
+    create: (data: { experimentId: string; title?: string; description?: string }) =>
+        apiRequest<Notebook>('/api/notebooks', {
+            method: 'POST',
+            body: JSON.stringify({
+                experiment_id: data.experimentId,
+                title: data.title,
+                description: data.description,
+            }),
+        }),
+    update: (id: string, data: Partial<Notebook>) =>
+        apiRequest<Notebook>(`/api/notebooks/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify(data),
+        }),
+    delete: (id: string) =>
+        apiRequest<void>(`/api/notebooks/${id}`, {
+            method: 'DELETE',
+        }),
+    
+    // Entries
+    listEntries: (notebookId: string) => 
+        apiRequest<NotebookEntry[]>(`/api/notebooks/${notebookId}/entries`),
+    createEntry: (notebookId: string, data: { content: string; author?: string; attachedAssetId?: string }) =>
+        apiRequest<NotebookEntry>(`/api/notebooks/${notebookId}/entries`, {
+            method: 'POST',
+            body: JSON.stringify({
+                content: data.content,
+                author: data.author,
+                attached_asset_id: data.attachedAssetId,
+            }),
+        }),
+    
+    // Mentions
+    listMentions: (notebookId: string) =>
+        apiRequest<NotebookMention[]>(`/api/notebooks/${notebookId}/mentions`),
+    createMention: (notebookId: string, data: { entityType: string; entityId: string; snapshotData: string; position?: number }) =>
+        apiRequest<NotebookMention>(`/api/notebooks/${notebookId}/mentions`, {
+            method: 'POST',
+            body: JSON.stringify({
+                entity_type: data.entityType,
+                entity_id: data.entityId,
+                snapshot_data: data.snapshotData,
+                position: data.position,
+            }),
+        }),
+    
+    // Search for @mentions
+    searchEntities: () => apiRequest<SearchResult[]>('/api/notebooks/search-entities'),
+};
+
+// ============================================
+// Equipment API
+// ============================================
+
+export interface Equipment {
+    id: string;
+    externalId?: string;
+    name: string;
+    type: string;
+    model?: string;
+    serialNumber?: string;
+    location?: string;
+    watchFolder?: string;
+    autoImport: boolean;
+    agentStatus: 'OFFLINE' | 'ONLINE' | 'LOCKED';
+    lastSyncAt?: string;
+    metadata?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+// ============================================
+// Papers API
+// ============================================
+
+export interface Paper {
+    id: string;
+    title: string;
+    authors?: string;
+    journal?: string;
+    year?: number;
+    doi?: string;
+    pmid?: string;
+    url?: string;
+    abstract?: string;
+    notes?: string;
+    pdfPath?: string;
+    tags?: string;
+    createdAt: string;
+    updatedAt: string;
+    addedBy?: string;
+}
 
 // ============================================
 // Health Check

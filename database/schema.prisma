@@ -70,6 +70,60 @@ model Container {
 // Module B: Experiments & Notebooks
 // ============================================
 
+/// Equipment/Instrument in the lab
+model Equipment {
+  id         String  @id @default(cuid())
+  externalId String? @unique // QR code
+  name       String
+  type       String // e.g., "sequencer", "microscope", "centrifuge", "pcr_machine"
+  model      String?
+  serialNumber String?
+
+  // Location
+  location String?
+
+  // Import settings (for openbio-agent integration)
+  watchFolder   String? // Folder path that agent monitors for new files
+  autoImport    Boolean @default(false) // Whether auto-import is enabled
+  agentStatus   String  @default("OFFLINE") // OFFLINE, ONLINE, LOCKED
+  lastSyncAt    DateTime?
+
+  // Scheduling (for booking experiments)
+  bookings Experiment[]
+
+  // Metadata
+  metadata  String? // Free-form JSON for equipment-specific settings
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Research paper/reference in the library
+model Paper {
+  id    String @id @default(cuid())
+  title String
+  
+  // Citation info
+  authors      String? // Comma-separated or JSON array
+  journal      String?
+  year         Int?
+  doi          String? @unique
+  pmid         String? // PubMed ID
+  url          String?
+  
+  // Content
+  abstract     String?
+  notes        String? // User's notes about the paper
+  pdfPath      String? // Local path or S3 key to PDF
+  
+  // Tags/Categories
+  tags         String? // JSON array of tags
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  addedBy   String?
+}
+
 /// Experiment linking samples to procedures and outputs
 model Experiment {
   id          String  @id @default(cuid())
@@ -79,7 +133,8 @@ model Experiment {
 
   // Scheduling (for instrument booking)
   scheduledAt DateTime?
-  machineId   String?
+  equipmentId String?
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id])
 
   // Audit
   createdAt DateTime @default(now())
@@ -105,18 +160,63 @@ model ExperimentSample {
   @@id([experimentId, sampleId])
 }
 
-/// Git-backed notebook for experiment protocols
+/// Laboratory notebook for experiment protocols and notes
 model Notebook {
   id           String     @id @default(cuid())
   experimentId String     @unique
   experiment   Experiment @relation(fields: [experimentId], references: [id])
 
-  // Git info
-  repoPath      String // Path to git repo/directory
-  currentCommit String? // Latest commit hash
+  // Content (rich text stored as JSON)
+  content String @default("") // Prosemirror/TipTap JSON document
+
+  // Metadata
+  title       String  @default("Untitled Notebook")
+  description String?
+
+  // Mentions and linked entities
+  mentions NotebookMention[]
+  entries  NotebookEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  createdBy String?
+}
+
+/// Entry in a notebook (timestamped note)
+model NotebookEntry {
+  id         String   @id @default(cuid())
+  notebookId String
+  notebook   Notebook @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+
+  // Content
+  content   String // Rich text JSON
+  timestamp DateTime @default(now())
+  author    String?
+
+  // Attached data files from equipment imports
+  attachedAssetId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// @mentions in notebooks with metadata snapshots
+model NotebookMention {
+  id         String   @id @default(cuid())
+  notebookId String
+  notebook   Notebook @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+
+  // What was mentioned
+  entityType String // "sample", "equipment", "paper"
+  entityId   String // ID of the referenced entity
+
+  // Snapshot of metadata at time of mention (preserves data if entity is deleted)
+  snapshotData String // JSON snapshot of entity data
+
+  // Position in document (for highlighting/navigation)
+  position Int?
+
+  createdAt DateTime @default(now())
 }
 
 // ============================================
