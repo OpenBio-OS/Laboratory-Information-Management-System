@@ -1,5 +1,16 @@
 # Project OpenBio: Master Architecture & Implementation Guide
 
+## ⚠️ CRITICAL: Read EXPERIMENTS_AND_LIBRARY.md First
+
+**Before implementing ANYTHING related to experiments or notebooks:**
+
+👉 **READ: [docs/EXPERIMENTS_AND_LIBRARY.md](./EXPERIMENTS_AND_LIBRARY.md)**
+
+This document clarifies the correct architecture:
+- **Experiments = Notebooks** (they are the same thing, not separate)
+- **Library = Standalone paper collection** (not linked to experiments)
+- Do NOT create separate Notebook models or endpoints
+
 ## Problem definition
 
 Problem 1: The "Air-Gapped" Reality
@@ -88,13 +99,13 @@ The Link: The database now knows: Experiment 505 contains Sample P-405.
 
 3. The Lab Work (Afternoon)
 
-Action: You take the sample out, prep it, and put it inside the Sequencer Machine. In OpenBio (Notebook Module):
+Action: You take the sample out, prep it, and put it inside the Sequencer Machine. In OpenBio:
 
-You open the digital notebook for Experiment 505.
+You open Experiment 505 (which has a built-in laboratory notebook).
 
-You type: "Used Protocol A, but added extra reagent."
+You type in the notebook: "Used Protocol A, but added extra reagent. @Sample-P-405 from @Freezer-4."
 
-The Link: If the data looks weird later, you know exactly what you changed.
+The Link: If the data looks weird later, you know exactly what you changed. The @mentions preserve metadata snapshots.
 
 4. The Data Haul (The next day)
 

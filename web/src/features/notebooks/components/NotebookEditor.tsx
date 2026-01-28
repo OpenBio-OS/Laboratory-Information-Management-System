@@ -9,26 +9,27 @@ import { ReactRenderer } from '@tiptap/react';
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 import { MentionList, MentionItem } from './MentionList';
-import { notebooksApi, SearchResult } from '../../../lib/api';
+import { experimentsApi, SearchResult } from '../../../lib/api';
 import React from 'react';
 import { Bold, Italic, List, ListOrdered, Undo, Redo } from 'lucide-react';
 
 interface NotebookEditorProps {
-  content: string;
-  onChange: (content: string) => void;
+  initialContent: string;
+  onSave: (content: string) => void;
+  experimentId?: string; // Optional for future use (creating mentions)
   onMention?: (entityType: string, entityId: string, snapshotData: any) => void;
 }
 
 export const NotebookEditor: React.FC<NotebookEditorProps> = ({
-  content,
-  onChange,
+  initialContent,
+  onSave,
   onMention,
 }) => {
   const [entities, setEntities] = React.useState<SearchResult[]>([]);
 
   // Load entities for mentions on mount
   React.useEffect(() => {
-    notebooksApi.searchEntities().then(setEntities).catch(console.error);
+    experimentsApi.searchEntities().then(setEntities).catch(console.error);
   }, []);
 
   const editor = useEditor({
@@ -137,9 +138,9 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
         },
       }),
     ],
-    content,
+    content: initialContent,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      onSave(editor.getHTML());
     },
   });
 

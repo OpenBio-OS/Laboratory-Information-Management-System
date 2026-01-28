@@ -124,12 +124,15 @@ model Paper {
   addedBy   String?
 }
 
-/// Experiment linking samples to procedures and outputs
+/// Experiment with integrated notebook (this IS the notebook)
 model Experiment {
   id          String  @id @default(cuid())
   name        String
   description String?
   status      String  @default("DRAFT") // Values: DRAFT, SCHEDULED, IN_PROGRESS, COMPLETED, FAILED
+
+  // Notebook content (rich text as JSON)
+  content String @default("") // Prosemirror/TipTap JSON document
 
   // Scheduling (for instrument booking)
   scheduledAt DateTime?
@@ -143,7 +146,8 @@ model Experiment {
 
   // Relations
   samples      ExperimentSample[]
-  notebook     Notebook?
+  mentions     ExperimentMention[]
+  entries      ExperimentEntry[]
   assets       DigitalAsset[]
   pipelineRuns PipelineRun[]
 }
@@ -160,36 +164,14 @@ model ExperimentSample {
   @@id([experimentId, sampleId])
 }
 
-/// Laboratory notebook for experiment protocols and notes
-model Notebook {
+/// Timestamped entry in an experiment (for equipment data imports)
+model ExperimentEntry {
   id           String     @id @default(cuid())
-  experimentId String     @unique
-  experiment   Experiment @relation(fields: [experimentId], references: [id])
-
-  // Content (rich text stored as JSON)
-  content String @default("") // Prosemirror/TipTap JSON document
-
-  // Metadata
-  title       String  @default("Untitled Notebook")
-  description String?
-
-  // Mentions and linked entities
-  mentions NotebookMention[]
-  entries  NotebookEntry[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy String?
-}
-
-/// Entry in a notebook (timestamped note)
-model NotebookEntry {
-  id         String   @id @default(cuid())
-  notebookId String
-  notebook   Notebook @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+  experimentId String
+  experiment   Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
 
   // Content
-  content   String // Rich text JSON
+  content   String // Rich text JSON or plain text
   timestamp DateTime @default(now())
   author    String?
 
@@ -200,11 +182,11 @@ model NotebookEntry {
   updatedAt DateTime @updatedAt
 }
 
-/// @mentions in notebooks with metadata snapshots
-model NotebookMention {
-  id         String   @id @default(cuid())
-  notebookId String
-  notebook   Notebook @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+/// @mentions in experiments with metadata snapshots
+model ExperimentMention {
+  id           String     @id @default(cuid())
+  experimentId String
+  experiment   Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
 
   // What was mentioned
   entityType String // "sample", "equipment", "paper"

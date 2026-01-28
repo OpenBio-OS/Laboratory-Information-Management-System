@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::db::prisma::{container, experiment, notebook, notebook_entry, notebook_mention, sample, equipment, paper};
+use crate::db::prisma::{container, experiment, experiment_entry, experiment_mention, sample, paper};
 use crate::AppState;
 
 /// Health check response
@@ -30,10 +30,10 @@ pub fn api_routes() -> Router<AppState> {
     Router::new()
         // Inventory (Module A) routes
         .nest("/inventory", inventory_routes())
-        // Notebook (Module B) routes
-        .nest("/notebooks", notebook_routes())
-        // Experiments routes
+        // Experiments routes (experiments ARE the notebooks)
         .nest("/experiments", experiment_routes())
+        // Library routes (papers)
+        .nest("/library", library_routes())
 }
 
 fn inventory_routes() -> Router<AppState> {
@@ -44,19 +44,19 @@ fn inventory_routes() -> Router<AppState> {
         .route("/containers/{id}", axum::routing::delete(delete_container))
 }
 
-fn notebook_routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(list_notebooks).post(create_notebook))
-        .route("/{id}", get(get_notebook).patch(update_notebook).delete(delete_notebook))
-        .route("/{id}/entries", get(list_notebook_entries).post(create_notebook_entry))
-        .route("/{id}/mentions", get(list_notebook_mentions).post(create_notebook_mention))
-        .route("/search-entities", get(search_entities))
-}
-
 fn experiment_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_experiments).post(create_experiment))
-        .route("/{id}", get(get_experiment))
+        .route("/{id}", get(get_experiment).patch(update_experiment).delete(delete_experiment))
+        .route("/{id}/entries", get(list_experiment_entries).post(create_experiment_entry))
+        .route("/{id}/mentions", get(list_experiment_mentions).post(create_experiment_mention))
+        .route("/search-entities", get(search_entities))
+}
+
+fn library_routes() -> Router<AppState> {
+    Router::new()
+        .route("/", get(list_papers).post(create_paper))
+        .route("/{id}", get(get_paper).patch(update_paper).delete(delete_paper))
 }
 
 // ==========================================
@@ -226,212 +226,219 @@ async fn delete_container(
 }
 
 // ==========================================
-// Placeholder Handlers
+// Experiment Handlers (Experiments ARE notebooks)
 // ==========================================
 
-// Notebooks
 #[derive(Deserialize)]
-pub struct CreateNotebookRequest {
-    pub experiment_id: String,
-    pub title: Option<String>,
+pub struct CreateExperimentRequest {
+    pub name: String,
     pub description: Option<String>,
+    pub content: Option<String>,
+    pub status: Option<String>,
 }
 
-async fn list_notebooks(State(state): State<AppState>) -> Json<Vec<notebook::Data>> {
-    let notebooks = state
+async fn list_experiments(State(state): State<AppState>) -> Json<Vec<experiment::Data>> {
+    let experiments = state
         .db
-        .notebook()
+        .experiment()
         .find_many(vec![])
         .exec()
         .await
         .unwrap_or_default();
-    Json(notebooks)
+    Json(experiments)
 }
 
-async fn create_notebook(
+async fn create_experiment(
     State(state): State<AppState>,
-    Json(payload): Json<CreateNotebookRequest>,
-) -> Json<notebook::Data> {
-    let mut params: Vec<notebook::SetParam> = vec![];
-    
-    if let Some(title) = payload.title {
-        params.push(notebook::title::set(title));
-    }
+    Json(payload): Json<CreateExperimentRequest>,
+) -> Json<experiment::Data> {
+    let mut params: Vec<experiment::SetParam> = vec![];
     
     if let Some(description) = payload.description {
-        params.push(notebook::description::set(Some(description)));
+        params.push(experiment::description::set(Some(description)));
+    }
+    
+    if let Some(content) = payload.content {
+        params.push(experiment::content::set(content));
+    }
+    
+    if let Some(status) = payload.status {
+        params.push(experiment::status::set(status));
     }
 
-    let notebook = state
+    let experiment = state
         .db
-        .notebook()
-        .create(
-            experiment::id::equals(payload.experiment_id),
-            params,
-        )
+        .experiment()
+        .create(payload.name, params)
         .exec()
         .await
-        .expect("Failed to create notebook");
-    Json(notebook)
+        .expect("Failed to create experiment");
+    Json(experiment)
 }
 
-async fn get_notebook(
+async fn get_experiment(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Json<Option<notebook::Data>> {
-    let notebook = state
+) -> Json<Option<experiment::Data>> {
+    let experiment = state
         .db
-        .notebook()
-        .find_unique(notebook::id::equals(id))
-        .with(notebook::mentions::fetch(vec![]))
-        .with(notebook::entries::fetch(vec![]))
+        .experiment()
+        .find_unique(experiment::id::equals(id))
+        .with(experiment::mentions::fetch(vec![]))
+        .with(experiment::entries::fetch(vec![]))
+        .with(experiment::samples::fetch(vec![]))
         .exec()
         .await
         .ok()
         .flatten();
-    Json(notebook)
+    Json(experiment)
 }
 
 #[derive(Deserialize)]
-pub struct UpdateNotebookRequest {
+pub struct UpdateExperimentRequest {
+    pub name: Option<String>,
     pub content: Option<String>,
-    pub title: Option<String>,
     pub description: Option<String>,
+    pub status: Option<String>,
 }
 
-async fn update_notebook(
+async fn update_experiment(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(payload): Json<UpdateNotebookRequest>,
-) -> Json<notebook::Data> {
-    let mut params: Vec<notebook::SetParam> = vec![];
+    Json(payload): Json<UpdateExperimentRequest>,
+) -> Json<experiment::Data> {
+    let mut params: Vec<experiment::SetParam> = vec![];
     
-    if let Some(content) = payload.content {
-        params.push(notebook::content::set(content));
+    if let Some(name) = payload.name {
+        params.push(experiment::name::set(name));
     }
     
-    if let Some(title) = payload.title {
-        params.push(notebook::title::set(title));
+    if let Some(content) = payload.content {
+        params.push(experiment::content::set(content));
     }
     
     if let Some(description) = payload.description {
-        params.push(notebook::description::set(Some(description)));
+        params.push(experiment::description::set(Some(description)));
+    }
+    
+    if let Some(status) = payload.status {
+        params.push(experiment::status::set(status));
     }
 
-    let notebook = state
+    let experiment = state
         .db
-        .notebook()
-        .update(notebook::id::equals(id), params)
+        .experiment()
+        .update(experiment::id::equals(id), params)
         .exec()
         .await
-        .expect("Failed to update notebook");
-    Json(notebook)
+        .expect("Failed to update experiment");
+    Json(experiment)
 }
 
-async fn delete_notebook(
+async fn delete_experiment(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Json<()> {
     state
         .db
-        .notebook()
-        .delete(notebook::id::equals(id))
+        .experiment()
+        .delete(experiment::id::equals(id))
         .exec()
         .await
-        .expect("Failed to delete notebook");
+        .expect("Failed to delete experiment");
     Json(())
 }
 
-// Notebook Entries
+// Experiment Entries
 #[derive(Deserialize)]
-pub struct CreateNotebookEntryRequest {
+pub struct CreateExperimentEntryRequest {
     pub content: String,
     pub author: Option<String>,
     pub attached_asset_id: Option<String>,
 }
 
-async fn list_notebook_entries(
+async fn list_experiment_entries(
     State(state): State<AppState>,
-    Path(notebook_id): Path<String>,
-) -> Json<Vec<notebook_entry::Data>> {
+    Path(experiment_id): Path<String>,
+) -> Json<Vec<experiment_entry::Data>> {
     let entries = state
         .db
-        .notebook_entry()
-        .find_many(vec![notebook_entry::notebook_id::equals(notebook_id)])
+        .experiment_entry()
+        .find_many(vec![experiment_entry::experiment_id::equals(experiment_id)])
         .exec()
         .await
         .unwrap_or_default();
     Json(entries)
 }
 
-async fn create_notebook_entry(
+async fn create_experiment_entry(
     State(state): State<AppState>,
-    Path(notebook_id): Path<String>,
-    Json(payload): Json<CreateNotebookEntryRequest>,
-) -> Json<notebook_entry::Data> {
-    let mut params: Vec<notebook_entry::SetParam> = vec![];
+    Path(experiment_id): Path<String>,
+    Json(payload): Json<CreateExperimentEntryRequest>,
+) -> Json<experiment_entry::Data> {
+    let mut params: Vec<experiment_entry::SetParam> = vec![];
     
     if let Some(author) = payload.author {
-        params.push(notebook_entry::author::set(Some(author)));
+        params.push(experiment_entry::author::set(Some(author)));
     }
     
     if let Some(asset_id) = payload.attached_asset_id {
-        params.push(notebook_entry::attached_asset_id::set(Some(asset_id)));
+        params.push(experiment_entry::attached_asset_id::set(Some(asset_id)));
     }
 
     let entry = state
         .db
-        .notebook_entry()
+        .experiment_entry()
         .create(
-            notebook::id::equals(notebook_id),
+            experiment::id::equals(experiment_id),
             payload.content,
             params,
         )
         .exec()
         .await
-        .expect("Failed to create notebook entry");
+        .expect("Failed to create experiment entry");
     Json(entry)
 }
 
-// Notebook Mentions
+// Experiment Mentions
 #[derive(Deserialize)]
-pub struct CreateNotebookMentionRequest {
+pub struct CreateExperimentMentionRequest {
     pub entity_type: String,
     pub entity_id: String,
     pub snapshot_data: String,
     pub position: Option<i32>,
 }
 
-async fn list_notebook_mentions(
+async fn list_experiment_mentions(
     State(state): State<AppState>,
-    Path(notebook_id): Path<String>,
-) -> Json<Vec<notebook_mention::Data>> {
+    Path(experiment_id): Path<String>,
+) -> Json<Vec<experiment_mention::Data>> {
     let mentions = state
         .db
-        .notebook_mention()
-        .find_many(vec![notebook_mention::notebook_id::equals(notebook_id)])
+        .experiment_mention()
+        .find_many(vec![experiment_mention::experiment_id::equals(experiment_id)])
         .exec()
         .await
         .unwrap_or_default();
     Json(mentions)
 }
 
-async fn create_notebook_mention(
+async fn create_experiment_mention(
     State(state): State<AppState>,
-    Path(notebook_id): Path<String>,
-    Json(payload): Json<CreateNotebookMentionRequest>,
-) -> Json<notebook_mention::Data> {
-    let mut params: Vec<notebook_mention::SetParam> = vec![];
+    Path(experiment_id): Path<String>,
+    Json(payload): Json<CreateExperimentMentionRequest>,
+) -> Json<experiment_mention::Data> {
+    let mut params: Vec<experiment_mention::SetParam> = vec![];
     
     if let Some(position) = payload.position {
-        params.push(notebook_mention::position::set(Some(position)));
+        params.push(experiment_mention::position::set(Some(position)));
     }
 
     let mention = state
         .db
-        .notebook_mention()
+        .experiment_mention()
         .create(
-            notebook::id::equals(notebook_id),
+            experiment::id::equals(experiment_id),
             payload.entity_type,
             payload.entity_id,
             payload.snapshot_data,
@@ -439,7 +446,7 @@ async fn create_notebook_mention(
         )
         .exec()
         .await
-        .expect("Failed to create notebook mention");
+        .expect("Failed to create experiment mention");
     Json(mention)
 }
 
@@ -497,62 +504,153 @@ async fn search_entities(
     Json(results)
 }
 
-// Experiments
+// ==========================================
+// Library (Papers) Handlers
+// ==========================================
+
 #[derive(Deserialize)]
-pub struct CreateExperimentRequest {
-    pub name: String,
-    pub description: Option<String>,
-    pub status: Option<String>,
+pub struct CreatePaperRequest {
+    pub title: String,
+    pub authors: Option<String>,
+    pub journal: Option<String>,
+    pub year: Option<i32>,
+    pub doi: Option<String>,
+    pub pmid: Option<String>,
+    pub url: Option<String>,
+    pub abstract_: Option<String>,
+    pub notes: Option<String>,
+    pub pdf_path: Option<String>,
+    pub tags: Option<String>,
 }
 
-async fn list_experiments(State(state): State<AppState>) -> Json<Vec<experiment::Data>> {
-    let experiments = state
+async fn list_papers(State(state): State<AppState>) -> Json<Vec<paper::Data>> {
+    let papers = state
         .db
-        .experiment()
+        .paper()
         .find_many(vec![])
         .exec()
         .await
         .unwrap_or_default();
-    Json(experiments)
+    Json(papers)
 }
 
-async fn create_experiment(
+async fn create_paper(
     State(state): State<AppState>,
-    Json(payload): Json<CreateExperimentRequest>,
-) -> Json<experiment::Data> {
-    let mut params: Vec<experiment::SetParam> = vec![];
+    Json(payload): Json<CreatePaperRequest>,
+) -> Json<paper::Data> {
+    let mut params: Vec<paper::SetParam> = vec![];
     
-    if let Some(description) = payload.description {
-        params.push(experiment::description::set(Some(description)));
+    if let Some(authors) = payload.authors {
+        params.push(paper::authors::set(Some(authors)));
     }
     
-    if let Some(status) = payload.status {
-        params.push(experiment::status::set(status));
+    if let Some(journal) = payload.journal {
+        params.push(paper::journal::set(Some(journal)));
+    }
+    
+    if let Some(year) = payload.year {
+        params.push(paper::year::set(Some(year)));
+    }
+    
+    if let Some(doi) = payload.doi {
+        params.push(paper::doi::set(Some(doi)));
+    }
+    
+    if let Some(pmid) = payload.pmid {
+        params.push(paper::pmid::set(Some(pmid)));
+    }
+    
+    if let Some(url) = payload.url {
+        params.push(paper::url::set(Some(url)));
+    }
+    
+    if let Some(abstract_) = payload.abstract_ {
+        params.push(paper::r#abstract::set(Some(abstract_)));
+    }
+    
+    if let Some(notes) = payload.notes {
+        params.push(paper::notes::set(Some(notes)));
+    }
+    
+    if let Some(pdf_path) = payload.pdf_path {
+        params.push(paper::pdf_path::set(Some(pdf_path)));
+    }
+    
+    if let Some(tags) = payload.tags {
+        params.push(paper::tags::set(Some(tags)));
     }
 
-    let experiment = state
+    let paper = state
         .db
-        .experiment()
-        .create(payload.name, params)
+        .paper()
+        .create(payload.title, params)
         .exec()
         .await
-        .expect("Failed to create experiment");
-    Json(experiment)
+        .expect("Failed to create paper");
+    Json(paper)
 }
 
-async fn get_experiment(
+async fn get_paper(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Json<Option<experiment::Data>> {
-    let experiment = state
+) -> Json<Option<paper::Data>> {
+    let paper = state
         .db
-        .experiment()
-        .find_unique(experiment::id::equals(id))
-        .with(experiment::notebook::fetch())
-        .with(experiment::samples::fetch(vec![]))
+        .paper()
+        .find_unique(paper::id::equals(id))
         .exec()
         .await
         .ok()
         .flatten();
-    Json(experiment)
+    Json(paper)
+}
+
+#[derive(Deserialize)]
+pub struct UpdatePaperRequest {
+    pub title: Option<String>,
+    pub notes: Option<String>,
+    pub tags: Option<String>,
+}
+
+async fn update_paper(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdatePaperRequest>,
+) -> Json<paper::Data> {
+    let mut params: Vec<paper::SetParam> = vec![];
+    
+    if let Some(title) = payload.title {
+        params.push(paper::title::set(title));
+    }
+    
+    if let Some(notes) = payload.notes {
+        params.push(paper::notes::set(Some(notes)));
+    }
+    
+    if let Some(tags) = payload.tags {
+        params.push(paper::tags::set(Some(tags)));
+    }
+
+    let paper = state
+        .db
+        .paper()
+        .update(paper::id::equals(id), params)
+        .exec()
+        .await
+        .expect("Failed to update paper");
+    Json(paper)
+}
+
+async fn delete_paper(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<()> {
+    state
+        .db
+        .paper()
+        .delete(paper::id::equals(id))
+        .exec()
+        .await
+        .expect("Failed to delete paper");
+    Json(())
 }

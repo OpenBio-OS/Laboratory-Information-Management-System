@@ -137,48 +137,25 @@ export const inventoryApi = {
 };
 
 // ============================================
-// Experiments API
+// Experiments API (Experiments ARE the notebooks)
 // ============================================
 
 export interface Experiment {
     id: string;
     name: string;
     description?: string;
+    content: string; // Rich text notebook content
     status: 'DRAFT' | 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
     scheduledAt?: string;
     equipmentId?: string;
     createdAt: string;
     updatedAt: string;
-}
-
-export const experimentsApi = {
-    list: () => apiRequest<Experiment[]>('/api/experiments'),
-    get: (id: string) => apiRequest<Experiment>(`/api/experiments/${id}`),
-    create: (data: Partial<Experiment>) =>
-        apiRequest<Experiment>('/api/experiments', {
-            method: 'POST',
-            body: JSON.stringify(data),
-        }),
-};
-
-// ============================================
-// Notebooks API
-// ============================================
-
-export interface Notebook {
-    id: string;
-    experimentId: string;
-    content: string;
-    title: string;
-    description?: string;
-    createdAt: string;
-    updatedAt: string;
     createdBy?: string;
 }
 
-export interface NotebookEntry {
+export interface ExperimentEntry {
     id: string;
-    notebookId: string;
+    experimentId: string;
     content: string;
     timestamp: string;
     author?: string;
@@ -187,9 +164,9 @@ export interface NotebookEntry {
     updatedAt: string;
 }
 
-export interface NotebookMention {
+export interface ExperimentMention {
     id: string;
-    notebookId: string;
+    experimentId: string;
     entityType: 'sample' | 'equipment' | 'paper';
     entityId: string;
     snapshotData: string;
@@ -204,33 +181,29 @@ export interface SearchResult {
     metadata?: any;
 }
 
-export const notebooksApi = {
-    list: () => apiRequest<Notebook[]>('/api/notebooks'),
-    get: (id: string) => apiRequest<Notebook>(`/api/notebooks/${id}`),
-    create: (data: { experimentId: string; title?: string; description?: string }) =>
-        apiRequest<Notebook>('/api/notebooks', {
+export const experimentsApi = {
+    list: () => apiRequest<Experiment[]>('/api/experiments'),
+    get: (id: string) => apiRequest<Experiment>(`/api/experiments/${id}`),
+    create: (data: Partial<Experiment>) =>
+        apiRequest<Experiment>('/api/experiments', {
             method: 'POST',
-            body: JSON.stringify({
-                experiment_id: data.experimentId,
-                title: data.title,
-                description: data.description,
-            }),
+            body: JSON.stringify(data),
         }),
-    update: (id: string, data: Partial<Notebook>) =>
-        apiRequest<Notebook>(`/api/notebooks/${id}`, {
+    update: (id: string, data: Partial<Experiment>) =>
+        apiRequest<Experiment>(`/api/experiments/${id}`, {
             method: 'PATCH',
             body: JSON.stringify(data),
         }),
     delete: (id: string) =>
-        apiRequest<void>(`/api/notebooks/${id}`, {
+        apiRequest<void>(`/api/experiments/${id}`, {
             method: 'DELETE',
         }),
     
-    // Entries
-    listEntries: (notebookId: string) => 
-        apiRequest<NotebookEntry[]>(`/api/notebooks/${notebookId}/entries`),
-    createEntry: (notebookId: string, data: { content: string; author?: string; attachedAssetId?: string }) =>
-        apiRequest<NotebookEntry>(`/api/notebooks/${notebookId}/entries`, {
+    // Entries (for equipment data import)
+    listEntries: (experimentId: string) => 
+        apiRequest<ExperimentEntry[]>(`/api/experiments/${experimentId}/entries`),
+    createEntry: (experimentId: string, data: { content: string; author?: string; attachedAssetId?: string }) =>
+        apiRequest<ExperimentEntry>(`/api/experiments/${experimentId}/entries`, {
             method: 'POST',
             body: JSON.stringify({
                 content: data.content,
@@ -239,11 +212,11 @@ export const notebooksApi = {
             }),
         }),
     
-    // Mentions
-    listMentions: (notebookId: string) =>
-        apiRequest<NotebookMention[]>(`/api/notebooks/${notebookId}/mentions`),
-    createMention: (notebookId: string, data: { entityType: string; entityId: string; snapshotData: string; position?: number }) =>
-        apiRequest<NotebookMention>(`/api/notebooks/${notebookId}/mentions`, {
+    // Mentions (for @sample, @equipment, @paper)
+    listMentions: (experimentId: string) =>
+        apiRequest<ExperimentMention[]>(`/api/experiments/${experimentId}/mentions`),
+    createMention: (experimentId: string, data: { entityType: string; entityId: string; snapshotData: string; position?: number }) =>
+        apiRequest<ExperimentMention>(`/api/experiments/${experimentId}/mentions`, {
             method: 'POST',
             body: JSON.stringify({
                 entity_type: data.entityType,
@@ -254,32 +227,11 @@ export const notebooksApi = {
         }),
     
     // Search for @mentions
-    searchEntities: () => apiRequest<SearchResult[]>('/api/notebooks/search-entities'),
+    searchEntities: () => apiRequest<SearchResult[]>('/api/experiments/search-entities'),
 };
 
 // ============================================
-// Equipment API
-// ============================================
-
-export interface Equipment {
-    id: string;
-    externalId?: string;
-    name: string;
-    type: string;
-    model?: string;
-    serialNumber?: string;
-    location?: string;
-    watchFolder?: string;
-    autoImport: boolean;
-    agentStatus: 'OFFLINE' | 'ONLINE' | 'LOCKED';
-    lastSyncAt?: string;
-    metadata?: string;
-    createdAt: string;
-    updatedAt: string;
-}
-
-// ============================================
-// Papers API
+// Library (Papers) API
 // ============================================
 
 export interface Paper {
@@ -299,6 +251,28 @@ export interface Paper {
     updatedAt: string;
     addedBy?: string;
 }
+
+export const libraryApi = {
+    list: () => apiRequest<Paper[]>('/api/library'),
+    get: (id: string) => apiRequest<Paper>(`/api/library/${id}`),
+    create: (data: Partial<Paper>) =>
+        apiRequest<Paper>('/api/library', {
+            method: 'POST',
+            body: JSON.stringify({
+                ...data,
+                abstract_: data.abstract, // Map abstract to abstract_
+            }),
+        }),
+    update: (id: string, data: Partial<Paper>) =>
+        apiRequest<Paper>(`/api/library/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify(data),
+        }),
+    delete: (id: string) =>
+        apiRequest<void>(`/api/library/${id}`, {
+            method: 'DELETE',
+        }),
+};
 
 // ============================================
 // Health Check

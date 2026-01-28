@@ -22,7 +22,7 @@ export default function App() {
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "freezer", label: "Freezer", icon: Refrigerator },
-  { id: "notebooks", label: "Notebooks", icon: SquareLibrary },
+  { id: "library", label: "Library", icon: SquareLibrary },
   { id: "experiments", label: "Experiments", icon: FlaskConical },
   { id: "insight", label: "Insight", icon: ChartScatter },
   { id: "equipment", label: 'Equipment', icon: Microscope },
@@ -151,8 +151,7 @@ function AppContent() {
           <div className="max-w-7xl mx-auto w-full animate-fade-in">
             {activeTab === "dashboard" && <DashboardView />}
             {activeTab === "freezer" && <InventoryPage />}
-            {activeTab === "notebooks" && <NotebookPage />}
-            {activeTab === "library" && <LibraryView />}
+            {activeTab === "library" && <LibraryPage />}
             {activeTab === "experiments" && <ExperimentsView />}
             {activeTab === "insight" && <InsightView />}
             {activeTab === "equipment" && <EquipmentPage />}
@@ -186,7 +185,8 @@ const Button = ({ children, variant = "primary", className = "", ...props }: any
 };
 
 import { InventoryPage } from "./features/inventory/InventoryPage";
-import { NotebookPage } from "./features/notebooks/NotebookPage";
+import { LibraryPage } from "./features/library/LibraryPage";
+import { ExperimentsPage } from "./features/experiments/ExperimentsPage";
 import { EquipmentPage } from "./features/equipment/EquipmentPage";
 
 // ... existing imports
@@ -237,27 +237,8 @@ function DashboardView() {
   );
 }
 
-function LibraryView() {
-  return (
-    <div>
-      Books
-    </div>
-  )
-}
-
 function ExperimentsView() {
-  return (
-    <div className="h-full flex flex-col items-center justify-center min-h-[400px]">
-      <div className="text-center max-w-md animate-slide-in-from-bottom">
-        <div className="w-20 h-20 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-white/5 shadow-inner">
-          <FlaskConical size={32} className="text-brand-primary" />
-        </div>
-        <h3 className="text-2xl font-bold mb-2">No experiments</h3>
-        <p className="text-white/50 mb-8">Create your first experiment to start tracking your work and gathering data.</p>
-        <Button className="w-full justify-center">New Experiment</Button>
-      </div>
-    </div>
-  );
+  return <ExperimentsPage />;
 }
 
 function InsightView() {
