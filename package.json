@@ -1,7 +1,7 @@
 {
   "name": "openbio",
   "private": true,
-  "version": "0.1.164",
+  "version": "0.1.165",
   "repository": {
     "url": "https://github.com/OpenBio-OS/Laboratory-Information-Management-System"
   },

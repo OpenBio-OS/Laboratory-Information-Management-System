@@ -1,6 +1,6 @@
 [package]
 name = "openbio"
-version = "0.1.164"
+version = "0.1.165"
 description = "Laboratory Information Management System"
 authors = ["OpenBio-OS"]
 edition = "2021"
@@ -35,4 +35,3 @@ openbio-core = { path = "../crates/openbio-core" }
 # Logging
 tracing = "0.1"
 tracing-subscriber = "0.3"
-
