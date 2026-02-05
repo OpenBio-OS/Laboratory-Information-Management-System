@@ -480,7 +480,10 @@ export function LibraryPage() {
   };
 
   const filteredPapers = papers.filter((paper) => {
-    const matchesCollection = selectedCollection === null || paper.libraryId === selectedCollection;
+    // Strict isolation: "Unfiled" view shows only papers with NO libraryId.
+    const matchesCollection = selectedCollection === null
+      ? !paper.libraryId
+      : paper.libraryId === selectedCollection;
     const matchesSearch = searchQuery === "" ||
       paper.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       paper.authors?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -499,7 +502,7 @@ export function LibraryPage() {
   // Get current collection name for breadcrumb
   const currentCollectionName = selectedCollection
     ? collections.find(c => c.id === selectedCollection)?.name
-    : 'All Papers';
+    : 'Library';
 
   // Handle notes update with auto-save
   const handleNotesChange = async (newContent: string) => {
@@ -523,34 +526,19 @@ export function LibraryPage() {
   const handleDeletePaper = async () => {
     if (!selectedPaper) return;
 
-    // Logic: If in a collection, remove from collection (unassign).
-    // If in "All Papers" (no collection selected), DELETE permanently.
-
-    const isPermanentDelete = !selectedCollection;
-    const confirmMessage = isPermanentDelete
-      ? "Are you sure you want to PERMANENTLY delete this paper? This action cannot be undone."
-      : "Remove this paper from the current collection?";
-
-    if (!confirm(confirmMessage)) return;
+    // Strict Delete: Always delete permanently from database, regardless of view.
+    if (!confirm("Are you sure you want to PERMANENTLY delete this paper? This action cannot be undone.")) return;
 
     try {
-      if (isPermanentDelete) {
-        await libraryApi.delete(selectedPaper.id);
-        setPapers(prev => prev.filter(p => p.id !== selectedPaper.id));
-        setSelectedPaper(null);
-      } else {
-        // Remove from collection -> Set library_id to empty string (which backend handles as null)
-        await libraryApi.update(selectedPaper.id, { library_id: "" });
-
-        // Update local state: The paper still exists, but its libraryId is now null.
-        // If we remain in the current collection view, it should disappear from the list.
-        setPapers(prev => prev.map(p => p.id === selectedPaper.id ? { ...p, libraryId: undefined } : p));
-
-        // If we want to kick the user back to the list since the paper is "gone" from this view:
-        setSelectedPaper(null);
-      }
+      await libraryApi.delete(selectedPaper.id);
+      setPapers(prev => prev.filter(p => p.id !== selectedPaper.id));
+      setSelectedPaper(null);
     } catch (err) {
-      console.error("Failed to delete/remove paper:", err);
+      console.error("Failed to delete paper:", err);
+      alert(`Failed to delete paper: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      // Ensure local state matches server state
+      loadData();
     }
   };
 
@@ -661,10 +649,10 @@ export function LibraryPage() {
               <button
                 onClick={handleDeletePaper}
                 className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20 rounded-lg text-sm font-medium transition-colors"
-                title={selectedCollection ? "Remove from collection" : "Perform permanent delete"}
+                title="Permanently delete paper"
               >
                 <Trash size={16} />
-                {selectedCollection ? "Remove" : "Delete"}
+                Delete
               </button>
             </div>
           )}
@@ -678,17 +666,10 @@ export function LibraryPage() {
             {/* Sidebar */}
             <div className="w-64 bg-black/20 border-r border-white/5 p-4 overflow-y-auto flex-shrink-0">
               <div className="space-y-1">
-                <button
-                  onClick={() => setSelectedCollection(null)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${selectedCollection === null ? "bg-brand-primary/20 text-brand-primary" : "text-white/70 hover:bg-white/5"}`}
-                >
-                  <FileText size={16} />
-                  <span className="flex-1 text-left">All Papers</span>
-                  <span className="text-xs text-white/40">{papers.length}</span>
-                </button>
+                {/* Unfiled papers view hidden */}
               </div>
 
-              <div className="mt-6">
+              <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-white/40 uppercase tracking-wide">Collections</span>
                   <button
@@ -708,11 +689,11 @@ export function LibraryPage() {
                       >
                         <div className="w-3 h-3 rounded" style={{ backgroundColor: collection.color || "#17b978" }} />
                         <span className="flex-1 text-left truncate">{collection.name}</span>
-                        <span className="text-xs text-white/40">{papers.filter((p) => p.libraryId === collection.id).length}</span>
+                        <span className="text-xs text-white/40 mr-2">{papers.filter((p) => p.libraryId === collection.id).length}</span>
                       </button>
                       <button
                         onClick={() => handleDeleteCollection(collection.id)}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-white/30 hover:text-red-400 transition-all"
+                        className="opacity-0 group-hover:opacity-100 p-1 text-white/30 hover:text-red-400 transition-all ml-3"
                       >
                         <X size={14} />
                       </button>
@@ -727,71 +708,81 @@ export function LibraryPage() {
 
             {/* Papers List */}
             <div className="flex-1 overflow-auto p-6">
-              <div className="max-w-4xl mx-auto">
-                {isLoading ? (
-                  <div className="flex items-center justify-center h-64">
-                    <div className="w-8 h-8 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
+              {selectedCollection === null ? (
+                <div className="h-full flex flex-col items-center justify-center text-white/30">
+                  <div className="w-16 h-16 mb-4 rounded-xl bg-white/5 flex items-center justify-center">
+                    <FileText size={32} className="opacity-50" />
                   </div>
-                ) : sortedPapers.length === 0 ? (
-                  <div className="text-center py-24">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
-                      <FileText size={32} className="text-white/20" />
+                  <p className="text-lg font-medium">Select a collection</p>
+                  <p className="text-sm">Choose a collection from the sidebar to view papers</p>
+                </div>
+              ) : (
+                <div className="max-w-4xl mx-auto">
+                  {isLoading ? (
+                    <div className="flex items-center justify-center h-64">
+                      <div className="w-8 h-8 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
                     </div>
-                    <h3 className="text-lg font-semibold text-white mb-2">No papers yet</h3>
-                    <p className="text-white/40 text-sm mb-6">Add your first paper to get started</p>
-                    <button
-                      onClick={() => setShowAddModal(true)}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors"
-                    >
-                      <Plus size={16} />
-                      Add Paper
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {sortedPapers.map((paper) => (
-                      <div
-                        key={paper.id}
-                        onClick={() => setSelectedPaper(paper)}
-                        className="bg-surface/50 hover:bg-neutral-900/80 border border-white/10 hover:border-brand-primary/30 rounded-xl p-5 cursor-pointer transition-colors"
+                  ) : sortedPapers.length === 0 ? (
+                    <div className="text-center py-24">
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
+                        <FileText size={32} className="text-white/20" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-white mb-2">No papers yet</h3>
+                      <p className="text-white/40 text-sm mb-6">Add your first paper to get started</p>
+                      <button
+                        onClick={() => setShowAddModal(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors"
                       >
-                        <div className="flex items-start gap-4">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleTogglePin(paper.id, !paper.isPinned);
-                            }}
-                            className={`mt-1 transition-colors ${paper.isPinned ? "text-brand-primary" : "text-white/20 hover:text-white/50"}`}
-                          >
-                            <Pin size={16} className={paper.isPinned ? "fill-current" : ""} />
-                          </button>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-base font-semibold text-white mb-1 line-clamp-2">{paper.title}</h3>
-                            {paper.authors && (
-                              <p className="text-sm text-white/60 mb-2 line-clamp-1">{paper.authors}</p>
-                            )}
-                            <div className="flex items-center gap-3 text-xs text-white/40">
-                              {paper.journal && <span className="px-2 py-0.5 bg-white/5 rounded">{paper.journal}</span>}
-                              {paper.year && <span>{paper.year}</span>}
-                              {paper.doi && (
-                                <a
-                                  href={`https://doi.org/${paper.doi}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="text-brand-primary hover:underline flex items-center gap-1"
-                                >
-                                  DOI <ExternalLink size={10} />
-                                </a>
+                        <Plus size={16} />
+                        Add Paper
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {sortedPapers.map((paper) => (
+                        <div
+                          key={paper.id}
+                          onClick={() => setSelectedPaper(paper)}
+                          className="bg-surface/50 hover:bg-neutral-900/80 border border-white/10 hover:border-brand-primary/30 rounded-xl p-5 cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-start gap-4">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTogglePin(paper.id, !paper.isPinned);
+                              }}
+                              className={`mt-1 transition-colors ${paper.isPinned ? "text-brand-primary" : "text-white/20 hover:text-white/50"}`}
+                            >
+                              <Pin size={16} className={paper.isPinned ? "fill-current" : ""} />
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-base font-semibold text-white mb-1 line-clamp-2">{paper.title}</h3>
+                              {paper.authors && (
+                                <p className="text-sm text-white/60 mb-2 line-clamp-1">{paper.authors}</p>
                               )}
+                              <div className="flex items-center gap-3 text-xs text-white/40">
+                                {paper.journal && <span className="px-2 py-0.5 bg-white/5 rounded">{paper.journal}</span>}
+                                {paper.year && <span>{paper.year}</span>}
+                                {paper.doi && (
+                                  <a
+                                    href={`https://doi.org/${paper.doi}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-brand-primary hover:underline flex items-center gap-1"
+                                  >
+                                    DOI <ExternalLink size={10} />
+                                  </a>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </>
         ) : (
