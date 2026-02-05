@@ -72,53 +72,71 @@ model Container {
 
 /// Equipment/Instrument in the lab
 model Equipment {
-  id         String  @id @default(cuid())
-  externalId String? @unique // QR code
-  name       String
-  type       String // e.g., "sequencer", "microscope", "centrifuge", "pcr_machine"
-  model      String?
+  id           String  @id @default(cuid())
+  externalId   String? @unique // QR code
+  name         String
+  type         String // e.g., "sequencer", "microscope", "centrifuge", "pcr_machine"
+  model        String?
   serialNumber String?
 
   // Location
   location String?
 
   // Import settings (for openbio-agent integration)
-  watchFolder   String? // Folder path that agent monitors for new files
-  autoImport    Boolean @default(false) // Whether auto-import is enabled
-  agentStatus   String  @default("OFFLINE") // OFFLINE, ONLINE, LOCKED
-  lastSyncAt    DateTime?
+  watchFolder String? // Folder path that agent monitors for new files
+  autoImport  Boolean   @default(false) // Whether auto-import is enabled
+  agentStatus String    @default("OFFLINE") // OFFLINE, ONLINE, LOCKED
+  lastSyncAt  DateTime?
 
   // Scheduling (for booking experiments)
   bookings Experiment[]
 
   // Metadata
-  metadata  String? // Free-form JSON for equipment-specific settings
-  
+  metadata String? // Free-form JSON for equipment-specific settings
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Personal library/collection for organizing papers
+model Library {
+  id          String  @id @default(cuid())
+  name        String // e.g., "John", "Thesis Papers", "Methods"
+  description String?
+  color       String? // For UI styling, e.g., "#6366f1"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  papers Paper[]
 }
 
 /// Research paper/reference in the library
 model Paper {
   id    String @id @default(cuid())
   title String
-  
+
   // Citation info
-  authors      String? // Comma-separated or JSON array
-  journal      String?
-  year         Int?
-  doi          String? @unique
-  pmid         String? // PubMed ID
-  url          String?
-  
+  authors String? // Comma-separated or JSON array
+  journal String?
+  year    Int?
+  doi     String? @unique
+  pmid    String? // PubMed ID
+  url     String?
+
   // Content
-  abstract     String?
-  notes        String? // User's notes about the paper
-  pdfPath      String? // Local path or S3 key to PDF
-  
+  abstract String?
+  notes    String? // User's notes about the paper (rich text HTML)
+  pdfPath  String? // Local path or S3 key to PDF
+
   // Tags/Categories
-  tags         String? // JSON array of tags
-  
+  tags String? // JSON array of tags
+
+  // Organization
+  isPinned  Boolean  @default(false)
+  libraryId String?
+  library   Library? @relation(fields: [libraryId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   addedBy   String?

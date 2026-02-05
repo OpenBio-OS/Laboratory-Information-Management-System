@@ -1,15 +1,21 @@
 //! API route handlers
-
+use crate::db::prisma::{
+    self, container, experiment, experiment_entry, experiment_mention, library, paper, sample,
+};
+use crate::AppState;
 use axum::{
-    extract::{Path, State},
+    body::Body,
+    extract::{Multipart, Path, Query, State},
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-
-use crate::db::prisma::{container, experiment, experiment_entry, experiment_mention, sample, paper};
-use crate::AppState;
-
+use serde_json;
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
 /// Health check response
 #[derive(Serialize)]
 pub struct HealthResponse {
@@ -32,6 +38,8 @@ pub fn api_routes() -> Router<AppState> {
         .nest("/inventory", inventory_routes())
         // Experiments routes (experiments ARE the notebooks)
         .nest("/experiments", experiment_routes())
+        // Collections routes (for organizing papers)
+        .nest("/collections", collection_routes())
         // Library routes (papers)
         .nest("/library", library_routes())
 }
@@ -39,7 +47,10 @@ pub fn api_routes() -> Router<AppState> {
 fn inventory_routes() -> Router<AppState> {
     Router::new()
         .route("/samples", get(list_samples).post(create_sample))
-        .route("/samples/{id}", axum::routing::delete(delete_sample).patch(update_sample))
+        .route(
+            "/samples/{id}",
+            axum::routing::delete(delete_sample).patch(update_sample),
+        )
         .route("/containers", get(list_containers).post(create_container))
         .route("/containers/{id}", axum::routing::delete(delete_container))
 }
@@ -47,16 +58,43 @@ fn inventory_routes() -> Router<AppState> {
 fn experiment_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_experiments).post(create_experiment))
-        .route("/{id}", get(get_experiment).patch(update_experiment).delete(delete_experiment))
-        .route("/{id}/entries", get(list_experiment_entries).post(create_experiment_entry))
-        .route("/{id}/mentions", get(list_experiment_mentions).post(create_experiment_mention))
+        .route(
+            "/{id}",
+            get(get_experiment)
+                .patch(update_experiment)
+                .delete(delete_experiment),
+        )
+        .route(
+            "/{id}/entries",
+            get(list_experiment_entries).post(create_experiment_entry),
+        )
+        .route(
+            "/{id}/mentions",
+            get(list_experiment_mentions).post(create_experiment_mention),
+        )
         .route("/search-entities", get(search_entities))
+}
+
+fn collection_routes() -> Router<AppState> {
+    Router::new()
+        .route("/", get(list_collections).post(create_collection))
+        .route(
+            "/{id}",
+            get(get_collection)
+                .patch(update_collection)
+                .delete(delete_collection),
+        )
 }
 
 fn library_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_papers).post(create_paper))
-        .route("/{id}", get(get_paper).patch(update_paper).delete(delete_paper))
+        .route("/lookup-doi", get(lookup_doi))
+        .route(
+            "/{id}",
+            get(get_paper).patch(update_paper).delete(delete_paper),
+        )
+        .route("/{id}/pdf", get(get_paper_pdf).post(upload_paper_pdf))
 }
 
 // ==========================================
@@ -147,10 +185,7 @@ async fn update_sample(
     Json(sample)
 }
 
-async fn delete_sample(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Json<()> {
+async fn delete_sample(State(state): State<AppState>, Path(id): Path<String>) -> Json<()> {
     state
         .db
         .sample()
@@ -211,10 +246,7 @@ async fn create_container(
     Json(container)
 }
 
-async fn delete_container(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Json<()> {
+async fn delete_container(State(state): State<AppState>, Path(id): Path<String>) -> Json<()> {
     state
         .db
         .container()
@@ -253,15 +285,15 @@ async fn create_experiment(
     Json(payload): Json<CreateExperimentRequest>,
 ) -> Json<experiment::Data> {
     let mut params: Vec<experiment::SetParam> = vec![];
-    
+
     if let Some(description) = payload.description {
         params.push(experiment::description::set(Some(description)));
     }
-    
+
     if let Some(content) = payload.content {
         params.push(experiment::content::set(content));
     }
-    
+
     if let Some(status) = payload.status {
         params.push(experiment::status::set(status));
     }
@@ -308,19 +340,19 @@ async fn update_experiment(
     Json(payload): Json<UpdateExperimentRequest>,
 ) -> Json<experiment::Data> {
     let mut params: Vec<experiment::SetParam> = vec![];
-    
+
     if let Some(name) = payload.name {
         params.push(experiment::name::set(name));
     }
-    
+
     if let Some(content) = payload.content {
         params.push(experiment::content::set(content));
     }
-    
+
     if let Some(description) = payload.description {
         params.push(experiment::description::set(Some(description)));
     }
-    
+
     if let Some(status) = payload.status {
         params.push(experiment::status::set(status));
     }
@@ -335,10 +367,7 @@ async fn update_experiment(
     Json(experiment)
 }
 
-async fn delete_experiment(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Json<()> {
+async fn delete_experiment(State(state): State<AppState>, Path(id): Path<String>) -> Json<()> {
     state
         .db
         .experiment()
@@ -377,11 +406,11 @@ async fn create_experiment_entry(
     Json(payload): Json<CreateExperimentEntryRequest>,
 ) -> Json<experiment_entry::Data> {
     let mut params: Vec<experiment_entry::SetParam> = vec![];
-    
+
     if let Some(author) = payload.author {
         params.push(experiment_entry::author::set(Some(author)));
     }
-    
+
     if let Some(asset_id) = payload.attached_asset_id {
         params.push(experiment_entry::attached_asset_id::set(Some(asset_id)));
     }
@@ -416,7 +445,9 @@ async fn list_experiment_mentions(
     let mentions = state
         .db
         .experiment_mention()
-        .find_many(vec![experiment_mention::experiment_id::equals(experiment_id)])
+        .find_many(vec![experiment_mention::experiment_id::equals(
+            experiment_id,
+        )])
         .exec()
         .await
         .unwrap_or_default();
@@ -429,7 +460,7 @@ async fn create_experiment_mention(
     Json(payload): Json<CreateExperimentMentionRequest>,
 ) -> Json<experiment_mention::Data> {
     let mut params: Vec<experiment_mention::SetParam> = vec![];
-    
+
     if let Some(position) = payload.position {
         params.push(experiment_mention::position::set(Some(position)));
     }
@@ -459,13 +490,17 @@ pub struct SearchResult {
     pub metadata: Option<serde_json::Value>,
 }
 
-async fn search_entities(
-    State(state): State<AppState>,
-) -> Json<Vec<SearchResult>> {
+async fn search_entities(State(state): State<AppState>) -> Json<Vec<SearchResult>> {
     let mut results: Vec<SearchResult> = vec![];
-    
+
     // Search samples
-    let samples = state.db.sample().find_many(vec![]).exec().await.unwrap_or_default();
+    let samples = state
+        .db
+        .sample()
+        .find_many(vec![])
+        .exec()
+        .await
+        .unwrap_or_default();
     for sample in samples {
         results.push(SearchResult {
             entity_type: "sample".to_string(),
@@ -474,9 +509,15 @@ async fn search_entities(
             metadata: sample.metadata.and_then(|m| serde_json::from_str(&m).ok()),
         });
     }
-    
+
     // Search equipment
-    let equipment_list = state.db.equipment().find_many(vec![]).exec().await.unwrap_or_default();
+    let equipment_list = state
+        .db
+        .equipment()
+        .find_many(vec![])
+        .exec()
+        .await
+        .unwrap_or_default();
     for equip in equipment_list {
         results.push(SearchResult {
             entity_type: "equipment".to_string(),
@@ -485,9 +526,15 @@ async fn search_entities(
             metadata: equip.metadata.and_then(|m| serde_json::from_str(&m).ok()),
         });
     }
-    
+
     // Search papers
-    let papers = state.db.paper().find_many(vec![]).exec().await.unwrap_or_default();
+    let papers = state
+        .db
+        .paper()
+        .find_many(vec![])
+        .exec()
+        .await
+        .unwrap_or_default();
     for paper in papers {
         results.push(SearchResult {
             entity_type: "paper".to_string(),
@@ -500,7 +547,7 @@ async fn search_entities(
             })),
         });
     }
-    
+
     Json(results)
 }
 
@@ -521,6 +568,7 @@ pub struct CreatePaperRequest {
     pub notes: Option<String>,
     pub pdf_path: Option<String>,
     pub tags: Option<String>,
+    pub library_id: Option<String>,
 }
 
 async fn list_papers(State(state): State<AppState>) -> Json<Vec<paper::Data>> {
@@ -539,45 +587,49 @@ async fn create_paper(
     Json(payload): Json<CreatePaperRequest>,
 ) -> Json<paper::Data> {
     let mut params: Vec<paper::SetParam> = vec![];
-    
+
     if let Some(authors) = payload.authors {
         params.push(paper::authors::set(Some(authors)));
     }
-    
+
     if let Some(journal) = payload.journal {
         params.push(paper::journal::set(Some(journal)));
     }
-    
+
     if let Some(year) = payload.year {
         params.push(paper::year::set(Some(year)));
     }
-    
+
     if let Some(doi) = payload.doi {
         params.push(paper::doi::set(Some(doi)));
     }
-    
+
     if let Some(pmid) = payload.pmid {
         params.push(paper::pmid::set(Some(pmid)));
     }
-    
+
     if let Some(url) = payload.url {
         params.push(paper::url::set(Some(url)));
     }
-    
+
     if let Some(abstract_) = payload.abstract_ {
         params.push(paper::r#abstract::set(Some(abstract_)));
     }
-    
+
     if let Some(notes) = payload.notes {
         params.push(paper::notes::set(Some(notes)));
     }
-    
+
     if let Some(pdf_path) = payload.pdf_path {
         params.push(paper::pdf_path::set(Some(pdf_path)));
     }
-    
+
     if let Some(tags) = payload.tags {
         params.push(paper::tags::set(Some(tags)));
+    }
+
+    if let Some(library_id) = payload.library_id {
+        params.push(paper::library_id::set(Some(library_id)));
     }
 
     let paper = state
@@ -610,6 +662,8 @@ pub struct UpdatePaperRequest {
     pub title: Option<String>,
     pub notes: Option<String>,
     pub tags: Option<String>,
+    pub is_pinned: Option<bool>,
+    pub library_id: Option<String>,
 }
 
 async fn update_paper(
@@ -618,17 +672,29 @@ async fn update_paper(
     Json(payload): Json<UpdatePaperRequest>,
 ) -> Json<paper::Data> {
     let mut params: Vec<paper::SetParam> = vec![];
-    
+
     if let Some(title) = payload.title {
         params.push(paper::title::set(title));
     }
-    
+
     if let Some(notes) = payload.notes {
         params.push(paper::notes::set(Some(notes)));
     }
-    
+
     if let Some(tags) = payload.tags {
         params.push(paper::tags::set(Some(tags)));
+    }
+
+    if let Some(is_pinned) = payload.is_pinned {
+        params.push(paper::is_pinned::set(is_pinned));
+    }
+
+    if let Some(library_id) = payload.library_id {
+        if library_id.is_empty() {
+            params.push(paper::library_id::set(None));
+        } else {
+            params.push(paper::library_id::set(Some(library_id)));
+        }
     }
 
     let paper = state
@@ -641,10 +707,7 @@ async fn update_paper(
     Json(paper)
 }
 
-async fn delete_paper(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Json<()> {
+async fn delete_paper(State(state): State<AppState>, Path(id): Path<String>) -> Json<()> {
     state
         .db
         .paper()
@@ -654,3 +717,338 @@ async fn delete_paper(
         .expect("Failed to delete paper");
     Json(())
 }
+
+// ==========================================
+// Collection Handlers
+// ==========================================
+
+#[derive(Deserialize)]
+pub struct CreateCollectionRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub color: Option<String>,
+}
+
+async fn list_collections(State(state): State<AppState>) -> Json<Vec<library::Data>> {
+    let collections = state
+        .db
+        .library()
+        .find_many(vec![])
+        .with(library::papers::fetch(vec![]))
+        .exec()
+        .await
+        .unwrap_or_default();
+    Json(collections)
+}
+
+async fn create_collection(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateCollectionRequest>,
+) -> Json<library::Data> {
+    let mut params: Vec<library::SetParam> = vec![];
+
+    if let Some(description) = payload.description {
+        params.push(library::description::set(Some(description)));
+    }
+
+    if let Some(color) = payload.color {
+        params.push(library::color::set(Some(color)));
+    }
+
+    let collection = state
+        .db
+        .library()
+        .create(payload.name, params)
+        .exec()
+        .await
+        .expect("Failed to create collection");
+    Json(collection)
+}
+
+async fn get_collection(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<Option<library::Data>> {
+    let collection = state
+        .db
+        .library()
+        .find_unique(library::id::equals(id))
+        .with(library::papers::fetch(vec![]))
+        .exec()
+        .await
+        .ok()
+        .flatten();
+    Json(collection)
+}
+
+#[derive(Deserialize)]
+pub struct UpdateCollectionRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub color: Option<String>,
+}
+
+async fn update_collection(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateCollectionRequest>,
+) -> Json<library::Data> {
+    let mut params: Vec<library::SetParam> = vec![];
+
+    if let Some(name) = payload.name {
+        params.push(library::name::set(name));
+    }
+
+    if let Some(description) = payload.description {
+        params.push(library::description::set(Some(description)));
+    }
+
+    if let Some(color) = payload.color {
+        params.push(library::color::set(Some(color)));
+    }
+
+    let collection = state
+        .db
+        .library()
+        .update(library::id::equals(id), params)
+        .exec()
+        .await
+        .expect("Failed to update collection");
+    Json(collection)
+}
+
+async fn delete_collection(State(state): State<AppState>, Path(id): Path<String>) -> Json<()> {
+    state
+        .db
+        .library()
+        .delete(library::id::equals(id))
+        .exec()
+        .await
+        .expect("Failed to delete collection");
+    Json(())
+}
+
+// ==========================================
+// DOI Lookup Handler
+// ==========================================
+
+#[derive(Deserialize)]
+pub struct DoiLookupQuery {
+    pub doi: String,
+}
+
+#[derive(Serialize)]
+pub struct DoiLookupResponse {
+    pub title: Option<String>,
+    pub authors: Option<String>,
+    pub journal: Option<String>,
+    pub year: Option<i32>,
+    pub r#abstract: Option<String>,
+    pub url: Option<String>,
+}
+
+async fn lookup_doi(Query(query): Query<DoiLookupQuery>) -> Json<DoiLookupResponse> {
+    // Use CrossRef API to lookup DOI metadata
+    let client = reqwest::Client::new();
+    let url = format!("https://api.crossref.org/works/{}", query.doi);
+
+    match client.get(&url).send().await {
+        Ok(response) => {
+            if let Ok(json) = response.json::<serde_json::Value>().await {
+                let message = json.get("message");
+
+                let title = message
+                    .and_then(|m| m.get("title"))
+                    .and_then(|t| t.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.to_string());
+
+                let authors = message
+                    .and_then(|m| m.get("author"))
+                    .and_then(|a| a.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|author| {
+                                let given =
+                                    author.get("given").and_then(|g| g.as_str()).unwrap_or("");
+                                let family =
+                                    author.get("family").and_then(|f| f.as_str()).unwrap_or("");
+                                if family.is_empty() {
+                                    None
+                                } else {
+                                    Some(format!("{} {}", given, family).trim().to_string())
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    });
+
+                let journal = message
+                    .and_then(|m| m.get("container-title"))
+                    .and_then(|t| t.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.to_string());
+
+                let year = message
+                    .and_then(|m| {
+                        m.get("published-print")
+                            .or_else(|| m.get("published-online"))
+                    })
+                    .and_then(|p| p.get("date-parts"))
+                    .and_then(|d| d.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|inner| inner.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|y| y.as_i64())
+                    .map(|y| y as i32);
+
+                let abstract_text = message
+                    .and_then(|m| m.get("abstract"))
+                    .and_then(|a| a.as_str())
+                    .map(|s| {
+                        // Remove JATS XML tags from abstract
+                        let re = regex::Regex::new(r"<[^>]+>").unwrap();
+                        re.replace_all(s, "").to_string()
+                    });
+
+                let url = Some(format!("https://doi.org/{}", query.doi));
+
+                Json(DoiLookupResponse {
+                    title,
+                    authors,
+                    journal,
+                    year,
+                    r#abstract: abstract_text,
+                    url,
+                })
+            } else {
+                Json(DoiLookupResponse {
+                    title: None,
+                    authors: None,
+                    journal: None,
+                    year: None,
+                    r#abstract: None,
+                    url: None,
+                })
+            }
+        }
+        Err(_) => Json(DoiLookupResponse {
+            title: None,
+            authors: None,
+            journal: None,
+            year: None,
+            r#abstract: None,
+            url: None,
+        }),
+    }
+}
+
+// ==========================================
+// PDF Upload/Download Handlers
+// ==========================================
+
+async fn upload_paper_pdf(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    mut multipart: Multipart,
+) -> Result<Json<paper::Data>, (StatusCode, String)> {
+    // 1. Find the paper to ensure it exists
+    let _paper = state
+        .db
+        .paper()
+        .find_unique(paper::id::equals(id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Paper not found".to_string()))?;
+
+    // 2. Process multipart form
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+    {
+        let name = field.name().unwrap_or("").to_string();
+        
+        if name == "file" {
+            let file_name = field.file_name().unwrap_or("paper.pdf").to_string();
+            let data = field
+                .bytes()
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+            // 3. Define storage path
+            // Using a 'storage/papers' directory relative to CWD
+            let storage_dir = PathBuf::from("storage").join("papers");
+            fs::create_dir_all(&storage_dir)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create storage dir: {}", e)))?;
+
+            let target_filename = format!("{}_{}", id, file_name);
+            let target_path = storage_dir.join(&target_filename);
+
+            // 4. Save file
+            let mut file = fs::File::create(&target_path)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create file: {}", e)))?;
+            file.write_all(&data)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write file: {}", e)))?;
+
+            // 5. Update DB with path
+            let stored_path = target_path.to_string_lossy().to_string();
+
+            let updated_paper = state
+                .db
+                .paper()
+                .update(
+                    paper::id::equals(id),
+                    vec![paper::pdf_path::set(Some(stored_path))],
+                )
+                .exec()
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+            return Ok(Json(updated_paper));
+        }
+    }
+
+    Err((StatusCode::BAD_REQUEST, "No file field found in multipart request".to_string()))
+}
+
+async fn get_paper_pdf(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let paper = state
+        .db
+        .paper()
+        .find_unique(paper::id::equals(id))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Paper not found".to_string()))?;
+
+    let pdf_path_str = paper.pdf_path.ok_or((StatusCode::NOT_FOUND, "No PDF uploaded for this paper".to_string()))?;
+    let path = PathBuf::from(pdf_path_str);
+
+    if !path.exists() {
+        return Err((StatusCode::NOT_FOUND, "PDF file not found on server".to_string()));
+    }
+
+    // Read file
+    let file_bytes = fs::read(&path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read file: {}", e)))?;
+
+    let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    
+    // Serve file
+    let body = Body::from(file_bytes);
+    let headers = [
+        (header::CONTENT_TYPE, "application/pdf".to_string()),
+        (header::CONTENT_DISPOSITION, format!("inline; filename=\"{}\"", filename)),
+    ];
+
+    Ok((headers, body))
+}
+
+// DOI Lookup Handler (re-adding if it was missing or just for context)

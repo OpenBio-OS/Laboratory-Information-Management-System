@@ -45,26 +45,26 @@ export function InventoryPage() {
 
   // Global search across ALL samples (ignores selected container)
   const filteredSamples = searchQuery
-    ? samples.filter(s => 
-        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (s.metadata && s.metadata.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
+    ? samples.filter(s =>
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.metadata && s.metadata.toLowerCase().includes(searchQuery.toLowerCase()))
+    )
     : displayedSamples;
 
   // Helper to get full location path for a sample
   const getLocationPath = (sample: typeof samples[0]): string => {
     if (!sample.containerId) return 'Unassigned';
-    
+
     const path: string[] = [];
     let currentId: string | undefined = sample.containerId;
-    
+
     while (currentId) {
       const container = containers.find(c => c.id === currentId);
       if (!container) break;
       path.unshift(container.name);
       currentId = container.parentId || undefined;
     }
-    
+
     return path.join(' → ') + (sample.slotPosition ? ` → ${sample.slotPosition}` : '');
   };
 
@@ -98,7 +98,7 @@ export function InventoryPage() {
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="h-16 flex items-center justify-between px-6 border-b border-white/5 bg-surface/30 backdrop-blur-md">
-        <h2 className="text-lg font-semibold text-white">Freezer Inventory</h2>
+        <h2 className="text-lg font-semibold text-white">&nbsp;</h2>
 
         <div className="flex items-center gap-3">
           <div className="relative group">
@@ -120,7 +120,7 @@ export function InventoryPage() {
             )}
           </div>
 
-{/*           <button
+          {/*           <button
             onClick={() => createSampleMutation.mutate()}
             disabled={!selectedContainerId && containers.length === 0}
             className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50"
@@ -244,7 +244,7 @@ export function InventoryPage() {
 
                 <div className="flex gap-8 items-start">
                   <div className="flex-1">
-                    <BoxGrid 
+                    <BoxGrid
                       samples={filteredSamples.map(s => ({ ...s, slotPosition: s.slotPosition ?? null }))}
                       rows={selectedContainer.layoutConfig?.rows || 9}
                       cols={selectedContainer.layoutConfig?.cols || 9}
@@ -252,13 +252,13 @@ export function InventoryPage() {
                       onSlotClick={(slot) => setSelectedSlot(slot)}
                     />
                   </div>
-                  
+
                   {/* Sample Management Panel */}
                   <div className="w-96 bg-surface/30 border border-white/5 rounded-xl p-4">
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="text-sm font-medium text-white/60">Sample Management</h4>
                     </div>
-                    
+
                     {selectedSlot ? (
                       (() => {
                         const sampleInSlot = filteredSamples.find(s => s.slotPosition === selectedSlot);
@@ -272,7 +272,7 @@ export function InventoryPage() {
                                 <div className="text-sm text-white/60 mt-2 whitespace-pre-wrap">{sampleInSlot.metadata}</div>
                               )}
                             </div>
-                            
+
                             <div className="flex gap-2">
                               <button
                                 onClick={() => setEditSampleId(sampleInSlot.id)}
@@ -288,19 +288,18 @@ export function InventoryPage() {
                                 Delete
                               </button>
                             </div>
-                            
+
                             <div className="pt-4 border-t border-white/10">
                               <div className="text-xs text-white/40 mb-2">All Samples ({filteredSamples.length})</div>
                               <div className="space-y-2 h-[300px] overflow-y-auto">
                                 {filteredSamples.map(s => (
-                                  <div 
-                                    key={s.id} 
+                                  <div
+                                    key={s.id}
                                     onClick={() => setSelectedSlot(s.slotPosition || null)}
-                                    className={`p-2 rounded-lg border cursor-pointer transition-colors ${
-                                      s.id === sampleInSlot.id
-                                        ? 'bg-white/20 border-white/50 text-white'
-                                        : 'bg-white/5 border-white/5 hover:border-white/30 text-white/70'
-                                    }`}
+                                    className={`p-2 rounded-lg border cursor-pointer transition-colors ${s.id === sampleInSlot.id
+                                      ? 'bg-white/20 border-white/50 text-white'
+                                      : 'bg-white/5 border-white/5 hover:border-white/30 text-white/70'
+                                      }`}
                                   >
                                     <div className="text-sm font-medium">{s.name}</div>
                                     <div className="text-xs text-white/40">Slot: {s.slotPosition || 'Unassigned'}</div>
@@ -322,13 +321,13 @@ export function InventoryPage() {
                                 Add Sample to {selectedSlot}
                               </button>
                             </div>
-                            
+
                             <div className="pt-4 border-t border-white/10">
                               <div className="text-xs text-white/40 mb-2">All Samples ({filteredSamples.length})</div>
                               <div className="space-y-2 h-[300px] overflow-y-auto">
                                 {filteredSamples.map(s => (
-                                  <div 
-                                    key={s.id} 
+                                  <div
+                                    key={s.id}
                                     onClick={() => setSelectedSlot(s.slotPosition || null)}
                                     className="p-2 bg-white/5 rounded-lg border border-white/5 hover:border-brand-primary/30 cursor-pointer transition-colors"
                                   >
@@ -349,8 +348,8 @@ export function InventoryPage() {
                           <div className="text-xs text-white/40 mb-2">All Samples ({filteredSamples.length})</div>
                           <div className="space-y-2 h-[300px] overflow-y-auto">
                             {filteredSamples.map(s => (
-                              <div 
-                                key={s.id} 
+                              <div
+                                key={s.id}
                                 onClick={() => setSelectedSlot(s.slotPosition || null)}
                                 className="p-2 bg-white/5 rounded-lg border border-white/5 hover:border-brand-primary/30 cursor-pointer transition-colors"
                               >
@@ -376,11 +375,11 @@ export function InventoryPage() {
                     {containers.length === 0 ? 'No Storage Yet' : 'Select a Box'}
                   </h3>
                   <p className="text-white/40 text-sm">
-                    {containers.length === 0 
+                    {containers.length === 0
                       ? 'Use the tree on the left to create your first freezer and organize your inventory.'
                       : selectedContainer
-                      ? `Navigate through the tree to find a box, or add one inside ${selectedContainer.name}.`
-                      : 'Use the tree on the left to navigate to a box to manage samples.'}
+                        ? `Navigate through the tree to find a box, or add one inside ${selectedContainer.name}.`
+                        : 'Use the tree on the left to navigate to a box to manage samples.'}
                   </p>
                 </div>
               </div>

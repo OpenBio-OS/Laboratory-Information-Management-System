@@ -75,16 +75,19 @@ function TreeNode({ container, allContainers, level, selectedId, onSelect, onCre
         <Icon size={14} className={isSelected ? 'text-brand-primary' : 'text-white/50'} />
         <span className="text-sm truncate flex-1">{container.name}</span>
 
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onCreateConfirm(container.id);
-          }}
-          className="opacity-0 group-hover:opacity-100 p-1 text-white/40 hover:text-brand-primary transition-all rounded"
-          title="Add Child"
-        >
-          <Plus size={12} />
-        </button>
+        {/* Only show Add Child button if not a box (boxes are smallest unit) */}
+        {container.type !== 'box' && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCreateConfirm(container.id);
+            }}
+            className="opacity-0 group-hover:opacity-100 p-1 text-white/40 hover:text-brand-primary transition-all rounded"
+            title="Add Child"
+          >
+            <Plus size={12} />
+          </button>
+        )}
 
         <button
           onClick={(e) => {

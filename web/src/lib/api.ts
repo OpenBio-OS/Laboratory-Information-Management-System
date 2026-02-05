@@ -29,7 +29,7 @@ async function apiRequest<T>(
         const response = await fetch(url, {
             ...options,
             headers: {
-                'Content-Type': 'application/json',
+                ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
                 ...options.headers,
             },
         });
@@ -198,9 +198,9 @@ export const experimentsApi = {
         apiRequest<void>(`/api/experiments/${id}`, {
             method: 'DELETE',
         }),
-    
+
     // Entries (for equipment data import)
-    listEntries: (experimentId: string) => 
+    listEntries: (experimentId: string) =>
         apiRequest<ExperimentEntry[]>(`/api/experiments/${experimentId}/entries`),
     createEntry: (experimentId: string, data: { content: string; author?: string; attachedAssetId?: string }) =>
         apiRequest<ExperimentEntry>(`/api/experiments/${experimentId}/entries`, {
@@ -211,7 +211,7 @@ export const experimentsApi = {
                 attached_asset_id: data.attachedAssetId,
             }),
         }),
-    
+
     // Mentions (for @sample, @equipment, @paper)
     listMentions: (experimentId: string) =>
         apiRequest<ExperimentMention[]>(`/api/experiments/${experimentId}/mentions`),
@@ -225,9 +225,42 @@ export const experimentsApi = {
                 position: data.position,
             }),
         }),
-    
+
     // Search for @mentions
     searchEntities: () => apiRequest<SearchResult[]>('/api/experiments/search-entities'),
+};
+
+// ============================================
+// Library Collections API
+// ============================================
+
+export interface Library {
+    id: string;
+    name: string;
+    description?: string;
+    color?: string;
+    createdAt: string;
+    updatedAt: string;
+    papers?: Paper[];
+}
+
+export const collectionsApi = {
+    list: () => apiRequest<Library[]>('/api/collections'),
+    get: (id: string) => apiRequest<Library>(`/api/collections/${id}`),
+    create: (data: Partial<Library>) =>
+        apiRequest<Library>('/api/collections', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+    update: (id: string, data: Partial<Library>) =>
+        apiRequest<Library>(`/api/collections/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify(data),
+        }),
+    delete: (id: string) =>
+        apiRequest<void>(`/api/collections/${id}`, {
+            method: 'DELETE',
+        }),
 };
 
 // ============================================
@@ -247,9 +280,20 @@ export interface Paper {
     notes?: string;
     pdfPath?: string;
     tags?: string;
+    isPinned?: boolean;
+    libraryId?: string;
     createdAt: string;
     updatedAt: string;
     addedBy?: string;
+}
+
+export interface DoiLookupResult {
+    title?: string;
+    authors?: string;
+    journal?: string;
+    year?: number;
+    abstract?: string;
+    url?: string;
 }
 
 export const libraryApi = {
@@ -261,9 +305,10 @@ export const libraryApi = {
             body: JSON.stringify({
                 ...data,
                 abstract_: data.abstract, // Map abstract to abstract_
+                library_id: data.libraryId, // Map libraryId to library_id
             }),
         }),
-    update: (id: string, data: Partial<Paper>) =>
+    update: (id: string, data: Partial<Paper> & { is_pinned?: boolean; library_id?: string }) =>
         apiRequest<Paper>(`/api/library/${id}`, {
             method: 'PATCH',
             body: JSON.stringify(data),
@@ -272,6 +317,16 @@ export const libraryApi = {
         apiRequest<void>(`/api/library/${id}`, {
             method: 'DELETE',
         }),
+    lookupDoi: (doi: string) =>
+        apiRequest<DoiLookupResult>(`/api/library/lookup-doi?doi=${encodeURIComponent(doi)}`),
+    uploadPdf: (id: string, file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return apiRequest<Paper>(`/api/library/${id}/pdf`, {
+            method: 'POST',
+            body: formData,
+        });
+    },
 };
 
 // ============================================
