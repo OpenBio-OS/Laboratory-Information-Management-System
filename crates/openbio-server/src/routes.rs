@@ -708,6 +708,29 @@ async fn update_paper(
 }
 
 async fn delete_paper(State(state): State<AppState>, Path(id): Path<String>) -> Json<()> {
+    // First, fetch the paper to check if it has a PDF file
+    let paper_record = state
+        .db
+        .paper()
+        .find_unique(paper::id::equals(id.clone()))
+        .exec()
+        .await
+        .expect("Failed to fetch paper");
+
+    // If paper has a PDF, delete the file from disk
+    if let Some(paper_data) = &paper_record {
+        if let Some(pdf_path) = &paper_data.pdf_path {
+            let path = PathBuf::from(pdf_path);
+            if path.exists() {
+                if let Err(e) = fs::remove_file(&path) {
+                    eprintln!("Warning: Failed to delete PDF file {}: {}", pdf_path, e);
+                    // Continue with database deletion even if file deletion fails
+                }
+            }
+        }
+    }
+
+    // Delete the paper record from database
     state
         .db
         .paper()
@@ -818,6 +841,37 @@ async fn update_collection(
 }
 
 async fn delete_collection(State(state): State<AppState>, Path(id): Path<String>) -> Json<()> {
+    // First, find all papers in this collection
+    let papers_in_collection = state
+        .db
+        .paper()
+        .find_many(vec![paper::library_id::equals(Some(id.clone()))])
+        .exec()
+        .await
+        .expect("Failed to fetch papers in collection");
+
+    // Delete PDF files for all papers in this collection
+    for paper_record in &papers_in_collection {
+        if let Some(pdf_path) = &paper_record.pdf_path {
+            let path = PathBuf::from(pdf_path);
+            if path.exists() {
+                if let Err(e) = fs::remove_file(&path) {
+                    eprintln!("Warning: Failed to delete PDF file {}: {}", pdf_path, e);
+                }
+            }
+        }
+    }
+
+    // Delete all papers in this collection from database
+    state
+        .db
+        .paper()
+        .delete_many(vec![paper::library_id::equals(Some(id.clone()))])
+        .exec()
+        .await
+        .expect("Failed to delete papers in collection");
+
+    // Finally, delete the collection itself
     state
         .db
         .library()

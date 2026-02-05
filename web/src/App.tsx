@@ -147,15 +147,15 @@ function AppContent() {
           </h1>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-8 pb-8 z-10 scrollbar-hide">
-          <div className="max-w-7xl mx-auto w-full animate-fade-in">
-            {activeTab === "dashboard" && <DashboardView />}
+        <div className="flex-1 overflow-hidden z-10">
+          <div className="h-full w-full">
+            {activeTab === "dashboard" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><DashboardView /></div></div>}
             {activeTab === "freezer" && <InventoryPage />}
             {activeTab === "library" && <LibraryPage />}
-            {activeTab === "experiments" && <ExperimentsView />}
-            {activeTab === "insight" && <InsightView />}
-            {activeTab === "equipment" && <EquipmentPage />}
-            {activeTab === "settings" && <SettingsView onResetSetup={() => setNeedsSetup(true)} />}
+            {activeTab === "experiments" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><ExperimentsView /></div></div>}
+            {activeTab === "insight" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><InsightView /></div></div>}
+            {activeTab === "equipment" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><EquipmentPage /></div></div>}
+            {activeTab === "settings" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><SettingsView onResetSetup={() => setNeedsSetup(true)} /></div></div>}
           </div>
         </div>
       </main>
@@ -194,7 +194,7 @@ import { EquipmentPage } from "./features/equipment/EquipmentPage";
 // Views
 function DashboardView() {
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 px-8">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {["Samples", "Experiments", "Pipelines", "Assets"].map((label) => (
           <Card key={label} className="group">

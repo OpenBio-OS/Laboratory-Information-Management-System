@@ -7,7 +7,7 @@ import {
   collectionsApi,
   getApiBaseUrl,
 } from "../../lib/api";
-import { Plus, Search, X, Pin, ExternalLink, FileText, ChevronDown, Check, Trash, Upload } from "lucide-react";
+import { Plus, Search, X, Pin, ExternalLink, FileText, ChevronDown, Check, Trash, Upload, AlertTriangle } from "lucide-react";
 import { RichTextEditor } from "../../components/editor/RichTextEditor";
 
 // Portal-based dropdown that escapes modal overflow
@@ -294,6 +294,151 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
   );
 }
 
+interface DeleteCollectionModalProps {
+  onClose: () => void;
+  onConfirm: () => void;
+  collectionName: string;
+  paperCount: number;
+}
+
+function DeleteCollectionModal({ onClose, onConfirm, collectionName, paperCount }: DeleteCollectionModalProps) {
+  const [confirmText, setConfirmText] = useState("");
+  const isValid = confirmText.toLowerCase() === "delete";
+
+  const handleConfirm = () => {
+    if (isValid) {
+      onConfirm();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-surface border border-red-500/20 rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={20} className="text-red-400" />
+            <h3 className="text-lg font-semibold text-white">Delete Collection</h3>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
+            <p className="text-sm text-red-200">
+              <strong>Warning:</strong> This will permanently delete the collection and all {paperCount} paper{paperCount !== 1 ? 's' : ''} inside it, including their PDFs. This action cannot be undone.
+            </p>
+            <p className="text-sm text-white font-semibold mt-2">{collectionName}</p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-white/80">
+              Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">delete</span> to confirm:
+            </label>
+            <input
+              type="text"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="delete"
+              className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-lg text-white placeholder:text-white/20 focus:outline-none focus:border-red-500/50 focus:ring-1 focus:ring-red-500/50"
+              autoFocus
+            />
+          </div>
+        </div>
+
+        <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={!isValid}
+            className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Delete Collection & Papers
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface DeletePaperModalProps {
+  onClose: () => void;
+  onConfirm: () => void;
+  paperTitle: string;
+}
+
+function DeletePaperModal({ onClose, onConfirm, paperTitle }: DeletePaperModalProps) {
+  const [confirmText, setConfirmText] = useState("");
+  const isValid = confirmText.toLowerCase() === "delete";
+
+  const handleConfirm = () => {
+    if (isValid) {
+      onConfirm();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-surface border border-red-500/20 rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={20} className="text-red-400" />
+            <h3 className="text-lg font-semibold text-white">Delete Paper</h3>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
+            <p className="text-sm text-red-200">
+              <strong>Warning:</strong> This action cannot be undone. This will permanently delete:
+            </p>
+            <p className="text-sm text-white font-semibold mt-2 line-clamp-2">{paperTitle}</p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-white/80">
+              Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">delete</span> to confirm:
+            </label>
+            <input
+              type="text"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="delete"
+              className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-lg text-white placeholder:text-white/20 focus:outline-none focus:border-red-500/50 focus:ring-1 focus:ring-red-500/50"
+              autoFocus
+            />
+          </div>
+        </div>
+
+        <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={!isValid}
+            className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Delete Paper
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface CreateCollectionModalProps {
   onClose: () => void;
   onCreate: (data: { name: string; description?: string; color?: string }) => void;
@@ -385,10 +530,14 @@ export function LibraryPage() {
   const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showCollectionModal, setShowCollectionModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDeleteCollectionModal, setShowDeleteCollectionModal] = useState(false);
+  const [collectionToDelete, setCollectionToDelete] = useState<Library | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const saveTimeoutRef = useRef<number | null>(null);
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -438,6 +587,15 @@ export function LibraryPage() {
     loadData();
   }, [loadData]);
 
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleAddPaper = async (data: Partial<Paper>) => {
     try {
       const newPaper = await libraryApi.create(data);
@@ -468,14 +626,25 @@ export function LibraryPage() {
     }
   };
 
-  const handleDeleteCollection = async (id: string) => {
-    if (!confirm("Delete this collection? Papers will remain in the library.")) return;
+  const handleDeleteCollectionClick = (collection: Library) => {
+    setCollectionToDelete(collection);
+    setShowDeleteCollectionModal(true);
+  };
+
+  const handleDeleteCollection = async () => {
+    if (!collectionToDelete) return;
+
     try {
-      await collectionsApi.delete(id);
-      setCollections((prev) => prev.filter((c) => c.id !== id));
-      if (selectedCollection === id) setSelectedCollection(null);
+      await collectionsApi.delete(collectionToDelete.id);
+      // Remove papers from local state that were in this collection
+      setPapers((prev) => prev.filter((p) => p.libraryId !== collectionToDelete.id));
+      setCollections((prev) => prev.filter((c) => c.id !== collectionToDelete.id));
+      if (selectedCollection === collectionToDelete.id) setSelectedCollection(null);
+      setShowDeleteCollectionModal(false);
+      setCollectionToDelete(null);
     } catch (err) {
       console.error("Failed to delete collection:", err);
+      alert(`Failed to delete collection: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -504,35 +673,37 @@ export function LibraryPage() {
     ? collections.find(c => c.id === selectedCollection)?.name
     : 'Library';
 
-  // Handle notes update with auto-save
+  // Handle notes update with auto-save (debounced)
   const handleNotesChange = async (newContent: string) => {
     if (!selectedPaper) return;
 
-    // Optimistic update
+    // Optimistic update - immediately update UI
     setSelectedPaper({ ...selectedPaper, notes: newContent });
     setPapers(prev => prev.map(p => p.id === selectedPaper.id ? { ...p, notes: newContent } : p));
 
-    try {
-      // Debounced update (simplified: just log or rely on separate save if strict debounce needed, 
-      // but for now we trust the user won't spam type too fast or we accept frequent updates)
-      // Ideally use a debounce hook here. For this iteration, we'll update directly.
-      // In a real app, use useDebounce.
-      await libraryApi.update(selectedPaper.id, { notes: newContent });
-    } catch (err) {
-      console.error("Failed to save notes:", err);
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
+
+    // Debounce the actual save - wait 800ms after user stops typing
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await libraryApi.update(selectedPaper.id, { notes: newContent });
+      } catch (err) {
+        console.error("Failed to save notes:", err);
+      }
+    }, 800);
   };
 
   const handleDeletePaper = async () => {
     if (!selectedPaper) return;
 
-    // Strict Delete: Always delete permanently from database, regardless of view.
-    if (!confirm("Are you sure you want to PERMANENTLY delete this paper? This action cannot be undone.")) return;
-
     try {
       await libraryApi.delete(selectedPaper.id);
       setPapers(prev => prev.filter(p => p.id !== selectedPaper.id));
       setSelectedPaper(null);
+      setShowDeleteModal(false);
     } catch (err) {
       console.error("Failed to delete paper:", err);
       alert(`Failed to delete paper: ${err instanceof Error ? err.message : String(err)}`);
@@ -545,14 +716,14 @@ export function LibraryPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header with Breadcrumbs */}
-      <div className="h-16 flex items-center justify-between px-6 border-b border-white/5 bg-surface/30 backdrop-blur-md">
+      <div className="h-16 flex items-center justify-between px-6 border-b border-white/5 bg-surface/30 backdrop-blur-md flex-shrink-0">
         {/* Breadcrumb Navigation */}
         <nav className="flex items-center gap-2 text-sm">
           <button
             onClick={() => { setSelectedPaper(null); setSelectedCollection(null); }}
             className={`transition-colors ${viewMode === 'list' && !selectedCollection ? 'text-white font-medium' : 'text-white/50 hover:text-white'}`}
           >
-            Library
+            Papers
           </button>
 
           {selectedCollection && (
@@ -647,7 +818,7 @@ export function LibraryPage() {
               )}
 
               <button
-                onClick={handleDeletePaper}
+                onClick={() => setShowDeleteModal(true)}
                 className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20 rounded-lg text-sm font-medium transition-colors"
                 title="Permanently delete paper"
               >
@@ -692,7 +863,7 @@ export function LibraryPage() {
                         <span className="text-xs text-white/40 mr-2">{papers.filter((p) => p.libraryId === collection.id).length}</span>
                       </button>
                       <button
-                        onClick={() => handleDeleteCollection(collection.id)}
+                        onClick={() => handleDeleteCollectionClick(collection)}
                         className="opacity-0 group-hover:opacity-100 p-1 text-white/30 hover:text-red-400 transition-all ml-3"
                       >
                         <X size={14} />
@@ -709,7 +880,7 @@ export function LibraryPage() {
             {/* Papers List */}
             <div className="flex-1 overflow-auto p-6">
               {selectedCollection === null ? (
-                <div className="h-full flex flex-col items-center justify-center text-white/30">
+                <div className="flex flex-col items-center pt-16 text-white/30">
                   <div className="w-16 h-16 mb-4 rounded-xl bg-white/5 flex items-center justify-center">
                     <FileText size={32} className="opacity-50" />
                   </div>
@@ -724,7 +895,7 @@ export function LibraryPage() {
                     </div>
                   ) : sortedPapers.length === 0 ? (
                     <div className="text-center py-24">
-                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-white/5 flex items-center justify-center">
                         <FileText size={32} className="text-white/20" />
                       </div>
                       <h3 className="text-lg font-semibold text-white mb-2">No papers yet</h3>
@@ -852,6 +1023,24 @@ export function LibraryPage() {
       )}
       {showCollectionModal && (
         <CreateCollectionModal onClose={() => setShowCollectionModal(false)} onCreate={handleCreateCollection} />
+      )}
+      {showDeleteModal && selectedPaper && (
+        <DeletePaperModal
+          onClose={() => setShowDeleteModal(false)}
+          onConfirm={handleDeletePaper}
+          paperTitle={selectedPaper.title}
+        />
+      )}
+      {showDeleteCollectionModal && collectionToDelete && (
+        <DeleteCollectionModal
+          onClose={() => {
+            setShowDeleteCollectionModal(false);
+            setCollectionToDelete(null);
+          }}
+          onConfirm={handleDeleteCollection}
+          collectionName={collectionToDelete.name}
+          paperCount={papers.filter((p) => p.libraryId === collectionToDelete.id).length}
+        />
       )}
     </div>
   );

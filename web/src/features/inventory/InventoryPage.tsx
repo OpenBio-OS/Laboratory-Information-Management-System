@@ -97,7 +97,7 @@ export function InventoryPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="h-16 flex items-center justify-between px-6 border-b border-white/5 bg-surface/30 backdrop-blur-md">
+      <div className="h-16 flex items-center justify-between px-6 border-b border-white/5 bg-surface/30 backdrop-blur-md flex-shrink-0">
         <h2 className="text-lg font-semibold text-white">&nbsp;</h2>
 
         <div className="flex items-center gap-3">
@@ -177,7 +177,7 @@ export function InventoryPage() {
       })()}
 
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden flex min-h-[calc(95vh-144px)]">
+      <div className="flex-1 overflow-hidden flex min-h-0">
         {/* Sidebar */}
         <div className="w-82 bg-black/20 border-r border-white/5 p-4 overflow-y-auto flex-shrink-0">
           <HierarchyTree
@@ -366,22 +366,18 @@ export function InventoryPage() {
               </>
             ) : (
               /* Empty State - Prompt to use the tree */
-              <div className="h-full flex items-center justify-center">
-                <div className="text-center max-w-md">
-                  <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
-                    <LayoutGrid size={40} className="text-white/20" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">
-                    {containers.length === 0 ? 'No Storage Yet' : 'Select a Box'}
-                  </h3>
-                  <p className="text-white/40 text-sm">
-                    {containers.length === 0
-                      ? 'Use the tree on the left to create your first freezer and organize your inventory.'
-                      : selectedContainer
-                        ? `Navigate through the tree to find a box, or add one inside ${selectedContainer.name}.`
-                        : 'Use the tree on the left to navigate to a box to manage samples.'}
-                  </p>
+              <div className="flex flex-col items-center pt-16 text-white/30">
+                <div className="w-16 h-16 mb-4 rounded-xl bg-white/5 flex items-center justify-center">
+                  <LayoutGrid size={32} className="opacity-50" />
                 </div>
+                <p className="text-lg font-medium">
+                  {containers.length === 0 ? 'No Storage Yet' : 'Select a Box'}
+                </p>
+                <p className="text-sm">
+                  {containers.length === 0
+                    ? 'Use the tree on the left to create your first freezer'
+                    : 'Use the tree on the left to navigate to a box'}
+                </p>
               </div>
             )}
           </div>
