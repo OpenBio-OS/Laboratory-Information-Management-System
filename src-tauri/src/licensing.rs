@@ -91,15 +91,13 @@ impl LicenseValidator {
         // 30-day grace period for offline use
         let grace_period = chrono::Duration::days(30);
         if now > expires_utc + grace_period {
-            return Err(
-                "License expired and requires online validation".to_string(),
-            );
+            return Err("License expired and requires online validation".to_string());
         }
 
         Ok(())
     }
 
-    /// Start trial (generates offline license for 14 days)
+    /// Start trial (generates offline license for 3 months)
     pub async fn start_trial(&self, email: &str, tier: &str) -> Result<String, String> {
         let client = reqwest::Client::new();
         let response = client
@@ -168,7 +166,12 @@ pub fn generate_server_id() -> String {
             .output()
         {
             if let Ok(id) = String::from_utf8(output.stdout) {
-                return id.split('\n').nth(1).unwrap_or("unknown").trim().to_string();
+                return id
+                    .split('\n')
+                    .nth(1)
+                    .unwrap_or("unknown")
+                    .trim()
+                    .to_string();
             }
         }
     }

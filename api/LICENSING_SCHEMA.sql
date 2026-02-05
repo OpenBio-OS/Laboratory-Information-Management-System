@@ -54,7 +54,7 @@ CREATE INDEX idx_licenses_status ON licenses(status);
 CREATE INDEX idx_licenses_expires ON licenses(expires_at);
 CREATE INDEX idx_validations_key ON license_validations(license_key);
 
--- Trial license that works offline for 14 days
+-- Trial license that works offline for 3 months
 INSERT INTO licenses (
   license_key,
   tier,
@@ -68,5 +68,5 @@ INSERT INTO licenses (
   'active',
   'trial@openbio.app',
   'Trial Account',
-  NOW() + INTERVAL '14 days'
+  NOW() + INTERVAL '3 months'
 );

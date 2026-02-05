@@ -325,7 +325,7 @@ Backend: Git-backed Markdown.
 
 Tier 1/2: Writes to AppData/notebooks.
 
-Tier 3: API handles Git commits on the server side.
+Tier 3: API handles commits on the server side.
 
 UI: Markdown Editor with Smart Linking (@Sample_ID) to Inventory (freezer module + DB, keeping meta data about when the sample was frozen, used, and which samples were used).
 

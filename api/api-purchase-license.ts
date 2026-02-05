@@ -48,7 +48,7 @@ export default async function handler(
       .toUpperCase()}`;
 
     const trialEnd = new Date();
-    trialEnd.setDate(trialEnd.getDate() + 14);
+    trialEnd.setDate(trialEnd.getDate() + 90);
 
     const { error } = await supabase.from('licenses').insert({
       license_key: trialKey,
