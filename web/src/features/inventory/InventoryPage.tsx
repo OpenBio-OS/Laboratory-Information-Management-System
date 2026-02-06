@@ -28,7 +28,7 @@ export function InventoryPage() {
   });
 
   // Fetch containers
-  const { data: containers = [] } = useQuery({
+  const { data: containers = [], isLoading: containersLoading } = useQuery({
     queryKey: ['containers'],
     queryFn: inventoryApi.listContainers
   });
@@ -197,6 +197,7 @@ export function InventoryPage() {
         <div className="w-64 bg-black/20 border-r border-white/5 overflow-y-auto flex-shrink-0">
           <HierarchyTree
             containers={containers}
+            isLoading={containersLoading}
             selectedId={selectedContainerId}
             onSelect={(c) => setSelectedContainerId(c.id)}
             onCreateConfirm={handleCreateRequest}

@@ -5,6 +5,7 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 
 interface HierarchyTreeProps {
   containers: Container[];
+  isLoading?: boolean;
   selectedId: string | null;
   onSelect: (container: Container) => void;
   onCreateConfirm: (parentId: string | null) => void;
@@ -62,7 +63,7 @@ function TreeNode({ container, allContainers, level, selectedId, onSelect, onCre
           group flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer transition-colors select-none
           ${isSelected ? 'bg-brand-primary/20 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}
         `}
-        style={{ paddingLeft: `${level * 16 + 8}px` }}
+        style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={() => onSelect(container)}
       >
         <button
@@ -117,7 +118,7 @@ function TreeNode({ container, allContainers, level, selectedId, onSelect, onCre
   );
 }
 
-export function HierarchyTree({ containers, selectedId, onSelect, onCreateConfirm, onDelete }: HierarchyTreeProps) {
+export function HierarchyTree({ containers, isLoading, selectedId, onSelect, onCreateConfirm, onDelete }: HierarchyTreeProps) {
   const rootContainers = containers.filter(c => !c.parentId);
   const [showInitialAnimation, setShowInitialAnimation] = useState(false);
 
@@ -144,7 +145,11 @@ export function HierarchyTree({ containers, selectedId, onSelect, onCreateConfir
         </button>
       </div>
 
-      {rootContainers.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center py-4 mx-4">
+          <div className="w-5 h-5 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
+        </div>
+      ) : rootContainers.length === 0 ? (
         <div className="text-sm mx-4 text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
           No facilities yet.
           <br />

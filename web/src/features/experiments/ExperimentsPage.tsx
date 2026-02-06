@@ -735,7 +735,7 @@ function NotebookEditor({ experiment, onSave, entities }: NotebookEditorProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 px-6 pb-6 h-full overflow-auto">
+    <div className="flex flex-col gap-4 px-8 pb-6">
       {/* Toolbar - clean and compact like RichTextEditor */}
       <div className="flex items-center gap-1 p-1 bg-white/5 border border-white/10 rounded-lg w-fit">
         <button
@@ -1338,7 +1338,7 @@ export function ExperimentsPage() {
     queryFn: experimentsApi.list,
   });
 
-  const { data: folders = [] } = useQuery({
+  const { data: folders = [], isLoading: foldersLoading } = useQuery({
     queryKey: ['experiment-folders'],
     queryFn: experimentsApi.listFolders,
   });
@@ -1513,7 +1513,11 @@ export function ExperimentsPage() {
               </div>
 
               <div className="flex-1 overflow-y-auto px-4 pb-4">
-                {folders.length === 0 ? (
+                {foldersLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <div className="w-5 h-5 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
+                  </div>
+                ) : folders.length === 0 ? (
                   <div className="text-sm text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
                     No folders yet.
                     <br />
@@ -1596,7 +1600,7 @@ export function ExperimentsPage() {
                           className="bg-surface/50 hover:bg-neutral-900/80 border border-white/10 rounded-xl p-5 hover:border-brand-primary/30 transition-colors text-left"
                         >
                           <div className="flex items-start gap-3">
-                            <FlaskConical size={20} className="text-brand-primary mt-0.5" />
+                            <FlaskConical size={16} className="text-white/20 mt-0.5" />
                             <div className="flex-1">
                               <h3 className="text-lg font-semibold text-white mb-1">{exp.name}</h3>
                               {exp.description && (
@@ -1621,9 +1625,9 @@ export function ExperimentsPage() {
         ) : (
           /* Experiment Detail View */
           <div className="flex-1 flex flex-col">
-            <div className="px-6 pt-6 pb-2">
+            <div className="px-8 pt-6 pb-2">
               <div className="flex items-start justify-between">
-                <div>
+                <div className='mb-4'>
                   <h1 className="text-2xl font-bold text-white">{selectedExperiment.name}</h1>
                   {selectedExperiment.description && (
                     <p className="text-white/60 text-sm mt-1">{selectedExperiment.description}</p>
@@ -1638,7 +1642,8 @@ export function ExperimentsPage() {
                 </div>
               </div>
             </div>
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-auto">
+              <h2 className="text-sm font-semibold px-8 text-white/40 uppercase tracking-wider mb-4">Notes</h2>
               <NotebookEditor experiment={selectedExperiment} onSave={handleContentChange} entities={searchEntities} />
             </div>
             <div className="px-8 pb-8 pt-4">

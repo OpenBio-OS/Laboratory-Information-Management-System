@@ -911,7 +911,11 @@ export function LibraryPage() {
                   </button>
                 </div>
 
-                {collections.length === 0 ? (
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <div className="w-5 h-5 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
+                  </div>
+                ) : collections.length === 0 ? (
                   <div className="text-sm text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
                     No collections yet.
                     <br />
@@ -990,9 +994,10 @@ export function LibraryPage() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleTogglePin(paper.id, !paper.isPinned);
+                                // handleTogglePin(paper.id, !paper.isPinned);
                               }}
-                              className={`mt-1 transition-colors ${paper.isPinned ? "text-brand-primary" : "text-white/20 hover:text-white/50"}`}
+                              // className={`mt-1 transition-colors ${paper.isPinned ? "text-brand-primary" : "text-white/20 hover:text-white/50"}`}
+                              className={`mt-1 transition-colors ${paper.isPinned ? "text-brand-primary" : "text-white/20"}`}
                             >
                               <Pin size={16} className={paper.isPinned ? "fill-current" : ""} />
                             </button>
@@ -1028,52 +1033,52 @@ export function LibraryPage() {
           </>
         ) : (
           /* Full-width Paper Detail View */
-          <div className="flex-1 overflow-auto p-8">
-            <div>
-              {/* Paper Header */}
-              <div className="mb-8">
-                <div className="flex items-start gap-4 mb-6">
-                  <button
-                    onClick={() => handleTogglePin(selectedPaper!.id, !selectedPaper!.isPinned)}
-                    className={`p-2 rounded-lg transition-colors ${selectedPaper!.isPinned ? "text-brand-primary bg-brand-primary/10" : "text-white/30 hover:text-white/60 hover:bg-white/5"}`}
-                  >
-                    <Pin size={20} className={selectedPaper!.isPinned ? "fill-current" : ""} />
-                  </button>
-                  <div className="flex-1">
-                    <h1 className="text-2xl font-bold text-white mb-3 leading-tight">{selectedPaper!.title}</h1>
-                    {selectedPaper!.authors && (
-                      <p className="text-lg text-white/70 mb-4">{selectedPaper!.authors}</p>
+          <div className="flex-1 flex flex-col">
+            {/* Paper Header */}
+            <div className="px-8 pt-8 pb-2">
+              <div className="flex items-start gap-4">
+                <button
+                  onClick={() => handleTogglePin(selectedPaper!.id, !selectedPaper!.isPinned)}
+                  className={`p-2 rounded-lg transition-colors ${selectedPaper!.isPinned ? "text-brand-primary bg-brand-primary/10" : "text-white/30 hover:text-white/60 hover:bg-white/5"}`}
+                >
+                  <Pin size={20} className={selectedPaper!.isPinned ? "fill-current" : ""} />
+                </button>
+                <div className="flex-1">
+                  <h1 className="text-2xl font-bold text-white mb-3 leading-tight">{selectedPaper!.title}</h1>
+                  {selectedPaper!.authors && (
+                    <p className="text-lg text-white/70 mb-4">{selectedPaper!.authors}</p>
+                  )}
+                  <div className="flex items-center gap-4 text-sm text-white/50">
+                    {selectedPaper!.journal && (
+                      <span className="px-3 py-1 bg-white/5 rounded-lg">{selectedPaper!.journal}</span>
                     )}
-                    <div className="flex items-center gap-4 text-sm text-white/50">
-                      {selectedPaper!.journal && (
-                        <span className="px-3 py-1 bg-white/5 rounded-lg">{selectedPaper!.journal}</span>
-                      )}
-                      {selectedPaper!.year && <span>{selectedPaper!.year}</span>}
-                      {selectedPaper!.doi && (
-                        <a
-                          href={`https://doi.org/${selectedPaper!.doi}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 text-brand-primary hover:underline"
-                        >
-                          View on DOI <ExternalLink size={14} />
-                        </a>
-                      )}
-                    </div>
+                    {selectedPaper!.year && <span>{selectedPaper!.year}</span>}
+                    {selectedPaper!.doi && (
+                      <a
+                        href={`https://doi.org/${selectedPaper!.doi}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-brand-primary hover:underline"
+                      >
+                        View on DOI <ExternalLink size={14} />
+                      </a>
+                    )}
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* Notes Editor */}
-              <div className="mb-8">
-                <h2 className="text-sm font-semibold text-white/40 uppercase tracking-wider mb-4">Notes</h2>
-                <RichTextEditor
-                  content={selectedPaper!.notes || ""}
-                  onChange={handleNotesChange}
-                />
-              </div>
+            {/* Notes Editor */}
+            <div className="flex-1 overflow-auto px-8 py-6">
+              <h2 className="text-sm font-semibold text-white/40 uppercase tracking-wider mb-4">Notes</h2>
+              <RichTextEditor
+                content={selectedPaper!.notes || ""}
+                onChange={handleNotesChange}
+              />
+            </div>
 
-              {/* Back Button */}
+            {/* Back Button */}
+            <div className="px-8 pb-8 pt-4">
               <div className="pt-6 border-t border-white/10">
                 <button
                   onClick={() => setSelectedPaper(null)}

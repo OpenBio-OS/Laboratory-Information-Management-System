@@ -83,7 +83,7 @@ export function RichTextEditor({ content, onChange, editable = true }: RichTextE
                     <ListOrdered size={16} />
                 </button>
             </div>
-            <div className="p-4 bg-black/20 border border-white/10 rounded-xl min-h-[200px]">
+            <div className="p-4 bg-black/20 border border-white/10 rounded-xl min-h-[300px]">
                 <EditorContent editor={editor} />
             </div>
         </div>
