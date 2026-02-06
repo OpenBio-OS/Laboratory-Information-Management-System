@@ -142,6 +142,25 @@ model Paper {
   addedBy   String?
 }
 
+/// Folder for organizing experiments (hierarchical)
+model ExperimentFolder {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  color       String? // For UI styling
+
+  // Hierarchy
+  parentId String?
+  parent   ExperimentFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children ExperimentFolder[] @relation("FolderHierarchy")
+
+  // Contents
+  experiments Experiment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 /// Experiment with integrated notebook (this IS the notebook)
 model Experiment {
   id          String  @id @default(cuid())
@@ -151,6 +170,10 @@ model Experiment {
 
   // Notebook content (rich text as JSON)
   content String @default("") // Prosemirror/TipTap JSON document
+
+  // Organization
+  folderId String?
+  folder   ExperimentFolder? @relation(fields: [folderId], references: [id])
 
   // Scheduling (for instrument booking)
   scheduledAt DateTime?

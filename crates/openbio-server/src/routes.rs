@@ -1,6 +1,7 @@
 //! API route handlers
 use crate::db::prisma::{
-    self, container, experiment, experiment_entry, experiment_mention, library, paper, sample,
+    self, container, experiment, experiment_entry, experiment_folder, experiment_mention, library,
+    paper, sample,
 };
 use crate::AppState;
 use axum::{
@@ -72,7 +73,10 @@ fn experiment_routes() -> Router<AppState> {
             "/{id}/mentions",
             get(list_experiment_mentions).post(create_experiment_mention),
         )
+        .route("/{id}/upload", axum::routing::post(upload_experiment_file))
         .route("/search-entities", get(search_entities))
+        .route("/folders", get(list_experiment_folders).post(create_experiment_folder))
+        .route("/folders/{id}", axum::routing::delete(delete_experiment_folder))
 }
 
 fn collection_routes() -> Router<AppState> {
@@ -306,6 +310,7 @@ pub struct CreateExperimentRequest {
     pub description: Option<String>,
     pub content: Option<String>,
     pub status: Option<String>,
+    pub folder_id: Option<String>,
 }
 
 async fn list_experiments(State(state): State<AppState>) -> Json<Vec<experiment::Data>> {
@@ -335,6 +340,12 @@ async fn create_experiment(
 
     if let Some(status) = payload.status {
         params.push(experiment::status::set(status));
+    }
+
+    if let Some(folder_id) = payload.folder_id {
+        params.push(experiment::folder::connect(experiment_folder::id::equals(
+            folder_id,
+        )));
     }
 
     let experiment = state
@@ -526,30 +537,49 @@ pub struct SearchResult {
     pub entity_type: String,
     pub id: String,
     pub name: String,
-    pub metadata: Option<serde_json::Value>,
+    pub category: String,      // Top-level category: "Freezer", "Library", "Equipment"
+    pub subcategory: String,   // Second level: container name, library name, equipment type
+    pub path: Vec<String>,     // Full path for navigation
+    pub notes: Option<String>, // Sample metadata/notes or paper notes at time of mention
 }
 
 async fn search_entities(State(state): State<AppState>) -> Json<Vec<SearchResult>> {
     let mut results: Vec<SearchResult> = vec![];
 
-    // Search samples
+    // Search samples - only include those with a container assigned
     let samples = state
         .db
         .sample()
         .find_many(vec![])
+        .with(sample::container::fetch())
         .exec()
         .await
         .unwrap_or_default();
+    
     for sample in samples {
-        results.push(SearchResult {
-            entity_type: "sample".to_string(),
-            id: sample.id,
-            name: sample.name,
-            metadata: sample.metadata.and_then(|m| serde_json::from_str(&m).ok()),
-        });
+        // Only include samples that have a container assigned
+        if let Some(Some(container)) = sample.container.as_ref() {
+            // Get full container path by traversing up
+            let container_path = get_container_path(&state.db, &container.id).await;
+            let subcategory = container_path.first().cloned().unwrap_or_else(|| container.name.clone());
+            
+            let mut full_path = container_path.clone();
+            full_path.push(sample.name.clone());
+            
+            results.push(SearchResult {
+                entity_type: "sample".to_string(),
+                id: sample.id,
+                name: sample.name,
+                category: "Freezer".to_string(),
+                subcategory,
+                path: full_path,
+                notes: sample.metadata, // Sample notes/description
+            });
+        }
+        // Skip samples without a container - they won't appear in the picker
     }
 
-    // Search equipment
+    // Search equipment - group by type
     let equipment_list = state
         .db
         .equipment()
@@ -558,36 +588,235 @@ async fn search_entities(State(state): State<AppState>) -> Json<Vec<SearchResult
         .await
         .unwrap_or_default();
     for equip in equipment_list {
+        let equipment_type = equip.r#type.clone();
         results.push(SearchResult {
             entity_type: "equipment".to_string(),
             id: equip.id,
-            name: equip.name,
-            metadata: equip.metadata.and_then(|m| serde_json::from_str(&m).ok()),
+            name: equip.name.clone(),
+            category: "Equipment".to_string(),
+            subcategory: format_equipment_type(&equipment_type),
+            path: vec![format_equipment_type(&equipment_type), equip.name],
+            notes: equip.metadata, // Equipment notes/specs
         });
     }
 
-    // Search papers
+    // Search papers - only include those with a library assigned
     let papers = state
         .db
         .paper()
         .find_many(vec![])
+        .with(paper::library::fetch())
         .exec()
         .await
         .unwrap_or_default();
     for paper in papers {
-        results.push(SearchResult {
-            entity_type: "paper".to_string(),
-            id: paper.id,
-            name: paper.title,
-            metadata: Some(serde_json::json!({
-                "authors": paper.authors,
-                "year": paper.year,
-                "doi": paper.doi,
-            })),
-        });
+        // Only include papers that have a library assigned
+        if let Some(Some(library)) = paper.library.as_ref() {
+            let title = paper.title.clone();
+            results.push(SearchResult {
+                entity_type: "paper".to_string(),
+                id: paper.id,
+                name: title.clone(),
+                category: "Library".to_string(),
+                subcategory: library.name.clone(),
+                path: vec![library.name.clone(), title],
+                notes: paper.notes, // Paper notes (rich text)
+            });
+        }
+        // Skip papers without a library - they won't appear in the picker
     }
 
     Json(results)
+}
+
+// Helper to format equipment type for display
+fn format_equipment_type(t: &str) -> String {
+    match t {
+        "sequencer" => "Sequencers".to_string(),
+        "microscope" => "Microscopes".to_string(),
+        "centrifuge" => "Centrifuges".to_string(),
+        "pcr_machine" => "PCR Machines".to_string(),
+        "incubator" => "Incubators".to_string(),
+        "freezer" => "Freezers".to_string(),
+        _ => t.replace('_', " ").to_string(),
+    }
+}
+
+// Helper to get full container path
+async fn get_container_path(db: &std::sync::Arc<prisma::PrismaClient>, container_id: &str) -> Vec<String> {
+    let mut path = vec![];
+    let mut current_id = Some(container_id.to_string());
+    
+    while let Some(id) = current_id {
+        if let Ok(Some(container)) = db
+            .container()
+            .find_unique(container::id::equals(id))
+            .exec()
+            .await
+        {
+            path.insert(0, container.name);
+            current_id = container.parent_id;
+        } else {
+            break;
+        }
+    }
+    
+    if path.is_empty() {
+        path.push("Unknown".to_string());
+    }
+    
+    path
+}
+
+// ==========================================
+// Experiment Folder Handlers
+// ==========================================
+
+#[derive(Deserialize)]
+pub struct CreateExperimentFolderRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub color: Option<String>,
+    pub parent_id: Option<String>,
+}
+
+async fn list_experiment_folders(
+    State(state): State<AppState>,
+) -> Json<Vec<experiment_folder::Data>> {
+    let folders = state
+        .db
+        .experiment_folder()
+        .find_many(vec![])
+        .with(experiment_folder::children::fetch(vec![]))
+        .with(experiment_folder::experiments::fetch(vec![]))
+        .exec()
+        .await
+        .unwrap_or_default();
+    Json(folders)
+}
+
+async fn create_experiment_folder(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateExperimentFolderRequest>,
+) -> Json<experiment_folder::Data> {
+    let mut params: Vec<experiment_folder::SetParam> = vec![];
+
+    if let Some(description) = payload.description {
+        params.push(experiment_folder::description::set(Some(description)));
+    }
+
+    if let Some(color) = payload.color {
+        params.push(experiment_folder::color::set(Some(color)));
+    }
+
+    if let Some(parent_id) = payload.parent_id {
+        params.push(experiment_folder::parent::connect(
+            experiment_folder::id::equals(parent_id),
+        ));
+    }
+
+    let folder = state
+        .db
+        .experiment_folder()
+        .create(payload.name, params)
+        .exec()
+        .await
+        .expect("Failed to create experiment folder");
+    Json(folder)
+}
+
+async fn delete_experiment_folder(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<()> {
+    // Recursively delete all child folders before deleting the folder
+    delete_experiment_folder_cascade(&state, &id).await;
+    Json(())
+}
+
+/// Recursively delete an experiment folder and all its children
+fn delete_experiment_folder_cascade<'a>(
+    state: &'a AppState,
+    folder_id: &'a str,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+    Box::pin(async move {
+        // Find all child folders
+        let children = state
+            .db
+            .experiment_folder()
+            .find_many(vec![experiment_folder::parent_id::equals(Some(
+                folder_id.to_string(),
+            ))])
+            .exec()
+            .await
+            .expect("Failed to find child folders");
+
+        // Recursively delete each child
+        for child in children {
+            delete_experiment_folder_cascade(state, &child.id).await;
+        }
+
+        // Unlink experiments in this folder (don't delete them, just set folder_id to None)
+        state
+            .db
+            .experiment()
+            .update_many(
+                vec![experiment::folder_id::equals(Some(folder_id.to_string()))],
+                vec![experiment::folder_id::set(None)],
+            )
+            .exec()
+            .await
+            .expect("Failed to unlink experiments from folder");
+
+        // Finally, delete the folder itself
+        state
+            .db
+            .experiment_folder()
+            .delete(experiment_folder::id::equals(folder_id.to_string()))
+            .exec()
+            .await
+            .expect("Failed to delete experiment folder");
+    })
+}
+
+// File upload for experiments
+async fn upload_experiment_file(
+    State(state): State<AppState>,
+    Path(experiment_id): Path<String>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // Create uploads directory if it doesn't exist
+    let uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
+    fs::create_dir_all(&uploads_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut uploaded_files = vec![];
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?
+    {
+        let filename = field
+            .file_name()
+            .ok_or(StatusCode::BAD_REQUEST)?
+            .to_string();
+        let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let file_path = uploads_dir.join(&filename);
+        let mut file = fs::File::create(&file_path).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        file.write_all(&data)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        uploaded_files.push(serde_json::json!({
+            "filename": filename,
+            "path": file_path.to_string_lossy().to_string(),
+            "size": data.len(),
+        }));
+    }
+
+    Ok(Json(serde_json::json!({
+        "files": uploaded_files
+    })))
 }
 
 // ==========================================

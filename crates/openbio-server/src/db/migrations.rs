@@ -30,6 +30,10 @@ fn get_migrations() -> Vec<Migration> {
             name: "20260205125803_add_library_collections".to_string(),
             sql: include_str!("../../../../database/migrations/20260205125803_add_library_collections/migration.sql"),
         },
+        Migration {
+            name: "20260206054604_add_experiment_folders".to_string(),
+            sql: include_str!("../../../../database/migrations/20260206054604_add_experiment_folders/migration.sql"),
+        },
     ]
 }
 
