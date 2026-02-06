@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { inventoryApi } from '../../lib/api';
+import { useNavigation } from '../../App';
 import { BoxGrid } from './components/BoxGrid';
 import { HierarchyTree } from './components/HierarchyTree';
 import { CreateContainerModal } from './components/CreateContainerModal';
@@ -18,6 +19,7 @@ export function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteSampleId, setDeleteSampleId] = useState<string | null>(null);
   const [editSampleId, setEditSampleId] = useState<string | null>(null);
+  const { pendingItemId, clearPendingItem } = useNavigation();
 
   // Fetch samples
   const { data: samples = [] } = useQuery({
@@ -30,6 +32,19 @@ export function InventoryPage() {
     queryKey: ['containers'],
     queryFn: inventoryApi.listContainers
   });
+
+  // Auto-navigate to sample when coming from experiment mention click
+  useEffect(() => {
+    if (pendingItemId && samples.length > 0) {
+      const sample = samples.find(s => s.id === pendingItemId);
+      if (sample && sample.containerId) {
+        setSelectedContainerId(sample.containerId);
+        setSelectedSlot(sample.slotPosition || null);
+        setSearchQuery('');
+      }
+      clearPendingItem();
+    }
+  }, [pendingItemId, samples, clearPendingItem]);
 
   const selectedContainer = containers.find(c => c.id === selectedContainerId);
 

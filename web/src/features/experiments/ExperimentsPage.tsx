@@ -26,6 +26,10 @@ import {
   ListOrdered,
   RefreshCw,
   ExternalLink,
+  NotebookText,
+  Beaker,
+  Microscope,
+  ShieldQuestionMark,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, NodeViewWrapper, NodeViewProps, ReactNodeViewRenderer } from '@tiptap/react';
@@ -135,10 +139,10 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
   
   const getEntityIcon = () => {
     switch (data.entityType) {
-      case 'sample': return '🧊';
-      case 'paper': return '📄';
-      case 'equipment': return '🔬';
-      default: return '📁';
+      case 'sample': return <Beaker size={16} className="opacity-50" />
+      case 'paper': return <NotebookText size={16} className='opacity-50' />;
+      case 'equipment': return <Microscope size={16} className="opacity-50" />;
+      default: return <ShieldQuestionMark size={16} className="opacity-50" />;
     }
   };
   
@@ -187,7 +191,7 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
           <div className="flex items-start justify-between gap-2 mb-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-lg">{getEntityIcon()}</span>
+                {/* <span className="text-lg">{getEntityIcon()}</span> */}
                 <span className="font-semibold text-white">{data.name || 'Unknown'}</span>
               </div>
               <div className="text-xs text-white/50 mt-1">
@@ -195,7 +199,7 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
               </div>
             </div>
             <span className="text-xs px-2 py-0.5 bg-white/10 rounded text-white/60 capitalize">
-              {data.entityType || 'item'}
+              {data.entityType}
             </span>
           </div>
           
@@ -339,10 +343,10 @@ interface MentionListRef {
 
 type NavigationLevel = 'category' | 'subcategory' | 'item';
 
-const CATEGORY_ICONS: Record<string, string> = {
-  'Freezer': '🧊',
-  'Library': '📚',
-  'Equipment': '🔬',
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
+  'sample': <Beaker className='inline' size={14} style={{display: 'inline'}} />,
+  'paper': <NotebookText className='inline' size={14} style={{display: 'inline'}} />,
+  'equipment': <Microscope className='inline' size={14} style={{display: 'inline'}} />,
 };
 
 const MentionList = React.forwardRef<MentionListRef, MentionListProps>(
@@ -1308,11 +1312,11 @@ export function ExperimentsPage() {
     queryFn: experimentsApi.listFolders,
   });
 
-  // Prefetch search entities for @mentions - load immediately when page mounts
+  // Fetch search entities for @mentions - refetch each time the page mounts
   const { data: searchEntities = [] } = useQuery({
     queryKey: ['search-entities'],
     queryFn: experimentsApi.searchEntities,
-    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    staleTime: 0, // Always refetch so newly added samples/papers appear immediately
   });
 
   const createFolderMutation = useMutation({
@@ -1443,7 +1447,7 @@ export function ExperimentsPage() {
                 className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm font-medium text-white/80 transition-colors"
               >
                 <Paperclip size={16} />
-                Attach File
+                Attach Data File
               </button>
               <input
                 ref={fileInputRef}
