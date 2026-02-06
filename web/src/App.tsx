@@ -195,14 +195,14 @@ import { EquipmentPage } from "./features/equipment/EquipmentPage";
 function DashboardView() {
   return (
     <div className="space-y-8 px-8">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {["Samples", "Experiments", "Pipelines", "Assets"].map((label) => (
           <Card key={label} className="group">
             <h3 className="text-white/40 text-sm font-medium uppercase tracking-wider mb-2">{label}</h3>
             <p className="text-4xl font-bold text-white group-hover:text-brand-primary transition-colors">0</p>
           </Card>
         ))}
-      </div>
+      </div> */}
 
       <Card className="relative overflow-hidden">
         <div className="relative z-10">
@@ -267,7 +267,7 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-2xl px-8">
       <Card>
         <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
           <div className="w-1 h-6 bg-red-500 rounded-full"></div>

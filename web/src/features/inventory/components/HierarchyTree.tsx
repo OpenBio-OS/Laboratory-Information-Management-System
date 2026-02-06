@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronRight, ChevronDown, Plus, Box, Trash2, Building2, Warehouse, Thermometer, Layers } from 'lucide-react';
 import { Container } from '../../../lib/api';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -119,17 +119,28 @@ function TreeNode({ container, allContainers, level, selectedId, onSelect, onCre
 
 export function HierarchyTree({ containers, selectedId, onSelect, onCreateConfirm, onDelete }: HierarchyTreeProps) {
   const rootContainers = containers.filter(c => !c.parentId);
+  const [showInitialAnimation, setShowInitialAnimation] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowInitialAnimation(false);
+    }, 2500); // 4 seconds
+
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <div className="space-y-1">
-      <div className="flex items-center justify-between px-2 mb-2">
+      <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-semibold text-white/40 uppercase tracking-wider">Storage</h3>
         <button
           onClick={() => onCreateConfirm(null)}
-          className="p-1 text-white/40 hover:text-brand-primary transition-colors"
+          className={`w-6 h-6 flex items-center justify-center hover:text-brand-primary hover:bg-brand-primary/10 rounded transition-all  ${
+            showInitialAnimation ? 'text-green-400 animate-pulse' : 'text-white/40'
+          }`}
           title="Add Freezer"
         >
-          <Plus size={16} />
+          <Plus size={14} />
         </button>
       </div>
 

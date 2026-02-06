@@ -671,7 +671,7 @@ export function LibraryPage() {
   // Get current collection name for breadcrumb
   const currentCollectionName = selectedCollection
     ? collections.find(c => c.id === selectedCollection)?.name
-    : 'Library';
+    : 'Collections';
 
   // Handle notes update with auto-save (debounced)
   const handleNotesChange = async (newContent: string) => {
@@ -723,7 +723,7 @@ export function LibraryPage() {
             onClick={() => { setSelectedPaper(null); setSelectedCollection(null); }}
             className={`transition-colors ${viewMode === 'list' && !selectedCollection ? 'text-white font-medium' : 'text-white/50 hover:text-white'}`}
           >
-            Papers
+            All
           </button>
 
           {selectedCollection && (
@@ -767,7 +767,9 @@ export function LibraryPage() {
 
               <button
                 onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors"
+                disabled={collections.length === 0}
+                className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
+                title={collections.length === 0 ? "Create a collection first" : ""}
               >
                 <Plus size={16} />
                 Add Paper
@@ -851,29 +853,39 @@ export function LibraryPage() {
                   </button>
                 </div>
 
-                <div className="space-y-1">
-                  {collections.map((collection) => (
-                    <div key={collection.id} className="group flex items-center">
-                      <button
-                        onClick={() => setSelectedCollection(collection.id)}
-                        className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${selectedCollection === collection.id ? "bg-brand-primary/20 text-brand-primary" : "text-white/70 hover:bg-white/5"}`}
-                      >
-                        <div className="w-3 h-3 rounded" style={{ backgroundColor: collection.color || "#17b978" }} />
-                        <span className="flex-1 text-left truncate">{collection.name}</span>
-                        <span className="text-xs text-white/40 mr-2">{papers.filter((p) => p.libraryId === collection.id).length}</span>
-                      </button>
-                      <button
-                        onClick={() => handleDeleteCollectionClick(collection)}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-white/30 hover:text-red-400 transition-all ml-3"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ))}
-                  {collections.length === 0 && (
-                    <p className="text-xs text-white/30 px-3 py-2">No collections yet</p>
-                  )}
-                </div>
+                {collections.length === 0 ? (
+                  <div className="text-sm text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
+                    No collections yet.
+                    <br />
+                    <button
+                      onClick={() => setShowCollectionModal(true)}
+                      className="text-brand-primary hover:underline mt-1"
+                    >
+                      Add Collection
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {collections.map((collection) => (
+                      <div key={collection.id} className="group flex items-center">
+                        <button
+                          onClick={() => setSelectedCollection(collection.id)}
+                          className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${selectedCollection === collection.id ? "bg-brand-primary/20 text-brand-primary" : "text-white/70 hover:bg-white/5"}`}
+                        >
+                          <div className="w-3 h-3 rounded" style={{ backgroundColor: collection.color || "#17b978" }} />
+                          <span className="flex-1 text-left truncate">{collection.name}</span>
+                          <span className="text-xs text-white/40 mr-2">{papers.filter((p) => p.libraryId === collection.id).length}</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCollectionClick(collection)}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-white/30 hover:text-red-400 transition-all ml-3"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

@@ -41,7 +41,7 @@ pub async fn run_server(addr: SocketAddr, state: AppState) -> anyhow::Result<()>
 /// 
 /// apply_migrations: Set to true for local/hub mode (SQLite with migrations),
 ///                   false for spoke/enterprise mode (remote database)
-pub fn spawn_embedded_server(port: u16, database_url: String, apply_migrations: bool) {
+pub fn spawn_embedded_server(port: u16, database_url: String, storage_path: std::path::PathBuf, apply_migrations: bool) {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
 
@@ -50,7 +50,7 @@ pub fn spawn_embedded_server(port: u16, database_url: String, apply_migrations: 
                 .parse()
                 .expect("Invalid address");
 
-            let state = AppState::new(database_url, apply_migrations)
+            let state = AppState::new(database_url, storage_path, apply_migrations)
                 .await
                 .expect("Failed to create app state");
 

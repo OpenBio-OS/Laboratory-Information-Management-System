@@ -10,7 +10,8 @@ async fn main() -> anyhow::Result<()> {
     
     // Use .dev directory for development database (ignored by git)
     std::fs::create_dir_all(".dev").ok();
-    let state = AppState::new("file:./.dev/openbio.db".to_string(), true).await?;
+    let storage_path = std::path::PathBuf::from(".dev/storage");
+    let state = AppState::new("file:./.dev/openbio.db".to_string(), storage_path, true).await?;
     
     run_server(addr, state).await
 }

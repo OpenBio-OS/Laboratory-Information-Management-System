@@ -73,6 +73,11 @@ fn database_url() -> String {
     format!("file:{}", db_path.display())
 }
 
+/// Get the storage directory path for files (PDFs, etc.)
+fn storage_path() -> PathBuf {
+    config_dir().join("storage")
+}
+
 /// Get current config
 #[tauri::command]
 fn get_config(state: State<AppState>) -> AppConfig {
@@ -96,8 +101,9 @@ fn save_config(config: AppConfig, state: State<AppState>, app: AppHandle) -> Res
     // If local/hub mode, spawn the embedded server with migrations
     if config.mode == DeploymentMode::Local || config.mode == DeploymentMode::Hub {
         let db_url = database_url();
+        let storage = storage_path();
         // Apply migrations for local/hub mode (embedded SQLite database)
-        openbio_server::spawn_embedded_server(config.server_port, db_url, true);
+        openbio_server::spawn_embedded_server(config.server_port, db_url, storage, true);
 
         // For hub mode, start mDNS broadcast
         if config.mode == DeploymentMode::Hub {
@@ -335,7 +341,8 @@ pub fn run() {
         }
 
         // Spawn server with migrations for local/hub mode
-        openbio_server::spawn_embedded_server(actual_port, db_url, true);
+        let storage = storage_path();
+        openbio_server::spawn_embedded_server(actual_port, db_url, storage, true);
 
         if config.mode == DeploymentMode::Hub {
             if let Some(lab_name) = &config.lab_name {

@@ -247,14 +247,53 @@ async fn create_container(
 }
 
 async fn delete_container(State(state): State<AppState>, Path(id): Path<String>) -> Json<()> {
-    state
-        .db
-        .container()
-        .delete(container::id::equals(id))
-        .exec()
-        .await
-        .expect("Failed to delete container");
+    // Recursively delete all children and samples before deleting the container
+    delete_container_cascade(&state, &id).await;
     Json(())
+}
+
+/// Recursively delete a container and all its children
+fn delete_container_cascade<'a>(
+    state: &'a AppState,
+    container_id: &'a str,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+    Box::pin(async move {
+        // Find all child containers
+        let children = state
+            .db
+            .container()
+            .find_many(vec![container::parent_id::equals(Some(
+                container_id.to_string(),
+            ))])
+            .exec()
+            .await
+            .expect("Failed to find child containers");
+
+        // Recursively delete each child
+        for child in children {
+            delete_container_cascade(state, &child.id).await;
+        }
+
+        // Delete all samples in this container
+        state
+            .db
+            .sample()
+            .delete_many(vec![sample::container_id::equals(Some(
+                container_id.to_string(),
+            ))])
+            .exec()
+            .await
+            .expect("Failed to delete samples in container");
+
+        // Finally, delete the container itself
+        state
+            .db
+            .container()
+            .delete(container::id::equals(container_id.to_string()))
+            .exec()
+            .await
+            .expect("Failed to delete container");
+    })
 }
 
 // ==========================================
@@ -1033,9 +1072,8 @@ async fn upload_paper_pdf(
                 .await
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-            // 3. Define storage path
-            // Using a 'storage/papers' directory relative to CWD
-            let storage_dir = PathBuf::from("storage").join("papers");
+            // 3. Define storage path using app data directory
+            let storage_dir = state.storage_path.join("papers");
             fs::create_dir_all(&storage_dir)
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create storage dir: {}", e)))?;
 

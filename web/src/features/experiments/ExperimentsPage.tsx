@@ -103,7 +103,7 @@ export const ExperimentsPage: React.FC = () => {
       <div className="flex-1 flex flex-col">
         {selectedExperiment ? (
           <>
-            <div className="bg-white border-b p-6">
+            <div className="border-b p-6">
               <h1 className="text-2xl font-bold mb-2">{selectedExperiment.name}</h1>
               {selectedExperiment.description && (
                 <p className="text-gray-600 text-sm">{selectedExperiment.description}</p>

@@ -7,10 +7,11 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<PrismaClient>,
+    pub storage_path: std::path::PathBuf,
 }
 
 impl AppState {
-    pub async fn new(database_url: String, apply_migrations: bool) -> anyhow::Result<Self> {
+    pub async fn new(database_url: String, storage_path: std::path::PathBuf, apply_migrations: bool) -> anyhow::Result<Self> {
         // Initialize Prisma client with runtime database URL
         let db: PrismaClient = PrismaClient::_builder()
             .with_url(database_url.clone())
@@ -23,6 +24,12 @@ impl AppState {
             crate::db::migrations::apply_migrations(&db, &database_url).await?;
         }
 
-        Ok(Self { db: Arc::new(db) })
+        // Ensure storage directory exists
+        std::fs::create_dir_all(&storage_path)?;
+
+        Ok(Self { 
+            db: Arc::new(db),
+            storage_path,
+        })
     }
 }
