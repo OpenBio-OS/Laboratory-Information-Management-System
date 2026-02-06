@@ -138,7 +138,7 @@ export function HierarchyTree({ containers, selectedId, onSelect, onCreateConfir
           className={`w-6 h-6 flex items-center justify-center hover:text-brand-primary hover:bg-brand-primary/10 rounded transition-all  ${
             showInitialAnimation ? 'text-green-400 animate-pulse' : 'text-white/40'
           }`}
-          title="Add Freezer"
+          title="Add Facility"
         >
           <Plus size={14} />
         </button>
@@ -146,13 +146,13 @@ export function HierarchyTree({ containers, selectedId, onSelect, onCreateConfir
 
       {rootContainers.length === 0 ? (
         <div className="text-sm text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
-          No freezers yet.
+          No facilities yet.
           <br />
           <button
             onClick={() => onCreateConfirm(null)}
             className="text-brand-primary hover:underline mt-1"
           >
-            Add Freezer
+            Add Facility
           </button>
         </div>
       ) : (

@@ -50,7 +50,7 @@ export const NotebookEditor: React.FC<NotebookEditorProps> = ({
                 id: entity.id,
                 label: entity.name,
                 type: entity.entityType,
-                metadata: entity.metadata,
+                notes: entity.notes,
               }));
           },
 

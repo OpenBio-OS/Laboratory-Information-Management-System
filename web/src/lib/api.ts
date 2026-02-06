@@ -146,6 +146,7 @@ export interface Experiment {
     description?: string;
     content: string; // Rich text notebook content
     status: 'DRAFT' | 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+    folderId?: string;
     scheduledAt?: string;
     equipmentId?: string;
     createdAt: string;
@@ -178,7 +179,22 @@ export interface SearchResult {
     entityType: 'sample' | 'equipment' | 'paper';
     id: string;
     name: string;
-    metadata?: any;
+    category: string;      // Top-level: "Freezer", "Library", "Equipment"
+    subcategory: string;   // Second level: container name, library name, equipment type
+    path: string[];        // Full path for navigation
+    notes?: string;        // Sample notes or paper notes at time of mention
+}
+
+export interface ExperimentFolder {
+    id: string;
+    name: string;
+    description?: string;
+    color?: string;
+    parentId?: string;
+    children?: ExperimentFolder[];
+    experiments?: Experiment[];
+    createdAt: string;
+    updatedAt: string;
 }
 
 export const experimentsApi = {
@@ -187,7 +203,10 @@ export const experimentsApi = {
     create: (data: Partial<Experiment>) =>
         apiRequest<Experiment>('/api/experiments', {
             method: 'POST',
-            body: JSON.stringify(data),
+            body: JSON.stringify({
+                ...data,
+                folder_id: data.folderId,
+            }),
         }),
     update: (id: string, data: Partial<Experiment>) =>
         apiRequest<Experiment>(`/api/experiments/${id}`, {
@@ -198,6 +217,19 @@ export const experimentsApi = {
         apiRequest<void>(`/api/experiments/${id}`, {
             method: 'DELETE',
         }),
+
+    // File uploads
+    uploadFile: (experimentId: string, file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return apiRequest<{ files: Array<{ filename: string; path: string; size: number }> }>(
+            `/api/experiments/${experimentId}/upload`,
+            {
+                method: 'POST',
+                body: formData,
+            }
+        );
+    },
 
     // Entries (for equipment data import)
     listEntries: (experimentId: string) =>
@@ -228,6 +260,23 @@ export const experimentsApi = {
 
     // Search for @mentions
     searchEntities: () => apiRequest<SearchResult[]>('/api/experiments/search-entities'),
+
+    // Folders
+    listFolders: () => apiRequest<ExperimentFolder[]>('/api/experiments/folders'),
+    createFolder: (data: Partial<ExperimentFolder>) =>
+        apiRequest<ExperimentFolder>('/api/experiments/folders', {
+            method: 'POST',
+            body: JSON.stringify({
+                name: data.name,
+                description: data.description,
+                color: data.color,
+                parent_id: data.parentId,
+            }),
+        }),
+    deleteFolder: (id: string) =>
+        apiRequest<void>(`/api/experiments/folders/${id}`, {
+            method: 'DELETE',
+        }),
 };
 
 // ============================================

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, createContext, useContext, useCallback } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { queryClient } from "./lib/queryClient";
@@ -6,6 +6,35 @@ import { ApiProvider, useApi } from "./lib/ApiContext";
 import { SetupWizard, SetupConfig } from "./features/setup";
 import { ChartScatter, Database, FlaskConical, LayoutDashboard, Microscope, Refrigerator, ScatterChart, Settings, SquareLibrary } from "lucide-react";
 import "./App.css";
+
+// ==========================================
+// Navigation Context
+// ==========================================
+
+export type TabId = 'dashboard' | 'freezer' | 'library' | 'experiments' | 'insight' | 'equipment' | 'settings';
+
+interface NavigationTarget {
+  tab: TabId;
+  itemId?: string;  // Optional item to select/highlight after navigation
+}
+
+interface NavigationContextValue {
+  activeTab: TabId;
+  setActiveTab: (tab: TabId) => void;
+  navigateTo: (target: NavigationTarget) => void;
+  pendingItemId: string | null;
+  clearPendingItem: () => void;
+}
+
+const NavigationContext = createContext<NavigationContextValue | null>(null);
+
+export function useNavigation() {
+  const context = useContext(NavigationContext);
+  if (!context) {
+    throw new Error('useNavigation must be used within NavigationContext');
+  }
+  return context;
+}
 
 // Main App with providers
 export default function App() {
@@ -30,9 +59,21 @@ const navItems = [
 ];
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const [pendingItemId, setPendingItemId] = useState<string | null>(null);
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const { isConnected, isLoading, setApiUrl } = useApi();
+
+  const navigateTo = useCallback((target: NavigationTarget) => {
+    if (target.itemId) {
+      setPendingItemId(target.itemId);
+    }
+    setActiveTab(target.tab);
+  }, []);
+
+  const clearPendingItem = useCallback(() => {
+    setPendingItemId(null);
+  }, []);
 
   useEffect(() => {
     // Check if config exists via Tauri command
@@ -102,64 +143,64 @@ function AppContent() {
   }
 
   return (
-    <div className="flex h-screen bg-main text-white overflow-hidden font-sans selection:bg-brand-primary/30">
-      {/* Sidebar */}
-      <aside className="w-64 bg-surface/50 backdrop-blur-md border-r border-white/5 flex flex-col transition-all duration-300">
-        <div className="h-20 flex items-center px-6 border-b border-white/5">
-          <div className="flex items-center gap-3">
-            <img src="/logo-with-green-text-tree.png" alt="OpenBio" className="h-8 object-contain" />
+    <NavigationContext.Provider value={{ activeTab, setActiveTab, navigateTo, pendingItemId, clearPendingItem }}>
+      <div className="flex h-screen bg-main text-white overflow-hidden font-sans selection:bg-brand-primary/30">
+        {/* Sidebar */}
+        <aside className="w-64 bg-surface/50 backdrop-blur-md border-r border-white/5 flex flex-col transition-all duration-300">
+          <div className="h-20 flex items-center px-6 border-b border-white/5">
+            <div className="flex items-center gap-3">
+              <img src="/logo-with-green-text-tree.png" alt="OpenBio" className="h-8 object-contain" />
+            </div>
           </div>
-        </div>
 
-        <nav className="flex-1 py-6 px-3 space-y-1">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${activeTab === item.id
-                ? "bg-brand-primary/10 text-brand-primary shadow-[0_0_20px_rgba(23,185,120,0.1)]"
-                : "text-white/60 hover:bg-white/5 hover:text-white"
-                }`}
-              onClick={() => setActiveTab(item.id)}
-            >
-              <item.icon size={20} className={activeTab === item.id ? "text-brand-primary" : "text-white/40 group-hover:text-white transition-colors"} />
-              <span className="font-medium">{item.label}</span>
-            </button>
-          ))}
-        </nav>
+          <nav className="flex-1 py-6 px-3 space-y-1">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${activeTab === item.id
+                  ? "bg-brand-primary/10 text-brand-primary shadow-[0_0_20px_rgba(23,185,120,0.1)]"
+                  : "text-white/60 hover:bg-white/5 hover:text-white"
+                  }`}
+                onClick={() => setActiveTab(item.id as TabId)}
+              >
+                <item.icon size={20} className={activeTab === item.id ? "text-brand-primary" : "text-white/40 group-hover:text-white transition-colors"} />
+                <span className="font-medium">{item.label}</span>
+              </button>
+            ))}
+          </nav>
 
-        <div className="p-4 border-t border-white/5">
-          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl bg-black/20 border border-white/5 ${isLoading ? "animate-pulse" : ""}`}>
-            <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-brand-primary shadow-[0_0_10px_#17b978]" : "bg-red-500"}`} />
-            <span className="text-xs font-medium text-white/50">
-              {isLoading ? "Connecting..." : isConnected ? "System Online" : "Disconnected"}
-            </span>
+          <div className="p-4 border-t border-white/5">
+            <div className={`flex items-center gap-3 px-4 py-3 rounded-xl bg-black/20 border border-white/5 ${isLoading ? "animate-pulse" : ""}`}>
+              <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-brand-primary shadow-[0_0_10px_#17b978]" : "bg-red-500"}`} />
+              <span className="text-xs font-medium text-white/50">
+                {isLoading ? "Connecting..." : isConnected ? "System Online" : "Disconnected"}
+              </span>
+            </div>
           </div>
-        </div>
-      </aside>
+        </aside>
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
+        {/* Main content */}
+        <main className="flex-1 flex flex-col overflow-hidden relative">
+          <header className="h-20 flex items-center px-8 z-10">
+            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
+              {navItems.find(n => n.id === activeTab)?.label}
+            </h1>
+          </header>
 
-
-        <header className="h-20 flex items-center px-8 z-10">
-          <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
-            {navItems.find(n => n.id === activeTab)?.label}
-          </h1>
-        </header>
-
-        <div className="flex-1 overflow-hidden z-10">
-          <div className="h-full w-full">
-            {activeTab === "dashboard" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><DashboardView /></div></div>}
-            {activeTab === "freezer" && <InventoryPage />}
-            {activeTab === "library" && <LibraryPage />}
-            {activeTab === "experiments" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><ExperimentsView /></div></div>}
-            {activeTab === "insight" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><InsightView /></div></div>}
-            {activeTab === "equipment" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><EquipmentPage /></div></div>}
-            {activeTab === "settings" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><SettingsView onResetSetup={() => setNeedsSetup(true)} /></div></div>}
+          <div className="flex-1 overflow-hidden z-10">
+            <div className="h-full w-full">
+              {activeTab === "dashboard" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><DashboardView /></div></div>}
+              {activeTab === "freezer" && <InventoryPage />}
+              {activeTab === "library" && <LibraryPage />}
+              {activeTab === "experiments" && <ExperimentsView />}
+              {activeTab === "insight" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><InsightView /></div></div>}
+              {activeTab === "equipment" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><EquipmentPage /></div></div>}
+              {activeTab === "settings" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><SettingsView onResetSetup={() => setNeedsSetup(true)} /></div></div>}
+            </div>
           </div>
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
+    </NavigationContext.Provider>
   );
 }
 

@@ -7,6 +7,7 @@ import {
   collectionsApi,
   getApiBaseUrl,
 } from "../../lib/api";
+import { useNavigation } from "../../App";
 import { Plus, Search, X, Pin, ExternalLink, FileText, ChevronDown, Check, Trash, Upload, AlertTriangle } from "lucide-react";
 import { RichTextEditor } from "../../components/editor/RichTextEditor";
 
@@ -538,6 +539,22 @@ export function LibraryPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<number | null>(null);
+  const { pendingItemId, clearPendingItem } = useNavigation();
+
+  // Auto-select paper when navigating from experiment mention
+  useEffect(() => {
+    if (pendingItemId && papers.length > 0) {
+      const paper = papers.find(p => p.id === pendingItemId);
+      if (paper) {
+        setSelectedPaper(paper);
+        // If paper is in a collection, select that collection too
+        if (paper.libraryId) {
+          setSelectedCollection(paper.libraryId);
+        }
+      }
+      clearPendingItem();
+    }
+  }, [pendingItemId, papers, clearPendingItem]);
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
