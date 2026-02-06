@@ -50,9 +50,18 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
         setIsOpen(false);
       }
     }
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    }
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleEscape);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+        document.removeEventListener("keydown", handleEscape);
+      };
     }
   }, [isOpen]);
 
@@ -136,6 +145,14 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
   // Default to first collection if available, or empty string
   const [collectionId, setCollectionId] = useState(collections.length > 0 ? collections[0].id : "");
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
   const handleDoiLookup = async () => {
     if (!doi.trim()) return;
     setIsLooking(true);
@@ -174,7 +191,7 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-neutral-900 border border-white/10 rounded-xl w-full max-w-lg max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/5">
           <h2 className="text-lg font-semibold text-white">Add Paper</h2>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -194,7 +211,7 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
                 value={doi}
                 onChange={(e) => { setDoi(e.target.value); setLookupSuccess(false); }}
                 placeholder="e.g., 10.1038/nature12373"
-                className="flex-1 px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                className="flex-1 px-3 py-2 bg-black/20 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50"
                 onKeyDown={(e) => e.key === 'Enter' && handleDoiLookup()}
               />
               <button
@@ -229,7 +246,7 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Paper title"
-                className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50"
               />
             </div>
 
@@ -240,7 +257,7 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
                 value={authors}
                 onChange={(e) => setAuthors(e.target.value)}
                 placeholder="John Doe, Jane Smith"
-                className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50"
               />
             </div>
 
@@ -252,7 +269,7 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
                   value={journal}
                   onChange={(e) => setJournal(e.target.value)}
                   placeholder="Nature"
-                  className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                  className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50"
                 />
               </div>
               <div>
@@ -262,7 +279,7 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
                   value={year}
                   onChange={(e) => setYear(e.target.value)}
                   placeholder="2024"
-                  className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                  className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50"
                 />
               </div>
             </div>
@@ -278,14 +295,14 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-white/10">
-          <button onClick={onClose} className="px-4 py-2 text-white/60 hover:text-white text-sm font-medium transition-colors">
+        <div className="flex justify-between gap-3 px-6 py-4 border-t border-white/5 bg-white/5">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors">
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!title.trim() || !collectionId}
-            className="px-4 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-brand-primary text-black text-sm font-bold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Add Paper
           </button>
@@ -306,6 +323,14 @@ function DeleteCollectionModal({ onClose, onConfirm, collectionName, paperCount 
   const [confirmText, setConfirmText] = useState("");
   const isValid = confirmText.toLowerCase() === "delete";
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
   const handleConfirm = () => {
     if (isValid) {
       onConfirm();
@@ -314,7 +339,7 @@ function DeleteCollectionModal({ onClose, onConfirm, collectionName, paperCount 
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-surface border border-red-500/20 rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-neutral-900 border border-red-500/20 rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
           <div className="flex items-center gap-2">
             <AlertTriangle size={20} className="text-red-400" />
@@ -378,6 +403,14 @@ function DeletePaperModal({ onClose, onConfirm, paperTitle }: DeletePaperModalPr
   const [confirmText, setConfirmText] = useState("");
   const isValid = confirmText.toLowerCase() === "delete";
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
   const handleConfirm = () => {
     if (isValid) {
       onConfirm();
@@ -386,7 +419,7 @@ function DeletePaperModal({ onClose, onConfirm, paperTitle }: DeletePaperModalPr
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-surface border border-red-500/20 rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-neutral-900 border border-red-500/20 rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
           <div className="flex items-center gap-2">
             <AlertTriangle size={20} className="text-red-400" />
@@ -452,6 +485,14 @@ function CreateCollectionModal({ onClose, onCreate }: CreateCollectionModalProps
 
   const colors = ["#17b978", "#3b82f6", "#8b5cf6", "#ec4899", "#f97316", "#eab308"];
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
   const handleSubmit = () => {
     if (!name.trim()) return;
     onCreate({ name: name.trim(), description: description.trim() || undefined, color });
@@ -461,7 +502,7 @@ function CreateCollectionModal({ onClose, onCreate }: CreateCollectionModalProps
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-neutral-900 border border-white/10 rounded-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/5">
           <h2 className="text-lg font-semibold text-white">New Collection</h2>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -476,7 +517,7 @@ function CreateCollectionModal({ onClose, onCreate }: CreateCollectionModalProps
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Thesis Papers"
-              className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+              className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50"
               autoFocus
             />
           </div>
@@ -488,7 +529,7 @@ function CreateCollectionModal({ onClose, onCreate }: CreateCollectionModalProps
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional description"
-              className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+              className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50"
             />
           </div>
 
@@ -507,14 +548,14 @@ function CreateCollectionModal({ onClose, onCreate }: CreateCollectionModalProps
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-white/10">
-          <button onClick={onClose} className="px-4 py-2 text-white/60 hover:text-white text-sm font-medium transition-colors">
+        <div className="flex justify-between gap-3 px-6 py-4 border-t border-white/5 bg-white/5">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors">
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!name.trim()}
-            className="px-4 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-brand-primary text-black text-sm font-bold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Create
           </button>

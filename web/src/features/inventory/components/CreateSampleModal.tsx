@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { inventoryApi, Sample } from '../../../lib/api';
 import { X, Beaker } from 'lucide-react';
@@ -15,6 +15,14 @@ export function CreateSampleModal({ onClose, containerId, containerName, prefill
     const queryClient = useQueryClient();
     const [name, setName] = useState(editSample?.name || '');
     const [metadata, setMetadata] = useState(editSample?.metadata || '');
+
+    useEffect(() => {
+        const handleEscape = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [onClose]);
 
     const createMutation = useMutation({
         mutationFn: async () => {
@@ -44,8 +52,8 @@ export function CreateSampleModal({ onClose, containerId, containerName, prefill
     });
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-            <div className="w-full max-w-md bg-surface border border-white/10 rounded-2xl shadow-xl overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+            <div className="w-full max-w-md bg-neutral-900  border border-white/10 rounded-2xl shadow-xl overflow-hidden">
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
                     <div className="flex items-center gap-2">

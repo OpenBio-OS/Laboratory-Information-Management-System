@@ -38,6 +38,14 @@ export function CreateContainerModal({ onClose, parentId, parentName }: CreateCo
   const [rows, setRows] = useState(9);
   const [cols, setCols] = useState(9);
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
   // Fetch containers to determine parent type
   const { data: containers = [] } = useQuery({
     queryKey: ['containers'],
@@ -90,8 +98,8 @@ export function CreateContainerModal({ onClose, parentId, parentName }: CreateCo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-md bg-surface border border-white/10 rounded-2xl shadow-xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+      <div className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
           <h3 className="text-lg font-semibold text-white">
