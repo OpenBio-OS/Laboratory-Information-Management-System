@@ -68,20 +68,20 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const mentionRef = useRef<HTMLSpanElement>(null);
-  
+
   const data = node.attrs as MentionData;
-  
+
   // Safely get path as array (handles old mentions that might have malformed data)
   const getPath = (): string[] => {
     if (Array.isArray(data.path)) return data.path;
     if (typeof data.path === 'string') return [data.path];
     return [data.name || 'Unknown'];
   };
-  
+
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     // Navigate based on entity type OR category as fallback
     let targetTab: TabId = 'freezer';
     if (data.entityType === 'paper' || data.category === 'Library') {
@@ -91,10 +91,10 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
     } else if (data.entityType === 'sample' || data.category === 'Freezer') {
       targetTab = 'freezer';
     }
-    
+
     navigateTo({ tab: targetTab, itemId: data.id });
   };
-  
+
   const handleMouseEnter = () => {
     if (mentionRef.current) {
       const rect = mentionRef.current.getBoundingClientRect();
@@ -102,22 +102,22 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
     }
     setShowTooltip(true);
   };
-  
+
   const handleMouseLeave = () => {
     setShowTooltip(false);
   };
-  
+
   const handleUpdateMetadata = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsUpdating(true);
-    
+
     try {
       // Fetch current data from the API
       const response = await fetch(`${apiUrl}/api/experiments/search-entities`);
       if (response.ok) {
         const entities: SearchResult[] = await response.json();
         const currentEntity = entities.find(e => e.id === data.id);
-        
+
         if (currentEntity) {
           // Update the mention attributes with fresh data
           updateAttributes({
@@ -136,7 +136,7 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
       setIsUpdating(false);
     }
   };
-  
+
   const getEntityIcon = () => {
     switch (data.entityType) {
       case 'sample': return <Beaker size={16} className="opacity-50" />
@@ -145,7 +145,7 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
       default: return <ShieldQuestionMark size={16} className="opacity-50" />;
     }
   };
-  
+
   // Strip HTML tags from notes for display
   const getPlainTextNotes = () => {
     if (!data.notes) return null;
@@ -155,7 +155,7 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
     const text = div.textContent || div.innerText || '';
     return text.trim().slice(0, 300) + (text.length > 300 ? '...' : '');
   };
-  
+
   const formatDate = (isoString: string) => {
     if (!isoString) return 'Unknown';
     return new Date(isoString).toLocaleDateString(undefined, {
@@ -179,9 +179,9 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
         <span>{getEntityIcon()}</span>
         <span>@{data.name}</span>
       </span>
-      
+
       {showTooltip && createPortal(
-        <div 
+        <div
           className="fixed z-[9999] bg-neutral-900 border border-white/20 rounded-xl shadow-2xl p-4 min-w-[280px] max-w-[360px] animate-fade-in"
           style={{ left: tooltipPosition.x, top: tooltipPosition.y }}
           onMouseEnter={() => setShowTooltip(true)}
@@ -202,7 +202,7 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
               {data.entityType}
             </span>
           </div>
-          
+
           {/* Notes Snapshot */}
           {getPlainTextNotes() && (
             <div className="border-t border-white/10 pt-3 mb-3">
@@ -212,12 +212,12 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
               </div>
             </div>
           )}
-          
+
           {/* Mentioned timestamp */}
           <div className="text-xs text-white/40 mb-3">
             Mentioned: {formatDate(data.mentionedAt)}
           </div>
-          
+
           {/* Actions */}
           <div className="flex items-center gap-2 pt-2 border-t border-white/10">
             <button
@@ -249,7 +249,7 @@ function MentionNodeView({ node, updateAttributes }: NodeViewProps) {
 
 const RichMention = Mention.extend({
   name: 'mention',
-  
+
   addAttributes() {
     return {
       id: {
@@ -322,7 +322,7 @@ const RichMention = Mention.extend({
       `@${displayName}`,
     ];
   },
-  
+
   addNodeView() {
     return ReactNodeViewRenderer(MentionNodeView);
   },
@@ -344,9 +344,9 @@ interface MentionListRef {
 type NavigationLevel = 'category' | 'subcategory' | 'item';
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
-  'sample': <Beaker className='inline' size={14} style={{display: 'inline'}} />,
-  'paper': <NotebookText className='inline' size={14} style={{display: 'inline'}} />,
-  'equipment': <Microscope className='inline' size={14} style={{display: 'inline'}} />,
+  'sample': <Beaker className='inline' size={14} style={{ display: 'inline' }} />,
+  'paper': <NotebookText className='inline' size={14} style={{ display: 'inline' }} />,
+  'equipment': <Microscope className='inline' size={14} style={{ display: 'inline' }} />,
 };
 
 const MentionList = React.forwardRef<MentionListRef, MentionListProps>(
@@ -368,19 +368,19 @@ const MentionList = React.forwardRef<MentionListRef, MentionListProps>(
 
     // Get unique categories
     const categories = [...new Set(items.map(i => i.category))];
-    
+
     // Get subcategories for selected category
-    const subcategories = selectedCategory 
+    const subcategories = selectedCategory
       ? [...new Set(items.filter(i => i.category === selectedCategory).map(i => i.subcategory))]
       : [];
-    
+
     // Get items for selected subcategory (filtered by search)
     const filteredItems = selectedSubcategory
-      ? items.filter(i => 
-          i.category === selectedCategory && 
-          i.subcategory === selectedSubcategory &&
-          (searchQuery === '' || i.name.toLowerCase().includes(searchQuery.toLowerCase()))
-        )
+      ? items.filter(i =>
+        i.category === selectedCategory &&
+        i.subcategory === selectedSubcategory &&
+        (searchQuery === '' || i.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
       : [];
 
     // Get current list based on navigation level
@@ -480,7 +480,7 @@ const MentionList = React.forwardRef<MentionListRef, MentionListProps>(
       <div className="bg-neutral-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden w-80">
         {/* Header / Breadcrumb */}
         <div className="flex items-center gap-2 px-3 py-2 bg-white/5 border-b border-white/10 text-xs">
-          <button 
+          <button
             onClick={() => { setSelectedCategory(null); setSelectedSubcategory(null); setCurrentLevel('category'); }}
             className={`transition-colors ${!selectedCategory ? 'text-brand-primary font-medium' : 'text-white/50 hover:text-white'}`}
           >
@@ -489,7 +489,7 @@ const MentionList = React.forwardRef<MentionListRef, MentionListProps>(
           {selectedCategory && (
             <>
               <ChevronRight size={12} className="text-white/30" />
-              <button 
+              <button
                 onClick={() => { setSelectedSubcategory(null); setCurrentLevel('subcategory'); }}
                 className={`transition-colors ${selectedCategory && !selectedSubcategory ? 'text-brand-primary font-medium' : 'text-white/50 hover:text-white'}`}
               >
@@ -530,9 +530,8 @@ const MentionList = React.forwardRef<MentionListRef, MentionListProps>(
                   <button
                     key={cat}
                     onClick={() => handleCategoryClick(cat)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors ${
-                      index === selectedIndex ? 'bg-brand-primary/20 text-brand-primary' : 'text-white/70 hover:bg-white/5'
-                    }`}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors ${index === selectedIndex ? 'bg-brand-primary/20 text-brand-primary' : 'text-white/70 hover:bg-white/5'
+                      }`}
                   >
                     <span className="flex items-center gap-2">
                       <span>{CATEGORY_ICONS[cat] || '📁'}</span>
@@ -564,9 +563,8 @@ const MentionList = React.forwardRef<MentionListRef, MentionListProps>(
                   <button
                     key={sub}
                     onClick={() => handleSubcategoryClick(sub)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors ${
-                      index === selectedIndex ? 'bg-brand-primary/20 text-brand-primary' : 'text-white/70 hover:bg-white/5'
-                    }`}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors ${index === selectedIndex ? 'bg-brand-primary/20 text-brand-primary' : 'text-white/70 hover:bg-white/5'
+                      }`}
                   >
                     <span className="truncate">{sub}</span>
                     <span className="flex items-center gap-2">
@@ -598,9 +596,8 @@ const MentionList = React.forwardRef<MentionListRef, MentionListProps>(
                   <button
                     key={item.id}
                     onClick={() => handleItemClick(item)}
-                    className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
-                      index === selectedIndex ? 'bg-brand-primary/20 text-brand-primary' : 'text-white/70 hover:bg-white/5'
-                    }`}
+                    className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${index === selectedIndex ? 'bg-brand-primary/20 text-brand-primary' : 'text-white/70 hover:bg-white/5'
+                      }`}
                   >
                     <div className="font-medium truncate">{item.name}</div>
                     <div className="text-xs text-white/40 truncate">
@@ -658,7 +655,7 @@ function NotebookEditor({ experiment, onSave, entities }: NotebookEditorProps) {
               notes: props.notes,
               mentionedAt: new Date().toISOString(),
             };
-            
+
             editor
               .chain()
               .focus()
@@ -744,9 +741,8 @@ function NotebookEditor({ experiment, onSave, entities }: NotebookEditorProps) {
         <button
           onClick={() => editor.chain().focus().toggleBold().run()}
           disabled={!editor.can().chain().focus().toggleBold().run()}
-          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${
-            editor.isActive('bold') ? 'text-brand-primary bg-white/10' : 'text-white/60'
-          }`}
+          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('bold') ? 'text-brand-primary bg-white/10' : 'text-white/60'
+            }`}
           title="Bold"
         >
           <Bold size={16} />
@@ -754,9 +750,8 @@ function NotebookEditor({ experiment, onSave, entities }: NotebookEditorProps) {
         <button
           onClick={() => editor.chain().focus().toggleItalic().run()}
           disabled={!editor.can().chain().focus().toggleItalic().run()}
-          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${
-            editor.isActive('italic') ? 'text-brand-primary bg-white/10' : 'text-white/60'
-          }`}
+          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('italic') ? 'text-brand-primary bg-white/10' : 'text-white/60'
+            }`}
           title="Italic"
         >
           <Italic size={16} />
@@ -764,9 +759,8 @@ function NotebookEditor({ experiment, onSave, entities }: NotebookEditorProps) {
         <div className="w-px h-4 bg-white/10 mx-1" />
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${
-            editor.isActive('heading', { level: 1 }) ? 'text-brand-primary bg-white/10' : 'text-white/60'
-          }`}
+          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('heading', { level: 1 }) ? 'text-brand-primary bg-white/10' : 'text-white/60'
+            }`}
           title="Heading"
         >
           <Heading1 size={16} />
@@ -774,24 +768,23 @@ function NotebookEditor({ experiment, onSave, entities }: NotebookEditorProps) {
         <div className="w-px h-4 bg-white/10 mx-1" />
         <button
           onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${
-            editor.isActive('bulletList') ? 'text-brand-primary bg-white/10' : 'text-white/60'
-          }`}
+          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('bulletList') ? 'text-brand-primary bg-white/10' : 'text-white/60'
+            }`}
           title="Bullet List"
         >
           <List size={16} />
         </button>
         <button
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${
-            editor.isActive('orderedList') ? 'text-brand-primary bg-white/10' : 'text-white/60'
-          }`}
+          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('orderedList') ? 'text-brand-primary bg-white/10' : 'text-white/60'
+            }`}
           title="Ordered List"
         >
           <ListOrdered size={16} />
         </button>
         <div className="w-px h-4 bg-white/10 mx-1" />
         <div className="px-2 py-1 text-xs text-white/40 flex items-center gap-1">
+          <span>Type</span>
           <AtSign size={12} />
           <span>to mention</span>
         </div>
@@ -862,9 +855,8 @@ function FolderSelect({ value, onChange, folders }: FolderSelectProps) {
         ref={buttonRef}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-full flex items-center justify-between px-4 py-2.5 bg-black/30 border rounded-lg text-sm text-left transition-all hover:border-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50 ${
-          !value ? 'border-red-500/50' : 'border-white/10'
-        }`}
+        className={`w-full flex items-center justify-between px-4 py-2.5 bg-black/30 border rounded-lg text-sm text-left transition-all hover:border-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50 ${!value ? 'border-red-500/50' : 'border-white/10'
+          }`}
       >
         <span className="flex items-center gap-2">
           {selectedFolder ? (
@@ -901,11 +893,10 @@ function FolderSelect({ value, onChange, folders }: FolderSelectProps) {
                 key={folder.id}
                 type="button"
                 onClick={() => handleSelect(folder.id)}
-                className={`w-full flex items-center justify-between px-4 py-2.5 text-sm text-left transition-colors ${
-                  value === folder.id
+                className={`w-full flex items-center justify-between px-4 py-2.5 text-sm text-left transition-colors ${value === folder.id
                     ? 'bg-brand-primary/15 text-brand-primary'
                     : 'text-white/70 hover:bg-white/5'
-                }`}
+                  }`}
               >
                 <span className="flex items-center gap-2">
                   <div
@@ -1005,9 +996,8 @@ function CreateFolderModal({ onClose, onCreate, parentId }: CreateFolderModalPro
                 <button
                   key={c}
                   onClick={() => setColor(c)}
-                  className={`w-8 h-8 rounded-lg border-2 transition-all ${
-                    color === c ? 'border-white scale-110' : 'border-transparent hover:scale-105'
-                  }`}
+                  className={`w-8 h-8 rounded-lg border-2 transition-all ${color === c ? 'border-white scale-110' : 'border-transparent hover:scale-105'
+                    }`}
                   style={{ backgroundColor: c }}
                 />
               ))}
@@ -1398,9 +1388,8 @@ export function ExperimentsPage() {
               setSelectedExperiment(null);
               setSelectedFolderId(null);
             }}
-            className={`transition-colors ${
-              !selectedFolderId && !selectedExperiment ? 'text-white font-medium' : 'text-white/50 hover:text-white'
-            }`}
+            className={`transition-colors ${!selectedFolderId && !selectedExperiment ? 'text-white font-medium' : 'text-white/50 hover:text-white'
+              }`}
           >
             All
           </button>
@@ -1410,9 +1399,8 @@ export function ExperimentsPage() {
               <span className="text-white/30">/</span>
               <button
                 onClick={() => setSelectedExperiment(null)}
-                className={`transition-colors ${
-                  !selectedExperiment ? 'text-white font-medium' : 'text-white/50 hover:text-white'
-                }`}
+                className={`transition-colors ${!selectedExperiment ? 'text-white font-medium' : 'text-white/50 hover:text-white'
+                  }`}
               >
                 {currentFolder?.name || 'Folder'}
               </button>
@@ -1498,33 +1486,32 @@ export function ExperimentsPage() {
                 ) : (
                   <div className="space-y-1">
                     {folders.map((folder) => (
-                    <div key={folder.id} className="group flex items-center">
-                      <button
-                        onClick={() => setSelectedFolderId(folder.id)}
-                        className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                          selectedFolderId === folder.id
-                            ? 'bg-brand-primary/20 text-brand-primary'
-                            : 'text-white/70 hover:bg-white/5'
-                        }`}
-                      >
-                        <div className="w-3 h-3 rounded" style={{ backgroundColor: folder.color || '#17b978' }} />
-                        <span className="flex-1 text-left truncate">{folder.name}</span>
-                        <span className="text-xs text-white/40 mr-2">
-                          {experiments.filter((e) => e.folderId === folder.id).length}
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setFolderToDelete({ id: folder.id, name: folder.name });
-                          setShowDeleteFolderModal(true);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-white/30 hover:text-red-400 transition-all ml-1"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                      <div key={folder.id} className="group flex items-center">
+                        <button
+                          onClick={() => setSelectedFolderId(folder.id)}
+                          className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${selectedFolderId === folder.id
+                              ? 'bg-brand-primary/20 text-brand-primary'
+                              : 'text-white/70 hover:bg-white/5'
+                            }`}
+                        >
+                          <div className="w-3 h-3 rounded" style={{ backgroundColor: folder.color || '#17b978' }} />
+                          <span className="flex-1 text-left truncate">{folder.name}</span>
+                          <span className="text-xs text-white/40 mr-2">
+                            {experiments.filter((e) => e.folderId === folder.id).length}
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setFolderToDelete({ id: folder.id, name: folder.name });
+                            setShowDeleteFolderModal(true);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-white/30 hover:text-red-400 transition-all ml-3"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
@@ -1602,10 +1589,10 @@ export function ExperimentsPage() {
                   )}
                 </div>
                 <div className="text-xs text-white/40">
-                  Created {new Date(selectedExperiment.createdAt).toLocaleDateString('en-US', { 
-                    year: 'numeric', 
-                    month: 'short', 
-                    day: 'numeric' 
+                  Created {new Date(selectedExperiment.createdAt).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
                   })}
                 </div>
               </div>
@@ -1613,6 +1600,16 @@ export function ExperimentsPage() {
             <div className="flex-1 overflow-hidden">
               <NotebookEditor experiment={selectedExperiment} onSave={handleContentChange} entities={searchEntities} />
             </div>
+            <div className="px-8 pb-8 pt-4">
+<div className="pt-6 border-t border-white/10">
+              <button
+                onClick={() => setSelectedExperiment(null)}
+                className="text-sm text-white/50 hover:text-white transition-colors"
+              >
+                ← Back to experiments
+              </button>
+            </div>
+              </div>
           </div>
         )}
       </div>

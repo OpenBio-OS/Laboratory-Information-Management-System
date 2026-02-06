@@ -131,7 +131,7 @@ export function HierarchyTree({ containers, selectedId, onSelect, onCreateConfir
 
   return (
     <div className="space-y-1">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between px-4 pt-4 mb-2">
         <h3 className="text-xs font-semibold text-white/40 uppercase tracking-wider">Storage</h3>
         <button
           onClick={() => onCreateConfirm(null)}
@@ -145,7 +145,7 @@ export function HierarchyTree({ containers, selectedId, onSelect, onCreateConfir
       </div>
 
       {rootContainers.length === 0 ? (
-        <div className="text-sm text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
+        <div className="text-sm mx-4 text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
           No facilities yet.
           <br />
           <button
@@ -156,7 +156,8 @@ export function HierarchyTree({ containers, selectedId, onSelect, onCreateConfir
           </button>
         </div>
       ) : (
-        rootContainers.map(container => (
+        <div className='px-2.5'>
+                  {rootContainers.map(container => (
           <TreeNode
             key={container.id}
             container={container}
@@ -167,7 +168,8 @@ export function HierarchyTree({ containers, selectedId, onSelect, onCreateConfir
             onCreateConfirm={onCreateConfirm}
             onDelete={onDelete}
           />
-        ))
+        ))}
+          </div>
       )}
     </div>
   );

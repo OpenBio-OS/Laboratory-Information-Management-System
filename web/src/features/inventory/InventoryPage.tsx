@@ -194,7 +194,7 @@ export function InventoryPage() {
       {/* Main Content */}
       <div className="flex-1 overflow-hidden flex min-h-0">
         {/* Sidebar */}
-        <div className="w-64 bg-black/20 border-r border-white/5 p-4 overflow-y-auto flex-shrink-0">
+        <div className="w-64 bg-black/20 border-r border-white/5 overflow-y-auto flex-shrink-0">
           <HierarchyTree
             containers={containers}
             selectedId={selectedContainerId}

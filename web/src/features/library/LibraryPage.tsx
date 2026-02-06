@@ -8,7 +8,7 @@ import {
   getApiBaseUrl,
 } from "../../lib/api";
 import { useNavigation } from "../../App";
-import { Plus, Search, X, Pin, ExternalLink, FileText, ChevronDown, Check, Trash, Upload, AlertTriangle } from "lucide-react";
+import { Plus, Search, X, Pin, ExternalLink, FileText, ChevronDown, Check, Trash, Upload, AlertTriangle, Trash2 } from "lucide-react";
 import { RichTextEditor } from "../../components/editor/RichTextEditor";
 
 // Portal-based dropdown that escapes modal overflow
@@ -897,7 +897,7 @@ export function LibraryPage() {
                           onClick={() => handleDeleteCollectionClick(collection)}
                           className="opacity-0 group-hover:opacity-100 p-1 text-white/30 hover:text-red-400 transition-all ml-3"
                         >
-                          <X size={14} />
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     ))}
@@ -988,7 +988,7 @@ export function LibraryPage() {
         ) : (
           /* Full-width Paper Detail View */
           <div className="flex-1 overflow-auto p-8">
-            <div className="max-w-3xl mx-auto">
+            <div>
               {/* Paper Header */}
               <div className="mb-8">
                 <div className="flex items-start gap-4 mb-6">

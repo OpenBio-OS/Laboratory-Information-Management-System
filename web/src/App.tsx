@@ -308,7 +308,7 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl px-8">
+    <div className="space-y-6 max-w-3xl px-8">
       <Card>
         <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
           <div className="w-1 h-6 bg-red-500 rounded-full"></div>
