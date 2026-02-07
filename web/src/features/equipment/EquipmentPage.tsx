@@ -5,6 +5,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DeleteConfirmModal } from './components/DeleteConfirmModal';
+import { AgentConnectionDialog } from './components/AgentConnectionDialog';
 import {
   Equipment,
   EquipmentLocation,
@@ -85,6 +86,16 @@ const SpectrophotometerIcon = ({ size = 14, className = '' }: { size?: number; c
 
 const SequencerIcon = ({ size = 14, className = '' }: { size?: number; className?: string }) => <Dna size={size} className={className} />;
 
+const FlowCytometerIcon = ({ size = 14, className = '' }: { size?: number; className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 512 512" fill="currentColor" className={className}>
+	<g>
+		<path d="M171.501,464.698v-237.9l-166.3-192.6c-8.9-10.9-7.9-33.3,15.1-33.3h443.6c21.6,0,26.6,19.8,15.1,33.3l-162.3,187.5v147.2
+			c0,6-2,11.1-7.1,15.1l-103.8,95.8C193.801,488.698,171.501,483.898,171.501,464.698z M64.701,41.298l142.2,164.3c3,4,5,8.1,5,13.1
+			v200.6l64.5-58.5v-146.1c0-5,2-9.1,5-13.1l138.1-160.3L64.701,41.298L64.701,41.298z"/>
+	</g>
+  </svg>
+);
+
 function getEquipmentIcon(type: string) {
   switch (type) {
     case 'incubator':
@@ -97,6 +108,8 @@ function getEquipmentIcon(type: string) {
       return PCRIcon;
     case 'spectrophotometer':
       return SpectrophotometerIcon;
+    case 'flow_cytometer':
+      return FlowCytometerIcon;
     case 'microscope':
     default:
       return Microscope;
@@ -419,6 +432,7 @@ function formatEquipmentType(type: string): string {
     pcr_machine: 'PCR Machine',
     incubator: 'Incubator',
     spectrophotometer: 'Spectrophotometer',
+    flow_cytometer: 'Flow Cytometer',
     freezer: 'Freezer',
   };
   return formatted[type] || type.replace(/_/g, ' ');
@@ -649,7 +663,7 @@ function CreateLocationModal({ onClose, onCreate, parentName }: CreateLocationMo
   const locationTypeLabel = parentName ? 'Room' : 'Facility';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
@@ -760,10 +774,11 @@ function AddEquipmentModal({ roomId, roomName, onClose, onSave }: AddEquipmentMo
     { value: 'centrifuge', label: 'Centrifuge' },
     { value: 'incubator', label: 'Incubator' },
     { value: 'spectrophotometer', label: 'Spectrophotometer' },
+    { value: 'flow_cytometer', label: 'Flow Cytometer' },
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
@@ -849,6 +864,7 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
     equipment.lastMaintenance ? new Date(equipment.lastMaintenance).toISOString().split('T')[0] : ''
   );
   const [isDiscovering, setIsDiscovering] = useState(false);
+  const [showAgentDialog, setShowAgentDialog] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -888,12 +904,64 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
     setIsEditingConfig(false);
   };
 
-  const handleFindOnNetwork = async () => {
+  const handleFindOnNetwork = () => {
+    setShowAgentDialog(true);
+  };
+
+  const handleAgentConnect = async (mode: 'local' | 'mdns' | 'enterprise', ipAddress?: string) => {
     setIsDiscovering(true);
-    setTimeout(() => {
+    
+    try {
+      let agentUrl: string;
+
+      if (mode === 'local') {
+        // Check for local agent
+        agentUrl = 'http://localhost:3001';
+        const response = await fetch(`${agentUrl}/health`, { 
+          method: 'GET',
+          signal: AbortSignal.timeout(5000) // 5 second timeout
+        });
+        
+        if (!response.ok) {
+          throw new Error('Local agent is not responding');
+        }
+      } else if (mode === 'mdns') {
+        // TODO: Implement mDNS discovery
+        // For now, simulate discovery
+        throw new Error('mDNS discovery will be implemented. This would use multicast DNS to discover agents on the local network.');
+      } else if (mode === 'enterprise') {
+        // Connect via IP address
+        if (!ipAddress) {
+          throw new Error('IP address is required for enterprise mode');
+        }
+        agentUrl = `http://${ipAddress}:3001`;
+        
+        const response = await fetch(`${agentUrl}/health`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(5000)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Agent at ${ipAddress} is not responding`);
+        }
+      } else {
+        throw new Error('Invalid connection mode');
+      }
+
+      // If we get here, connection succeeded
+      // Update equipment status to ONLINE
+      const updated = await equipmentApi.update(equipment.id, {
+        agentStatus: 'ONLINE'
+      });
+      onUpdate(updated);
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
+
+    } catch (err) {
+      console.error('Agent connection failed:', err);
+      throw err;
+    } finally {
       setIsDiscovering(false);
-      alert('Network discovery will be implemented. In Hub mode: mDNS discovery. In Enterprise mode: IP address connection.');
-    }, 2000);
+    }
   };
 
   const handleForceUnlock = async () => {
@@ -1176,6 +1244,14 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
           </div>
         </div>
       </div>
+
+      {/* Agent Connection Dialog */}
+      {showAgentDialog && (
+        <AgentConnectionDialog
+          onClose={() => setShowAgentDialog(false)}
+          onConnect={handleAgentConnect}
+        />
+      )}
     </div>
   );
 }
