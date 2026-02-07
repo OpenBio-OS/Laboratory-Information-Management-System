@@ -42,6 +42,16 @@ pub struct Config {
     /// Lab name (for hub mode - what appears in mDNS discovery)
     pub lab_name: Option<String>,
     
+    /// Agent name (for agent mode - what appears in mDNS discovery)
+    /// e.g. "Microscope Room 301", "Flow Cytometer", "Freezer Monitor"
+    pub agent_name: Option<String>,
+    
+    /// Auto-start application on system boot (default: true for Hub/Agent, false otherwise)
+    pub auto_start: bool,
+    
+    /// Minimize to system tray on startup (Hub mode only)
+    pub minimize_to_tray: bool,
+    
     /// Data directory path (where SQLite and files are stored)
     /// This is relative to app data dir, set by wizard
     pub data_path: String,
@@ -55,6 +65,9 @@ impl Config {
             api_url: None,
             server_port: 3000,
             lab_name: None,
+            agent_name: None,
+            auto_start: false,
+            minimize_to_tray: false,
             data_path: "data".to_string(),
         }
     }

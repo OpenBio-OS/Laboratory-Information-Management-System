@@ -24,6 +24,10 @@ pub struct AgentConfig {
     /// ID of equipment this agent monitors
     pub equipment_id: Option<String>,
     
+    /// Human-readable name for this agent (for mDNS discovery)
+    /// e.g. "Microscope Room 301", "Flow Cytometer", "Freezer Monitor"
+    pub agent_name: Option<String>,
+    
     /// Directory to watch for new files
     pub watch_dir: Option<PathBuf>,
     
@@ -51,9 +55,14 @@ impl AgentState {
 }
 
 /// Run the agent HTTP server
-pub async fn run_agent_server(port: u16, equipment_id: Option<String>) -> Result<()> {
+pub async fn run_agent_server(
+    port: u16,
+    equipment_id: Option<String>,
+    agent_name: Option<String>,
+) -> Result<()> {
     let config = AgentConfig {
         equipment_id,
+        agent_name: agent_name.clone(),
         watch_dir: None,
         upload_api_url: None,
         api_key: None,
@@ -62,8 +71,9 @@ pub async fn run_agent_server(port: u16, equipment_id: Option<String>) -> Result
     let state = AgentState::new(config);
 
     // Start mDNS broadcast
+    let broadcast_name = agent_name;
     tokio::spawn(async move {
-        if let Err(e) = broadcast_mdns(port).await {
+        if let Err(e) = broadcast_mdns(port, broadcast_name).await {
             warn!("mDNS broadcast failed: {}", e);
         }
     });
@@ -89,11 +99,17 @@ pub async fn run_agent_server(port: u16, equipment_id: Option<String>) -> Result
 }
 
 /// Broadcast agent presence via mDNS
-async fn broadcast_mdns(port: u16) -> Result<()> {
+async fn broadcast_mdns(port: u16, agent_name: Option<String>) -> Result<()> {
     let mdns = ServiceDaemon::new()?;
     
     let service_type = "_openbio-agent._tcp.local.";
-    let instance_name = format!("OpenBio Agent on {}", hostname::get()?.to_string_lossy());
+    
+    // Use agent_name if provided, otherwise fallback to hostname
+    let instance_name = if let Some(name) = agent_name {
+        name
+    } else {
+        format!("OpenBio Agent on {}", hostname::get()?.to_string_lossy())
+    };
     
     let service_info = ServiceInfo::new(
         service_type,
@@ -119,6 +135,7 @@ async fn get_status(State(state): State<AgentState>) -> Json<serde_json::Value> 
     let locked = state.locked_by.lock().unwrap();
     Json(serde_json::json!({
         "status": "running",
+        "agent_name": config.agent_name,
         "equipment_id": config.equipment_id,
         "watching": config.watch_dir.is_some(),
         "locked": locked.is_some(),

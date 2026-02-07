@@ -17,6 +17,10 @@ struct Args {
     /// Equipment ID (optional - can be set via API)
     #[arg(long)]
     equipment_id: Option<String>,
+    
+    /// Agent name for mDNS discovery (e.g. "Microscope Room 301")
+    #[arg(long)]
+    agent_name: Option<String>,
 }
 
 #[tokio::main]
@@ -28,5 +32,5 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     
-    openbio_agent::run_agent_server(args.port, args.equipment_id).await
+    openbio_agent::run_agent_server(args.port, args.equipment_id, args.agent_name).await
 }

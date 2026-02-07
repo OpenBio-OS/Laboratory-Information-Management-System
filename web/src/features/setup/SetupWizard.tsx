@@ -27,6 +27,7 @@ export type DeploymentMode = 'local' | 'hub' | 'spoke' | 'enterprise' | 'agent';
 export interface SetupConfig {
   mode: DeploymentMode;
   labName?: string;
+  agentName?: string;
   apiUrl?: string;
   serverPort: number;
 }
@@ -337,6 +338,25 @@ function Step2Configure({ config, setConfig, onBack, onNext }: Step2Props) {
           </div>
         )}
 
+        {config.mode === 'agent' && (
+          <>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-white/60">Agent Name *</label>
+              <input
+                type="text"
+                placeholder="Flow Cytometer Lab A"
+                className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-brand-primary/50 focus:border-brand-primary/50 transition-all duration-200"
+                value={config.agentName || ''}
+                onChange={(e) => setConfig({ ...config, agentName: e.target.value })}
+              />
+              <span className="text-xs text-white/40">Descriptive name that appears in mDNS discovery (e.g., &quot;Microscope Room 301&quot;, &quot;Freezer -80C Wing B&quot;)</span>
+            </div>
+            <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+              <p className="text-sm text-white/80"><strong className="text-white">Important:</strong> This agent will broadcast on your network. Make sure the name is unique and descriptive so users can identify the equipment.</p>
+            </div>
+          </>
+        )}
+
 
       </div>
 
@@ -350,7 +370,10 @@ function Step2Configure({ config, setConfig, onBack, onNext }: Step2Props) {
         </button>
         <button
           onClick={onNext}
-          disabled={config.mode === 'spoke' && !config.apiUrl}
+          disabled={
+            (config.mode === 'spoke' && !config.apiUrl) ||
+            (config.mode === 'agent' && !config.agentName)
+          }
           className="flex items-center gap-2 px-6 py-2 bg-brand-primary hover:bg-brand-secondary text-black font-semibold rounded-lg shadow-[0_0_20px_rgba(23,185,120,0.3)] disabled:opacity-50 disabled:hover:bg-brand-primary disabled:shadow-none transition-all hover:-translate-y-0.5 active:translate-y-0"
         >
           Continue

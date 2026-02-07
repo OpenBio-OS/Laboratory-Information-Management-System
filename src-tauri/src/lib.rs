@@ -34,10 +34,16 @@ pub struct AppConfig {
     pub mode: DeploymentMode,
     #[serde(rename = "labName")]
     pub lab_name: Option<String>,
+    #[serde(rename = "agentName")]
+    pub agent_name: Option<String>,
     #[serde(rename = "apiUrl")]
     pub api_url: Option<String>,
     #[serde(rename = "serverPort")]
     pub server_port: u16,
+    #[serde(rename = "autoStart", default)]
+    pub auto_start: bool,
+    #[serde(rename = "minimizeToTray", default)]
+    pub minimize_to_tray: bool,
 }
 
 /// Shared application state
@@ -99,7 +105,12 @@ fn get_config(state: State<AppState>) -> AppConfig {
 
 /// Save config to disk and update state
 #[tauri::command]
-fn save_config(config: AppConfig, state: State<AppState>, app: AppHandle) -> Result<(), String> {
+fn save_config(mut config: AppConfig, state: State<AppState>, app: AppHandle) -> Result<(), String> {
+    // Set default auto_start for Hub and Agent modes if not explicitly set
+    if !config.auto_start && (config.mode == DeploymentMode::Hub || config.mode == DeploymentMode::Agent) {
+        config.auto_start = true;
+    }
+    
     // Create config directory if needed
     let dir = config_dir();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -254,6 +265,91 @@ fn list_local_agents(state: State<AppState>) -> Vec<String> {
         .keys()
         .cloned()
         .collect()
+}
+
+/// Update auto-start setting
+#[tauri::command]
+fn update_auto_start(enabled: bool, state: State<AppState>, app: AppHandle) -> Result<(), String> {
+    let mut config = state.config.lock().unwrap();
+    config.auto_start = enabled;
+    
+    // Save to disk
+    let content = toml::to_string_pretty(&*config).map_err(|e| e.to_string())?;
+    fs::write(config_path(), content).map_err(|e| e.to_string())?;
+    
+    // Apply auto-start setting immediately
+    #[cfg(not(debug_assertions))]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        if enabled {
+            app.autolaunch().enable().map_err(|e| e.to_string())?;
+            tracing::info!("Auto-start enabled");
+        } else {
+            app.autolaunch().disable().map_err(|e| e.to_string())?;
+            tracing::info!("Auto-start disabled");
+        }
+    }
+    
+    Ok(())
+}
+
+/// Update minimize-to-tray setting
+#[tauri::command]
+fn update_minimize_to_tray(enabled: bool, state: State<AppState>) -> Result<(), String> {
+    let mut config = state.config.lock().unwrap();
+    config.minimize_to_tray = enabled;
+    
+    // Save to disk
+    let content = toml::to_string_pretty(&*config).map_err(|e| e.to_string())?;
+    fs::write(config_path(), content).map_err(|e| e.to_string())?;
+    
+    tracing::info!("Minimize to tray: {}", enabled);
+    Ok(())
+}
+
+/// Update lab name (mDNS broadcast name for Hub mode)
+#[tauri::command]
+fn update_lab_name(lab_name: String, state: State<AppState>) -> Result<(), String> {
+    let mut config = state.config.lock().unwrap();
+    
+    // Only allow for Hub mode
+    if config.mode != DeploymentMode::Hub {
+        return Err("Lab name can only be set in Hub mode".to_string());
+    }
+    
+    config.lab_name = Some(lab_name.clone());
+    
+    // Save to disk
+    let content = toml::to_string_pretty(&*config).map_err(|e| e.to_string())?;
+    fs::write(config_path(), content).map_err(|e| e.to_string())?;
+    
+    tracing::info!("Lab name updated to: {}", lab_name);
+    
+    // Note: mDNS broadcast needs app restart to take effect
+    // The mDNS service is registered in a background thread and can't be easily restarted
+    Ok(())
+}
+
+/// Update agent name (mDNS broadcast name for Agent mode)
+#[tauri::command]
+fn update_agent_name(agent_name: String, state: State<AppState>) -> Result<(), String> {
+    let mut config = state.config.lock().unwrap();
+    
+    // Only allow for Agent mode
+    if config.mode != DeploymentMode::Agent {
+        return Err("Agent name can only be set in Agent mode".to_string());
+    }
+    
+    config.agent_name = Some(agent_name.clone());
+    
+    // Save to disk
+    let content = toml::to_string_pretty(&*config).map_err(|e| e.to_string())?;
+    fs::write(config_path(), content).map_err(|e| e.to_string())?;
+    
+    tracing::info!("Agent name updated to: {}", agent_name);
+    
+    // Note: mDNS broadcast needs app restart to take effect
+    Ok(())
 }
 
 /// Re-initialize the application (reset config and show setup wizard)
@@ -559,6 +655,10 @@ pub fn run() {
             stop_local_agent,
             is_local_agent_running,
             list_local_agents,
+            update_auto_start,
+            update_minimize_to_tray,
+            update_lab_name,
+            update_agent_name,
             reinitialize,
         ])
         .setup(move |app| {
@@ -575,26 +675,69 @@ pub fn run() {
                 
                 // Run embedded agent server
                 let port = config.server_port;
+                let agent_name = config.agent_name.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = openbio_agent::run_agent_server(port, None).await {
+                    if let Err(e) = openbio_agent::run_agent_server(port, None, agent_name).await {
                         tracing::error!("Agent server failed: {}", e);
                     }
                 });
                 
-                // Enable auto-start on boot
-                #[cfg(not(debug_assertions))]
-                {
-                    use tauri_plugin_autostart::ManagerExt;
-                    if let Err(e) = app.autolaunch().enable() {
-                        tracing::error!("Failed to enable auto-start: {}", e);
-                    } else {
-                        tracing::info!("Auto-start on boot enabled");
+                // Enable auto-start on boot based on config setting
+                if config.auto_start {
+                    #[cfg(not(debug_assertions))]
+                    {
+                        use tauri_plugin_autostart::ManagerExt;
+                        if let Err(e) = app.autolaunch().enable() {
+                            tracing::error!("Failed to enable auto-start: {}", e);
+                        } else {
+                            tracing::info!("Auto-start on boot enabled");
+                        }
                     }
                 }
                 
                 tracing::info!("Running in Agent mode (headless)");
             } else {
-                // Normal client mode - show UI
+                // Normal client mode - show UI (or minimize to tray if configured)
+                
+                // Minimize to tray on startup for Hub mode if configured
+                if config.mode == DeploymentMode::Hub && config.minimize_to_tray {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                    
+                    if let Err(e) = build_system_tray(app.handle()) {
+                        tracing::error!("Failed to create system tray: {}", e);
+                    }
+                }
+                
+                // Enable auto-start on boot if configured
+                if config.auto_start {
+                    #[cfg(not(debug_assertions))]
+                    {
+                        use tauri_plugin_autostart::ManagerExt;
+                        if let Err(e) = app.autolaunch().enable() {
+                            tracing::error!("Failed to enable auto-start: {}", e);
+                        } else {
+                            tracing::info!("Auto-start on boot enabled for {} mode", 
+                                match config.mode {
+                                    DeploymentMode::Hub => "Hub",
+                                    DeploymentMode::Local => "Solo",
+                                    DeploymentMode::Spoke => "Spoke",
+                                    DeploymentMode::Enterprise => "Enterprise",
+                                    _ => "Unknown"
+                                }
+                            );
+                        }
+                    }
+                } else {
+                    // Disable auto-start if it was previously enabled but is now turned off
+                    #[cfg(not(debug_assertions))]
+                    {
+                        use tauri_plugin_autostart::ManagerExt;
+                        let _ = app.autolaunch().disable();
+                    }
+                }
+                
                 // Check for updates on startup (non-blocking) - only in release builds
                 #[cfg(not(debug_assertions))]
                 {

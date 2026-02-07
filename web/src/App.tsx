@@ -310,17 +310,199 @@ function InsightView() {
 }
 
 function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
-  // const { apiUrl, setApiUrl, isConnected } = useApi();
-  // const [urlInput, setUrlInput] = useState(apiUrl);
+  const [config, setConfig] = useState<any>(null);
+  const [autoStart, setAutoStart] = useState(false);
+  const [minimizeToTray, setMinimizeToTray] = useState(false);
+  const [labName, setLabName] = useState('');
+  const [agentName, setAgentName] = useState('');
+  const [editingLabName, setEditingLabName] = useState(false);
+  const [editingAgentName, setEditingAgentName] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    invoke('get_config').then((cfg: any) => {
+      setConfig(cfg);
+      setAutoStart(cfg.autoStart || false);
+      setMinimizeToTray(cfg.minimizeToTray || false);
+      setLabName(cfg.labName || '');
+      setAgentName(cfg.agentName || '');
+      setLoading(false);
+    }).catch(err => {
+      console.error("Failed to load config:", err);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleAutoStartToggle = async () => {
+    try {
+      await invoke('update_auto_start', { enabled: !autoStart });
+      setAutoStart(!autoStart);
+    } catch (err) {
+      console.error("Failed to update auto-start:", err);
+    }
+  };
+
+  const handleMinimizeToTrayToggle = async () => {
+    try {
+      await invoke('update_minimize_to_tray', { enabled: !minimizeToTray });
+      setMinimizeToTray(!minimizeToTray);
+    } catch (err) {
+      console.error("Failed to update minimize to tray:", err);
+    }
+  };
+
+  const handleLabNameSave = async () => {
+    try {
+      await invoke('update_lab_name', { labName });
+      setEditingLabName(false);
+      // Update config to reflect change
+      setConfig({ ...config, labName });
+    } catch (err) {
+      console.error("Failed to update lab name:", err);
+      alert("Failed to update lab name. You may need to restart the app.");
+    }
+  };
+
+  const handleAgentNameSave = async () => {
+    try {
+      await invoke('update_agent_name', { agentName });
+      setEditingAgentName(false);
+      setConfig({ ...config, agentName });
+    } catch (err) {
+      console.error("Failed to update agent name:", err);
+      alert("Failed to update agent name. You may need to restart the app.");
+    }
+  };
 
   const handleResetSetup = async () => {
-    // Clear config - in production this would delete the config file
     localStorage.removeItem('openbio_config');
     onResetSetup();
   };
 
+  if (loading) {
+    return <div className="flex items-center justify-center h-full"><div className="text-white/40">Loading settings...</div></div>;
+  }
+
+  const isHub = config?.mode === 'hub';
+  const isAgent = config?.mode === 'agent';
+
   return (
     <div className="space-y-6 max-w-3xl px-8">
+      <Card>
+        <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
+          <div className="w-1 h-6 bg-brand-primary rounded-full"></div>
+          General
+        </h3>
+
+        <div className="space-y-4">
+          {/* Lab Name (Hub mode) */}
+          {isHub && (
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+              <h4 className="font-medium text-white mb-1">Lab Name (mDNS Broadcast)</h4>
+              <p className="text-sm text-white/40 mb-3">
+                This name appears when teammates search for your lab on the network
+              </p>
+              {editingLabName ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={labName}
+                    onChange={(e) => setLabName(e.target.value)}
+                    placeholder="Smith Lab"
+                    className="flex-1 px-3 py-2 bg-black/30 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+                  />
+                  <Button onClick={handleLabNameSave} className="px-4 py-2">Save</Button>
+                  <Button variant="secondary" onClick={() => { setLabName(config.labName || ''); setEditingLabName(false); }} className="px-4 py-2">Cancel</Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <span className="text-white font-mono">{labName || 'Not set'}</span>
+                  <Button variant="secondary" onClick={() => setEditingLabName(true)} className="px-4 py-2">Edit</Button>
+                </div>
+              )}
+              <p className="text-xs text-yellow-400/60 mt-2">Note: Changes require app restart to take effect</p>
+            </div>
+          )}
+
+          {/* Agent Name (Agent mode) */}
+          {isAgent && (
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+              <h4 className="font-medium text-white mb-1">Agent Name (mDNS Broadcast)</h4>
+              <p className="text-sm text-white/40 mb-3">
+                This name appears when clients search for agents on the network
+              </p>
+              {editingAgentName ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={agentName}
+                    onChange={(e) => setAgentName(e.target.value)}
+                    placeholder="Flow Cytometer Lab A"
+                    className="flex-1 px-3 py-2 bg-black/30 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+                  />
+                  <Button onClick={handleAgentNameSave} className="px-4 py-2">Save</Button>
+                  <Button variant="secondary" onClick={() => { setAgentName(config.agentName || ''); setEditingAgentName(false); }} className="px-4 py-2">Cancel</Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <span className="text-white font-mono">{agentName || 'Not set'}</span>
+                  <Button variant="secondary" onClick={() => setEditingAgentName(true)} className="px-4 py-2">Edit</Button>
+                </div>
+              )}
+              <p className="text-xs text-yellow-400/60 mt-2">Note: Changes require app restart to take effect</p>
+            </div>
+          )}
+
+          {/* Auto-start on boot */}
+          <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+            <div>
+              <h4 className="font-medium text-white mb-1">Start on system boot</h4>
+              <p className="text-sm text-white/40">
+                {isHub || isAgent 
+                  ? "Automatically start OpenBio when your computer boots (recommended for server modes)" 
+                  : "Launch OpenBio automatically when you log in"}
+              </p>
+            </div>
+            <button
+              onClick={handleAutoStartToggle}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                autoStart ? 'bg-brand-primary' : 'bg-white/10'
+              }`}
+            >
+              <div
+                className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                  autoStart ? 'translate-x-6' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Minimize to tray (Hub mode only) */}
+          {isHub && (
+            <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+              <div>
+                <h4 className="font-medium text-white mb-1">Minimize to system tray on startup</h4>
+                <p className="text-sm text-white/40">
+                  Hide the UI window and run in the background (accessible via system tray icon)
+                </p>
+              </div>
+              <button
+                onClick={handleMinimizeToTrayToggle}
+                className={`relative w-12 h-6 rounded-full transition-colors ${
+                  minimizeToTray ? 'bg-brand-primary' : 'bg-white/10'
+                }`}
+              >
+                <div
+                  className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                    minimizeToTray ? 'translate-x-6' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          )}
+        </div>
+      </Card>
+
       <Card>
         <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
           <div className="w-1 h-6 bg-red-500 rounded-full"></div>
