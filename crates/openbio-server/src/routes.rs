@@ -1,6 +1,6 @@
 //! API route handlers
 use crate::db::prisma::{
-    self, container, experiment, experiment_entry, experiment_folder, experiment_mention, library,
+    self, container, equipment, equipment_location, experiment, experiment_entry, experiment_folder, experiment_mention, library,
     paper, sample,
 };
 use crate::AppState;
@@ -8,7 +8,7 @@ use axum::{
     body::Body,
     extract::{Multipart, Path, Query, State},
     http::{header, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     routing::get,
     Json, Router,
 };
@@ -43,6 +43,8 @@ pub fn api_routes() -> Router<AppState> {
         .nest("/collections", collection_routes())
         // Library routes (papers)
         .nest("/library", library_routes())
+        // Equipment routes
+        .nest("/equipment", equipment_routes())
 }
 
 fn inventory_routes() -> Router<AppState> {
@@ -99,6 +101,19 @@ fn library_routes() -> Router<AppState> {
             get(get_paper).patch(update_paper).delete(delete_paper),
         )
         .route("/{id}/pdf", get(get_paper_pdf).post(upload_paper_pdf))
+}
+
+fn equipment_routes() -> Router<AppState> {
+    Router::new()
+        .route("/", get(list_equipment).post(create_equipment))
+        .route(
+            "/{id}",
+            get(get_equipment)
+                .patch(update_equipment)
+                .delete(delete_equipment),
+        )
+        .route("/locations", get(list_equipment_locations).post(create_equipment_location))
+        .route("/locations/{id}", axum::routing::delete(delete_equipment_location))
 }
 
 // ==========================================
@@ -579,25 +594,36 @@ async fn search_entities(State(state): State<AppState>) -> Json<Vec<SearchResult
         // Skip samples without a container - they won't appear in the picker
     }
 
-    // Search equipment - group by type
+    // Search equipment - group by location hierarchy
     let equipment_list = state
         .db
         .equipment()
         .find_many(vec![])
+        .with(equipment::location::fetch())
         .exec()
         .await
         .unwrap_or_default();
     for equip in equipment_list {
-        let equipment_type = equip.r#type.clone();
-        results.push(SearchResult {
-            entity_type: "equipment".to_string(),
-            id: equip.id,
-            name: equip.name.clone(),
-            category: "Equipment".to_string(),
-            subcategory: format_equipment_type(&equipment_type),
-            path: vec![format_equipment_type(&equipment_type), equip.name],
-            notes: equip.metadata, // Equipment notes/specs
-        });
+        // Only include equipment that has a location assigned
+        if let Some(Some(location)) = equip.location.as_ref() {
+            // Get full location path by traversing up
+            let location_path = get_equipment_location_path(&state.db, &location.id).await;
+            let subcategory = location_path.first().cloned().unwrap_or_else(|| location.name.clone());
+            
+            let mut full_path = location_path.clone();
+            full_path.push(equip.name.clone());
+            
+            results.push(SearchResult {
+                entity_type: "equipment".to_string(),
+                id: equip.id,
+                name: equip.name.clone(),
+                category: "Equipment".to_string(),
+                subcategory,
+                path: full_path,
+                notes: equip.metadata, // Equipment notes/specs
+            });
+        }
+        // Skip equipment without a location - they won't appear in the picker
     }
 
     // Search papers - only include those with a library assigned
@@ -656,6 +682,32 @@ async fn get_container_path(db: &std::sync::Arc<prisma::PrismaClient>, container
         {
             path.insert(0, container.name);
             current_id = container.parent_id;
+        } else {
+            break;
+        }
+    }
+    
+    if path.is_empty() {
+        path.push("Unknown".to_string());
+    }
+    
+    path
+}
+
+// Helper to get full equipment location path
+async fn get_equipment_location_path(db: &std::sync::Arc<prisma::PrismaClient>, location_id: &str) -> Vec<String> {
+    let mut path = vec![];
+    let mut current_id = Some(location_id.to_string());
+    
+    while let Some(id) = current_id {
+        if let Ok(Some(location)) = db
+            .equipment_location()
+            .find_unique(equipment_location::id::equals(id))
+            .exec()
+            .await
+        {
+            path.insert(0, location.name);
+            current_id = location.parent_id;
         } else {
             break;
         }
@@ -1370,6 +1422,234 @@ async fn get_paper_pdf(
     ];
 
     Ok((headers, body))
+}
+
+// ==========================================
+// Equipment Handlers
+// ==========================================
+
+#[derive(Deserialize)]
+pub struct CreateEquipmentRequest {
+    pub name: String,
+    pub type_: String,
+    pub model: Option<String>,
+    pub serial_number: Option<String>,
+    pub location_id: Option<String>,
+    pub location: Option<String>, // Legacy field
+    pub watch_folder: Option<String>,
+    pub auto_import: Option<bool>,
+    pub metadata: Option<String>,
+    pub external_id: Option<String>,
+    pub maintenance_cycle: Option<i32>,
+    pub last_maintenance: Option<String>,
+}
+
+async fn list_equipment(State(state): State<AppState>) -> Json<Vec<equipment::Data>> {
+    let equipment_list = state
+        .db
+        .equipment()
+        .find_many(vec![])
+        .exec()
+        .await
+        .unwrap_or_default();
+    Json(equipment_list)
+}
+
+async fn get_equipment(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<equipment::Data>, (StatusCode, String)> {
+    let equip = state
+        .db
+        .equipment()
+        .find_unique(equipment::id::equals(id))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Equipment not found".to_string()))?;
+    Ok(Json(equip))
+}
+
+async fn create_equipment(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateEquipmentRequest>,
+) -> Json<equipment::Data> {
+    let mut params: Vec<equipment::SetParam> = vec![];
+
+    if let Some(model) = payload.model {
+        params.push(equipment::model::set(Some(model)));
+    }
+    if let Some(serial) = payload.serial_number {
+        params.push(equipment::serial_number::set(Some(serial)));
+    }
+    if let Some(loc_id) = payload.location_id {
+        params.push(equipment::location::connect(equipment_location::id::equals(loc_id)));
+    }
+    if let Some(mc) = payload.maintenance_cycle {
+        params.push(equipment::maintenance_cycle::set(Some(mc)));
+    }
+    if let Some(lm) = payload.last_maintenance {
+        if let Ok(dt) = prisma_client_rust::chrono::DateTime::parse_from_rfc3339(&lm) {
+            params.push(equipment::last_maintenance::set(Some(dt)));
+        }
+    }
+    if let Some(folder) = payload.watch_folder {
+        params.push(equipment::watch_folder::set(Some(folder)));
+    }
+    if let Some(auto) = payload.auto_import {
+        params.push(equipment::auto_import::set(auto));
+    }
+    if let Some(metadata) = payload.metadata {
+        params.push(equipment::metadata::set(Some(metadata)));
+    }
+    if let Some(eid) = payload.external_id {
+        params.push(equipment::external_id::set(Some(eid)));
+    }
+
+    let equip = state
+        .db
+        .equipment()
+        .create(payload.name, payload.type_, params)
+        .exec()
+        .await
+        .expect("Failed to create equipment");
+    Json(equip)
+}
+
+#[derive(Deserialize)]
+pub struct UpdateEquipmentRequest {
+    pub name: Option<String>,
+    pub model: Option<String>,
+    pub serial_number: Option<String>,
+    pub location_id: Option<String>,
+    pub watch_folder: Option<String>,
+    pub maintenance_cycle: Option<i32>,
+    pub last_maintenance: Option<String>,
+    pub auto_import: Option<bool>,
+    pub agent_status: Option<String>,
+    pub metadata: Option<String>,
+}
+
+async fn update_equipment(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateEquipmentRequest>,
+) -> Json<equipment::Data> {
+    let mut params: Vec<equipment::SetParam> = vec![];
+
+    if let Some(name) = payload.name {
+        params.push(equipment::name::set(name));
+    }
+    if let Some(model) = payload.model {
+        params.push(equipment::model::set(Some(model)));
+    }
+    if let Some(serial) = payload.serial_number {
+        params.push(equipment::serial_number::set(Some(serial)));
+    }
+    if let Some(loc_id) = payload.location_id {
+        params.push(equipment::location::connect(equipment_location::id::equals(loc_id)));
+    }
+    if let Some(mc) = payload.maintenance_cycle {
+        params.push(equipment::maintenance_cycle::set(Some(mc)));
+    }
+    if let Some(lm) = payload.last_maintenance {
+        if let Ok(dt) = prisma_client_rust::chrono::DateTime::parse_from_rfc3339(&lm) {
+            params.push(equipment::last_maintenance::set(Some(dt)));
+        }
+    }
+    if let Some(folder) = payload.watch_folder {
+        params.push(equipment::watch_folder::set(Some(folder)));
+    }
+    if let Some(auto) = payload.auto_import {
+        params.push(equipment::auto_import::set(auto));
+    }
+    if let Some(status) = payload.agent_status {
+        params.push(equipment::agent_status::set(status));
+    }
+    if let Some(metadata) = payload.metadata {
+        params.push(equipment::metadata::set(Some(metadata)));
+    }
+
+    let equip = state
+        .db
+        .equipment()
+        .update(equipment::id::equals(id), params)
+        .exec()
+        .await
+        .expect("Failed to update equipment");
+    Json(equip)
+}
+
+async fn delete_equipment(State(state): State<AppState>, Path(id): Path<String>) -> Json<()> {
+    state
+        .db
+        .equipment()
+        .delete(equipment::id::equals(id))
+        .exec()
+        .await
+        .expect("Failed to delete equipment");
+    Json(())
+}
+
+// ==========================================
+// Equipment Location Handlers
+// ==========================================
+
+#[derive(Deserialize)]
+pub struct CreateEquipmentLocationRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub color: Option<String>,
+    pub parent_id: Option<String>,
+}
+
+async fn list_equipment_locations(State(state): State<AppState>) -> Json<Vec<equipment_location::Data>> {
+    let locations = state
+        .db
+        .equipment_location()
+        .find_many(vec![])
+        .with(equipment_location::children::fetch(vec![]))
+        .exec()
+        .await
+        .unwrap_or_default();
+    Json(locations)
+}
+
+async fn create_equipment_location(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateEquipmentLocationRequest>,
+) -> Json<equipment_location::Data> {
+    let mut params: Vec<equipment_location::SetParam> = vec![];
+
+    if let Some(desc) = payload.description {
+        params.push(equipment_location::description::set(Some(desc)));
+    }
+    if let Some(color) = payload.color {
+        params.push(equipment_location::color::set(Some(color)));
+    }
+    if let Some(pid) = payload.parent_id {
+        params.push(equipment_location::parent::connect(equipment_location::id::equals(pid)));
+    }
+
+    let location = state
+        .db
+        .equipment_location()
+        .create(payload.name, params)
+        .exec()
+        .await
+        .expect("Failed to create equipment location");
+    Json(location)
+}
+
+async fn delete_equipment_location(State(state): State<AppState>, Path(id): Path<String>) -> Json<()> {
+    state
+        .db
+        .equipment_location()
+        .delete(equipment_location::id::equals(id))
+        .exec()
+        .await
+        .expect("Failed to delete equipment location");
+    Json(())
 }
 
 // DOI Lookup Handler (re-adding if it was missing or just for context)

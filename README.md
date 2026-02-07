@@ -2,7 +2,7 @@
 
 ![Banner](https://raw.githubusercontent.com/OpenBio-OS/.github/refs/heads/main/profile/LIMS.png)
 
-_Local-first Laboratory Information Management System built with Tauri, React, and Rust._
+_Local-first Laboratory Information Management System built with Tauri (Rust) and React (TypeScript)._
 
 ## Prerequisites
 
@@ -31,11 +31,3 @@ npm run tauri dev
 ```
 
 **That's it!** The Prisma client is automatically regenerated on build if the schema changes. The database file (`openbio.db`) is created automatically in the project root on first run.
-
-## Building
-
-Build for production:
-```bash
-npm run tauri build
-```
-

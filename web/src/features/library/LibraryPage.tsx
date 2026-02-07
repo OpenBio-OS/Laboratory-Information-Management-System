@@ -895,13 +895,13 @@ export function LibraryPage() {
         {viewMode === 'list' ? (
           <>
             {/* Sidebar */}
-            <div className="w-64 bg-black/20 border-r border-white/5 p-4 overflow-y-auto flex-shrink-0">
+            <div className="w-64 bg-black/20 border-r border-white/5 overflow-y-auto flex-shrink-0">
               <div className="space-y-1">
                 {/* Unfiled papers view hidden */}
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2 px-4 pt-4">
                   <span className="text-xs font-medium text-white/40 uppercase tracking-wide">Collections</span>
                   <button
                     onClick={() => setShowCollectionModal(true)}
@@ -929,7 +929,7 @@ export function LibraryPage() {
                 ) : (
                   <div className="space-y-1">
                     {collections.map((collection) => (
-                      <div key={collection.id} className="group flex items-center">
+                      <div key={collection.id} className="group flex items-center ml-2.5 mr-4">
                         <button
                           onClick={() => setSelectedCollection(collection.id)}
                           className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${selectedCollection === collection.id ? "bg-brand-primary/20 text-brand-primary" : "text-white/70 hover:bg-white/5"}`}

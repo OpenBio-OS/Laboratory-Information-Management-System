@@ -30,6 +30,7 @@ import {
   Beaker,
   Microscope,
   ShieldQuestionMark,
+  Search,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, NodeViewWrapper, NodeViewProps, ReactNodeViewRenderer } from '@tiptap/react';
@@ -1329,6 +1330,7 @@ export function ExperimentsPage() {
   const [showDeleteExperimentModal, setShowDeleteExperimentModal] = useState(false);
   const [showDeleteFolderModal, setShowDeleteFolderModal] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
@@ -1417,7 +1419,13 @@ export function ExperimentsPage() {
   );
 
   const currentFolder = folders.find((f) => f.id === selectedFolderId);
-  const currentFolderExperiments = experiments.filter((e) => e.folderId === selectedFolderId);
+  const currentFolderExperiments = searchQuery
+    ? experiments.filter((e) => 
+        e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (e.description && e.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (e.content && e.content.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    : experiments.filter((e) => e.folderId === selectedFolderId);
 
   return (
     <div className="h-full flex flex-col">
@@ -1458,15 +1466,36 @@ export function ExperimentsPage() {
 
         <div className="flex items-center gap-3">
           {!selectedExperiment && (
-            <button
-              onClick={() => setShowCreateExperimentModal(true)}
-              disabled={folders.length === 0}
-              className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
-              title={folders.length === 0 ? 'Create a folder first' : ''}
-            >
-              <Plus size={16} />
-              New Experiment
-            </button>
+            <>
+              <div className="relative group">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 w-4 h-4 group-focus-within:text-brand-primary transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Search experiments..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-4 py-1.5 bg-black/20 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50 w-64 transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={() => setShowCreateExperimentModal(true)}
+                disabled={folders.length === 0}
+                className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
+                title={folders.length === 0 ? 'Create a folder first' : ''}
+              >
+                <Plus size={16} />
+                New Experiment
+              </button>
+            </>
           )}
 
           {selectedExperiment && (
@@ -1512,7 +1541,7 @@ export function ExperimentsPage() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-4 pb-4">
+              <div className="flex-1 overflow-y-auto pr-4 pl-2.5 pb-4">
                 {foldersLoading ? (
                   <div className="flex items-center justify-center py-4">
                     <div className="w-5 h-5 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />

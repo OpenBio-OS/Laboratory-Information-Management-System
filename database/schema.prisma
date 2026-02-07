@@ -61,6 +61,11 @@ model Container {
   // Contents
   samples Sample[]
 
+  // Maintenance tracking
+  maintenanceCycle Int? // Days between maintenance (null = no maintenance required)
+  lastMaintenance  DateTime? // Last maintenance date
+  nextMaintenance  DateTime? // Calculated next maintenance date
+
   // Audit
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -69,6 +74,25 @@ model Container {
 // ============================================
 // Module B: Experiments & Notebooks
 // ============================================
+
+/// Equipment location (facility/room hierarchy)
+model EquipmentLocation {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  color       String? // For UI styling
+
+  // Hierarchy (e.g., Building -> Floor -> Room)
+  parentId String?
+  parent   EquipmentLocation?  @relation("LocationHierarchy", fields: [parentId], references: [id])
+  children EquipmentLocation[] @relation("LocationHierarchy")
+
+  // Equipment in this location
+  equipment Equipment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 
 /// Equipment/Instrument in the lab
 model Equipment {
@@ -79,8 +103,9 @@ model Equipment {
   model        String?
   serialNumber String?
 
-  // Location
-  location String?
+  // Location (hierarchical)
+  locationId String?
+  location   EquipmentLocation? @relation(fields: [locationId], references: [id])
 
   // Import settings (for openbio-agent integration)
   watchFolder String? // Folder path that agent monitors for new files
@@ -90,6 +115,11 @@ model Equipment {
 
   // Scheduling (for booking experiments)
   bookings Experiment[]
+
+  // Maintenance tracking
+  maintenanceCycle Int? // Days between maintenance (null = no maintenance required)
+  lastMaintenance  DateTime? // Last maintenance date
+  nextMaintenance  DateTime? // Calculated next maintenance date
 
   // Metadata
   metadata String? // Free-form JSON for equipment-specific settings

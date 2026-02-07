@@ -1,7 +1,18 @@
 import { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, Plus, Box, Trash2, Building2, Warehouse, Thermometer, Layers } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Box, Trash2, Building2, Warehouse, Thermometer, Layers, AlertTriangle } from 'lucide-react';
 import { Container } from '../../../lib/api';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
+
+// Helper: Check if maintenance is overdue
+function isMaintenanceOverdue(container: Container): boolean {
+  if (!container.maintenanceCycle || !container.lastMaintenance) return false;
+  
+  const lastDate = new Date(container.lastMaintenance);
+  const nextDate = new Date(lastDate);
+  nextDate.setDate(nextDate.getDate() + container.maintenanceCycle);
+  
+  return nextDate < new Date();
+}
 
 interface HierarchyTreeProps {
   containers: Container[];
@@ -28,6 +39,7 @@ function TreeNode({ container, allContainers, level, selectedId, onSelect, onCre
   const children = allContainers.filter(c => c.parentId === container.id);
   const hasChildren = children.length > 0;
   const isSelected = selectedId === container.id;
+  const maintenanceOverdue = isMaintenanceOverdue(container);
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -74,7 +86,15 @@ function TreeNode({ container, allContainers, level, selectedId, onSelect, onCre
         </button>
 
         <Icon size={14} className={isSelected ? 'text-brand-primary' : 'text-white/50'} />
-        <span className="text-sm truncate flex-1">{container.name}</span>
+        <span className={`text-sm truncate flex-1 ${maintenanceOverdue ? 'text-red-400' : ''}`}>
+          {container.name}
+        </span>
+        
+        {maintenanceOverdue && (
+          <div title="Maintenance overdue">
+            <AlertTriangle size={12} className="text-red-400" />
+          </div>
+        )}
 
         {/* Only show Add Child button if not a box (boxes are smallest unit) */}
         {container.type !== 'box' && (

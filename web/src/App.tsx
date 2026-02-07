@@ -53,8 +53,8 @@ const navItems = [
   { id: "freezer", label: "Freezer", icon: Refrigerator },
   { id: "library", label: "Library", icon: SquareLibrary },
   { id: "experiments", label: "Experiments", icon: FlaskConical },
-  { id: "insight", label: "Insight", icon: ChartScatter },
   { id: "equipment", label: 'Equipment', icon: Microscope },
+  { id: "insight", label: "Insight", icon: ChartScatter },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -155,17 +155,18 @@ function AppContent() {
 
           <nav className="flex-1 py-6 px-3 space-y-1">
             {navItems.map((item) => (
-              <button
-                key={item.id}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${activeTab === item.id
-                  ? "bg-brand-primary/10 text-brand-primary shadow-[0_0_20px_rgba(23,185,120,0.1)]"
-                  : "text-white/60 hover:bg-white/5 hover:text-white"
-                  }`}
-                onClick={() => setActiveTab(item.id as TabId)}
-              >
-                <item.icon size={20} className={activeTab === item.id ? "text-brand-primary" : "text-white/40 group-hover:text-white transition-colors"} />
-                <span className="font-medium">{item.label}</span>
-              </button>
+              <div key={item.id} className={`${item.id === 'settings' ? 'mt-6 border-t border-white/5 pt-1' : ''}`}>
+                <button
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${activeTab === item.id
+                    ? "bg-brand-primary/10 text-brand-primary shadow-[0_0_20px_rgba(23,185,120,0.1)]"
+                    : "text-white/60 hover:bg-white/5 hover:text-white"
+                    }`}
+                  onClick={() => setActiveTab(item.id as TabId)}
+                >
+                  <item.icon size={20} className={activeTab === item.id ? "text-brand-primary" : "text-white/40 group-hover:text-white transition-colors"} />
+                  <span className="font-medium">{item.label}</span>
+                </button>
+              </div>
             ))}
           </nav>
 
@@ -192,9 +193,9 @@ function AppContent() {
               {activeTab === "dashboard" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><DashboardView /></div></div>}
               {activeTab === "freezer" && <InventoryPage />}
               {activeTab === "library" && <LibraryPage />}
+              {activeTab === "equipment" && <EquipmentPage />}
               {activeTab === "experiments" && <ExperimentsView />}
               {activeTab === "insight" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><InsightView /></div></div>}
-              {activeTab === "equipment" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><EquipmentPage /></div></div>}
               {activeTab === "settings" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><SettingsView onResetSetup={() => setNeedsSetup(true)} /></div></div>}
             </div>
           </div>

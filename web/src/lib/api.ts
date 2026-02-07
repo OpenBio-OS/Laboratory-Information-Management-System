@@ -72,6 +72,9 @@ export interface Container {
     type: string;
     layoutConfig?: { rows?: number; cols?: number };
     parentId?: string;
+    maintenanceCycle?: number; // Days between maintenance
+    lastMaintenance?: string; // ISO date
+    nextMaintenance?: string; // ISO date
     createdAt: string;
     updatedAt: string;
 }
@@ -389,4 +392,99 @@ export interface HealthResponse {
 
 export const healthApi = {
     check: () => apiRequest<HealthResponse>('/health'),
+};
+
+// ============================================
+// Equipment API
+// ============================================
+
+export interface EquipmentLocation {
+    id: string;
+    name: string;
+    description?: string;
+    color?: string;
+    parentId?: string;
+    children?: EquipmentLocation[];
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface Equipment {
+    id: string;
+    externalId?: string;
+    name: string;
+    type: string;
+    model?: string;
+    serialNumber?: string;
+    locationId?: string;
+    location?: string; // Legacy field
+    watchFolder?: string;
+    autoImport: boolean;
+    agentStatus: string; // OFFLINE, ONLINE, LOCKED
+    lastSyncAt?: string;
+    maintenanceCycle?: number; // Days between maintenance
+    lastMaintenance?: string; // ISO date
+    nextMaintenance?: string; // ISO date
+    metadata?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export const equipmentApi = {
+    list: () => apiRequest<Equipment[]>('/api/equipment'),
+    get: (id: string) => apiRequest<Equipment>(`/api/equipment/${id}`),
+    create: (data: Partial<Equipment>) =>
+        apiRequest<Equipment>('/api/equipment', {
+            method: 'POST',
+            body: JSON.stringify({
+                name: data.name,
+                type_: data.type,
+                model: data.model,
+                serial_number: data.serialNumber,
+                location_id: data.locationId,
+                watch_folder: data.watchFolder,
+                auto_import: data.autoImport,
+                maintenance_cycle: data.maintenanceCycle,
+                last_maintenance: data.lastMaintenance,
+                metadata: data.metadata,
+                external_id: data.externalId,
+            }),
+        }),
+    update: (id: string, data: Partial<Equipment>) =>
+        apiRequest<Equipment>(`/api/equipment/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+                name: data.name,
+                model: data.model,
+                serial_number: data.serialNumber,
+                location_id: data.locationId,
+                watch_folder: data.watchFolder,
+                auto_import: data.autoImport,
+                agent_status: data.agentStatus,
+                maintenance_cycle: data.maintenanceCycle,
+                last_maintenance: data.lastMaintenance,
+                metadata: data.metadata,
+            }),
+        }),
+    delete: (id: string) =>
+        apiRequest<void>(`/api/equipment/${id}`, {
+            method: 'DELETE',
+        }),
+    
+    // Equipment Locations
+    listLocations: () => apiRequest<EquipmentLocation[]>('/api/equipment/locations'),
+    createLocation: (data: Partial<EquipmentLocation>) =>
+        apiRequest<EquipmentLocation>('/api/equipment/locations', {
+            method: 'POST',
+            body: JSON.stringify({
+                name: data.name,
+                description: data.description,
+                color: data.color,
+                parent_id: data.parentId,
+            }),
+        }),
+    deleteLocation: (id: string) =>
+        apiRequest<void>(`/api/equipment/locations/${id}`, {
+            method: 'DELETE',
+        }),
 };
