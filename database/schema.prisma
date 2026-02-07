@@ -15,7 +15,7 @@ generator client {
 datasource db {
   provider = "sqlite"
   // Development database - actual runtime uses user's app data folder in production
-  url      = "file:../.dev/openbio.db"
+  url      = "file:./.dev/openbio.db"
 }
 
 // ============================================

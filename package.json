@@ -9,8 +9,7 @@
   "scripts": {
     "dev": "cd web && vite",
     "build": "cd web && tsc && vite build",
-    "preview": "cd web && vite preview",
-    "bump-version": "node ./scripts/bump-version.js",
+    "publish": "node ./scripts/bump-version.js",
     "tauri": "tauri",
     "prisma:generate": "cargo run -p prisma-cli -- generate --schema=database/schema.prisma"
   },
