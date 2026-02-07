@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { invoke } from '@tauri-apps/api/core';
 import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 import { AgentConnectionDialog } from './components/AgentConnectionDialog';
 import {
@@ -96,6 +97,26 @@ const FlowCytometerIcon = ({ size = 14, className = '' }: { size?: number; class
   </svg>
 );
 
+const PlateReaderIcon = ({ size = 14, className = '' }: { size?: number; className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    {/* Outer device body */}
+    <rect x="3" y="4" width="18" height="16" rx="1.5" stroke="currentColor" strokeWidth="2" />
+    {/* Display/window area */}
+    <rect x="5" y="6" width="14" height="9" rx="0.5" stroke="currentColor" strokeWidth="1.5" />
+    {/* 3x3 well grid */}
+    <circle cx="8.5" cy="9" r="0.8" fill="currentColor" />
+    <circle cx="12" cy="9" r="0.8" fill="currentColor" />
+    <circle cx="15.5" cy="9" r="0.8" fill="currentColor" />
+    <circle cx="8.5" cy="12" r="0.8" fill="currentColor" />
+    <circle cx="12" cy="12" r="0.8" fill="currentColor" />
+    <circle cx="15.5" cy="12" r="0.8" fill="currentColor" />
+    {/* Control panel indicators */}
+    <rect x="6" y="17" width="2.5" height="1.5" rx="0.3" fill="currentColor" />
+    <rect x="10" y="17" width="2.5" height="1.5" rx="0.3" fill="currentColor" />
+    <circle cx="16.5" cy="17.75" r="0.6" fill="currentColor" />
+  </svg>
+);
+
 function getEquipmentIcon(type: string) {
   switch (type) {
     case 'incubator':
@@ -110,6 +131,8 @@ function getEquipmentIcon(type: string) {
       return SpectrophotometerIcon;
     case 'flow_cytometer':
       return FlowCytometerIcon;
+    case 'plate_reader':
+      return PlateReaderIcon;
     case 'microscope':
     default:
       return Microscope;
@@ -434,6 +457,7 @@ function formatEquipmentType(type: string): string {
     spectrophotometer: 'Spectrophotometer',
     flow_cytometer: 'Flow Cytometer',
     freezer: 'Freezer',
+    plate_reader: 'Plate Reader',
   };
   return formatted[type] || type.replace(/_/g, ' ');
 }
@@ -775,6 +799,7 @@ function AddEquipmentModal({ roomId, roomName, onClose, onSave }: AddEquipmentMo
     { value: 'incubator', label: 'Incubator' },
     { value: 'spectrophotometer', label: 'Spectrophotometer' },
     { value: 'flow_cytometer', label: 'Flow Cytometer' },
+    { value: 'plate_reader', label: 'Plate Reader' },
   ];
 
   return (
@@ -912,29 +937,35 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
     setIsDiscovering(true);
     
     try {
-      let agentUrl: string;
-
       if (mode === 'local') {
-        // Check for local agent
-        agentUrl = 'http://localhost:3001';
-        const response = await fetch(`${agentUrl}/health`, { 
-          method: 'GET',
-          signal: AbortSignal.timeout(5000) // 5 second timeout
+        // For local mode, spawn a local agent process for this equipment
+        if (!equipment.watchFolder) {
+          throw new Error('Watch folder must be configured before connecting a local agent');
+        }
+
+        // Use Tauri command to spawn the agent
+        await invoke('spawn_local_agent', {
+          equipmentId: equipment.id,
+          watchFolder: equipment.watchFolder,
         });
         
-        if (!response.ok) {
-          throw new Error('Local agent is not responding');
-        }
+        // Update equipment status to ONLINE
+        const updated = await equipmentApi.update(equipment.id, {
+          agentStatus: 'ONLINE'
+        });
+        onUpdate(updated);
+        queryClient.invalidateQueries({ queryKey: ['equipment'] });
+        
       } else if (mode === 'mdns') {
         // TODO: Implement mDNS discovery
-        // For now, simulate discovery
         throw new Error('mDNS discovery will be implemented. This would use multicast DNS to discover agents on the local network.');
+        
       } else if (mode === 'enterprise') {
         // Connect via IP address
         if (!ipAddress) {
           throw new Error('IP address is required for enterprise mode');
         }
-        agentUrl = `http://${ipAddress}:3001`;
+        const agentUrl = `http://${ipAddress}:3001`;
         
         const response = await fetch(`${agentUrl}/health`, {
           method: 'GET',
@@ -944,17 +975,14 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
         if (!response.ok) {
           throw new Error(`Agent at ${ipAddress} is not responding`);
         }
-      } else {
-        throw new Error('Invalid connection mode');
-      }
 
-      // If we get here, connection succeeded
-      // Update equipment status to ONLINE
-      const updated = await equipmentApi.update(equipment.id, {
-        agentStatus: 'ONLINE'
-      });
-      onUpdate(updated);
-      queryClient.invalidateQueries({ queryKey: ['equipment'] });
+        // Update equipment status to ONLINE
+        const updated = await equipmentApi.update(equipment.id, {
+          agentStatus: 'ONLINE'
+        });
+        onUpdate(updated);
+        queryClient.invalidateQueries({ queryKey: ['equipment'] });
+      }
 
     } catch (err) {
       console.error('Agent connection failed:', err);
@@ -1325,7 +1353,23 @@ export const EquipmentPage: React.FC = () => {
   });
 
   const deleteEquipmentMutation = useMutation({
-    mutationFn: equipmentApi.delete,
+    mutationFn: async (equipmentId: string) => {
+      // Stop local agent if running
+      // @ts-ignore - Tauri global
+      if (window.__TAURI__) {
+        try {
+          // @ts-ignore
+          const { invoke } = window.__TAURI__.core;
+          await invoke('stop_local_agent', { equipmentId });
+        } catch (err) {
+          // Agent might not be running, that's ok
+          console.log('No local agent to stop or already stopped');
+        }
+      }
+      
+      // Delete the equipment
+      return equipmentApi.delete(equipmentId);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
       if (selectedEquipment && selectedEquipment.id === deleteEquipmentMutation.variables) {

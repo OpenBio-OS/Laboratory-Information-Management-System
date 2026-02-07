@@ -22,7 +22,7 @@ import {
   Server
 } from 'lucide-react';
 
-export type DeploymentMode = 'local' | 'hub' | 'spoke' | 'enterprise';
+export type DeploymentMode = 'local' | 'hub' | 'spoke' | 'enterprise' | 'agent';
 
 export interface SetupConfig {
   mode: DeploymentMode;
@@ -153,6 +153,22 @@ function Step1ModeSelection({ onSelect }: { onSelect: (mode: DeploymentMode) => 
           </button>
         ))}
       </div>
+
+      {/* Agent-Only Mode - Small Text Below */}
+      <div className="mt-6 pt-6 border-t border-white/5">
+        <button
+          onClick={() => onSelect('agent')}
+          className="group w-full p-3 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 hover:border-brand-primary/50 transition-all duration-300 text-left flex items-center gap-3"
+        >
+          <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/40 group-hover:text-brand-primary group-hover:bg-brand-primary/10 transition-colors flex-shrink-0">
+            <Server size={16} />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-medium text-white/80 group-hover:text-brand-primary transition-colors">Agent-Only Mode</h3>
+            <p className="text-xs text-white/40">Run as background service for equipment monitoring (no UI, LAN/WAN mode)</p>
+          </div>
+        </button>
+      </div>
     </div>
   );
 }
@@ -180,6 +196,7 @@ function Step2Configure({ config, setConfig, onBack, onNext }: Step2Props) {
     hub: 'Host a Lab',
     spoke: 'Join a Lab',
     enterprise: 'Enterprise Mode',
+    agent: 'Agent-Only Mode',
   };
 
   useEffect(() => {
@@ -319,6 +336,8 @@ function Step2Configure({ config, setConfig, onBack, onNext }: Step2Props) {
             <span className="text-xs text-white/40">Contact your IT department for this URL</span>
           </div>
         )}
+
+
       </div>
 
       <div className="flex justify-between pt-8 border-t border-white/10">

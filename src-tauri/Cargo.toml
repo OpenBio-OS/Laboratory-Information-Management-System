@@ -18,18 +18,21 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 dirs = "6"
 mdns-sd = "0.11"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+hostname = "0.4"
 
 # Internal crates for embedded server
 openbio-server = { path = "../crates/openbio-server" }
+openbio-agent = { path = "../crates/openbio-agent" }
 openbio-core = { path = "../crates/openbio-core" }
 
 # Logging

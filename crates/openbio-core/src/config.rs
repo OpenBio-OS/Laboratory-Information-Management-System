@@ -21,6 +21,9 @@ pub enum DeploymentMode {
     Spoke,
     /// Enterprise mode - connects to remote API
     Enterprise,
+    /// Agent mode - dedicated equipment computer, headless with system tray
+    #[serde(rename = "agent")]
+    Agent,
 }
 
 /// Main configuration structure

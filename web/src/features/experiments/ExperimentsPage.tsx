@@ -1383,13 +1383,46 @@ const CentrifugeIconSmall = ({ size = 14, className = '' }: { size?: number; cla
   </svg>
 );
 
+const FlowCytometerIcon = ({ size = 14, className = '' }: { size?: number; className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 512 512" fill="currentColor" className={className}>
+	<g>
+		<path d="M171.501,464.698v-237.9l-166.3-192.6c-8.9-10.9-7.9-33.3,15.1-33.3h443.6c21.6,0,26.6,19.8,15.1,33.3l-162.3,187.5v147.2
+			c0,6-2,11.1-7.1,15.1l-103.8,95.8C193.801,488.698,171.501,483.898,171.501,464.698z M64.701,41.298l142.2,164.3c3,4,5,8.1,5,13.1
+			v200.6l64.5-58.5v-146.1c0-5,2-9.1,5-13.1l138.1-160.3L64.701,41.298L64.701,41.298z"/>
+	</g>
+  </svg>
+);
+
+const PlateReaderIcon = ({ size = 14, className = '' }: { size?: number; className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    {/* Outer device body */}
+    <rect x="3" y="4" width="18" height="16" rx="1.5" stroke="currentColor" strokeWidth="2" />
+    {/* Display/window area */}
+    <rect x="5" y="6" width="14" height="9" rx="0.5" stroke="currentColor" strokeWidth="1.5" />
+    {/* 3x3 well grid */}
+    <circle cx="8.5" cy="9" r="0.8" fill="currentColor" />
+    <circle cx="12" cy="9" r="0.8" fill="currentColor" />
+    <circle cx="15.5" cy="9" r="0.8" fill="currentColor" />
+    <circle cx="8.5" cy="12" r="0.8" fill="currentColor" />
+    <circle cx="12" cy="12" r="0.8" fill="currentColor" />
+    <circle cx="15.5" cy="12" r="0.8" fill="currentColor" />
+    {/* Control panel indicators */}
+    <rect x="6" y="17" width="2.5" height="1.5" rx="0.3" fill="currentColor" />
+    <rect x="10" y="17" width="2.5" height="1.5" rx="0.3" fill="currentColor" />
+    <circle cx="16.5" cy="17.75" r="0.6" fill="currentColor" />
+  </svg>
+);
+
 function getPickerEquipmentIcon(type: string) {
   switch (type) {
     case 'incubator': return IncubatorIconSmall;
     case 'centrifuge': return CentrifugeIconSmall;
     case 'sequencer': return Dna;
     case 'pcr_machine': return SquareStack;
+    case 'flow_cytometer': return FlowCytometerIcon;
+    case 'plate_reader': return PlateReaderIcon;
     case 'spectrophotometer': return Lightbulb;
+    
     case 'microscope':
     default: return Microscope;
   }

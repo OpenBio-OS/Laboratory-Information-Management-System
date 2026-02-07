@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext, useCallback } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { queryClient } from "./lib/queryClient";
 import { ApiProvider, useApi } from "./lib/ApiContext";
 import { SetupWizard, SetupConfig } from "./features/setup";
@@ -97,6 +98,16 @@ function AppContent() {
         const hasConfig = localStorage.getItem('openbio_config');
         setNeedsSetup(!hasConfig);
       });
+    
+    // Listen for reinitialize event from system tray
+    const unlisten = listen('openbio:reinitialize', () => {
+      console.log('Reinitialize event received - resetting to setup wizard');
+      setNeedsSetup(true);
+    });
+    
+    return () => {
+      unlisten.then(fn => fn());
+    };
   }, []);
 
   const handleSetupComplete = async (config: SetupConfig) => {

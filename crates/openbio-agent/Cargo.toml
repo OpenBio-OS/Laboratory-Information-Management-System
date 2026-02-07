@@ -6,6 +6,10 @@ edition.workspace = true
 license.workspace = true
 description = "Ingest Agent for automated file ingestion from lab instruments"
 
+[lib]
+name = "openbio_agent"
+path = "src/lib.rs"
+
 [[bin]]
 name = "openbio-agent"
 path = "src/main.rs"
@@ -21,3 +25,6 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 clap = { version = "4", features = ["derive", "env"] }
 reqwest = { version = "0.12", features = ["json"] }
+axum = "0.8"
+mdns-sd = "0.11"
+hostname = "0.4"

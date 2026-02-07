@@ -3,10 +3,14 @@
 //! Handles app lifecycle, config management, and embedded server spawning.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::process::{Child, Command};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri_plugin_updater::UpdaterExt;
 
 /// Deployment mode
@@ -19,6 +23,9 @@ pub enum DeploymentMode {
     Hub,
     Spoke,
     Enterprise,
+    /// Agent mode - headless equipment computer with system tray
+    #[serde(rename = "agent")]
+    Agent,
 }
 
 /// Application config (matches frontend SetupConfig)
@@ -36,12 +43,18 @@ pub struct AppConfig {
 /// Shared application state
 pub struct AppState {
     config: Mutex<AppConfig>,
+    /// Track local agent processes by equipment ID
+    local_agents: Mutex<HashMap<String, Child>>,
+    /// Agent lock state (for Agent mode): tracks which client has locked this agent
+    agent_locked_by: Mutex<Option<String>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
             config: Mutex::new(AppConfig::default()),
+            local_agents: Mutex::new(HashMap::new()),
+            agent_locked_by: Mutex::new(None),
         }
     }
 }
@@ -98,19 +111,22 @@ fn save_config(config: AppConfig, state: State<AppState>, app: AppHandle) -> Res
     // Update state
     *state.config.lock().unwrap() = config.clone();
 
-    // If local/hub mode, spawn the embedded server with migrations
-    if config.mode == DeploymentMode::Local || config.mode == DeploymentMode::Hub {
-        let db_url = database_url();
-        let storage = storage_path();
-        // Apply migrations for local/hub mode (embedded SQLite database)
-        openbio_server::spawn_embedded_server(config.server_port, db_url, storage, true);
+    // Handle different deployment modes
+    match config.mode {
+        DeploymentMode::Local | DeploymentMode::Hub => {
+            let db_url = database_url();
+            let storage = storage_path();
+            // Apply migrations for local/hub mode (embedded SQLite database)
+            openbio_server::spawn_embedded_server(config.server_port, db_url, storage, true);
 
-        // For hub mode, start mDNS broadcast
-        if config.mode == DeploymentMode::Hub {
-            if let Some(lab_name) = &config.lab_name {
-                start_mdns_broadcast(lab_name.clone(), config.server_port);
+            // For hub mode, start mDNS broadcast
+            if config.mode == DeploymentMode::Hub {
+                if let Some(lab_name) = &config.lab_name {
+                    start_mdns_broadcast(lab_name.clone(), config.server_port);
+                }
             }
         }
+        _ => {}
     }
 
     // Emit config event to frontend
@@ -121,7 +137,7 @@ fn save_config(config: AppConfig, state: State<AppState>, app: AppHandle) -> Res
         DeploymentMode::Spoke | DeploymentMode::Enterprise => {
             config.api_url.clone().unwrap_or_default()
         }
-        DeploymentMode::Unconfigured => String::new(),
+        _ => String::new(),
     };
 
     app.emit(
@@ -140,6 +156,174 @@ fn save_config(config: AppConfig, state: State<AppState>, app: AppHandle) -> Res
 #[tauri::command]
 fn needs_setup() -> bool {
     !config_path().exists()
+}
+
+/// Spawn a local agent for equipment monitoring
+#[tauri::command]
+fn spawn_local_agent(
+    equipment_id: String,
+    watch_folder: String,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let config = state.config.lock().unwrap();
+    
+    // Get API URL based on current mode
+    let api_url = match config.mode {
+        DeploymentMode::Local | DeploymentMode::Hub => {
+            // Local/Hub mode: agents upload to the local server
+            format!("http://localhost:{}", config.server_port)
+        }
+        _ => {
+            return Err("Can only spawn local agents in Local or Hub mode".to_string());
+        }
+    };
+    drop(config);
+
+    // Get path to the openbio-agent binary (should be in same dir as main executable)
+    let agent_exe = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|p| p.join("openbio-agent")))
+        .ok_or_else(|| "Could not determine agent executable path".to_string())?;
+
+    // Check if agent binary exists
+    if !agent_exe.exists() {
+        // Try with .exe extension on Windows
+        #[cfg(target_os = "windows")]
+        let agent_exe = agent_exe.with_extension("exe");
+        
+        #[cfg(not(target_os = "windows"))]
+        if !agent_exe.exists() {
+            return Err(format!("Agent executable not found at {:?}", agent_exe));
+        }
+    }
+
+    // Find an available port for this agent (start from 8080)
+    let agent_port = find_available_port(8080);
+    tracing::info!("Using port {} for agent {}", agent_port, equipment_id);
+
+    // Spawn the agent process
+    let child = Command::new(&agent_exe)
+        .arg("--port")
+        .arg(agent_port.to_string())
+        .arg("--equipment-id")
+        .arg(&equipment_id)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn agent: {}", e))?;
+
+    // Store the child process
+    let mut agents = state.local_agents.lock().unwrap();
+    
+    // Kill existing agent for this equipment if any
+    if let Some(mut old_child) = agents.remove(&equipment_id) {
+        let _ = old_child.kill();
+    }
+    
+    agents.insert(equipment_id.clone(), child);
+    
+    tracing::info!("Spawned local agent for equipment {}", equipment_id);
+    Ok(())
+}
+
+/// Stop a local agent
+#[tauri::command]
+fn stop_local_agent(equipment_id: String, state: State<AppState>) -> Result<(), String> {
+    let mut agents = state.local_agents.lock().unwrap();
+    
+    if let Some(mut child) = agents.remove(&equipment_id) {
+        child.kill().map_err(|e| format!("Failed to kill agent: {}", e))?;
+        tracing::info!("Stopped local agent for equipment {}", equipment_id);
+        Ok(())
+    } else {
+        Err(format!("No agent running for equipment {}", equipment_id))
+    }
+}
+
+/// Check if a local agent is running for equipment
+#[tauri::command]
+fn is_local_agent_running(equipment_id: String, state: State<AppState>) -> bool {
+    state.local_agents.lock().unwrap().contains_key(&equipment_id)
+}
+
+/// Get list of running local agent equipment IDs
+#[tauri::command]
+fn list_local_agents(state: State<AppState>) -> Vec<String> {
+    state
+        .local_agents
+        .lock()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect()
+}
+
+/// Re-initialize the application (reset config and show setup wizard)
+#[tauri::command]
+fn reinitialize(app: AppHandle) -> Result<(), String> {
+    // Delete the config file to trigger setup wizard
+    let path = config_path();
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| format!("Failed to delete config: {}", e))?;
+    }
+    
+    // Show the window if it was hidden (agent mode)
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    
+    // Emit event to frontend to reload/show setup
+    app.emit("openbio:reinitialize", ()).map_err(|e| e.to_string())?;
+    
+    tracing::info!("Application re-initialized, config reset");
+    Ok(())
+}
+
+/// Build system tray for agent mode
+fn build_system_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
+    let reconfigure_item = MenuItem::with_id(app, "reconfigure", "Re-configure...", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    
+    let menu = Menu::with_items(app, &[&show_item, &reconfigure_item, &quit_item])?;
+    
+    let _tray = TrayIconBuilder::new()
+        .menu(&menu)
+        .icon(app.default_window_icon().unwrap().clone())
+        .on_menu_event(move |app: &AppHandle, event| {
+            match event.id.as_ref() {
+                "show" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                "reconfigure" => {
+                    if let Err(e) = reinitialize(app.clone()) {
+                        tracing::error!("Failed to re-initialize: {}", e);
+                    }
+                }
+                "quit" => {
+                    app.exit(0);
+                }
+                _ => {}
+            }
+        })
+        .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if let Some(window) = tray.app_handle().get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+    
+    Ok(())
 }
 
 /// Start mDNS broadcast for hub discovery
@@ -354,49 +538,93 @@ pub fn run() {
     // Create state now that config is finalized/updated
     let state = AppState {
         config: Mutex::new(config.clone()),
+        local_agents: Mutex::new(HashMap::new()),
+        agent_locked_by: Mutex::new(None),
     };
 
     tauri::Builder::default()
         .manage(state)
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
             needs_setup,
             scan_for_hubs,
+            spawn_local_agent,
+            stop_local_agent,
+            is_local_agent_running,
+            list_local_agents,
+            reinitialize,
         ])
         .setup(move |app| {
-            // Check for updates on startup (non-blocking) - only in release builds
-            #[cfg(not(debug_assertions))]
-            {
-                let app_handle = app.handle().clone();
+            // Check if running in Agent mode
+            if config.mode == DeploymentMode::Agent {
+                // Hide UI and create system tray
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+                
+                if let Err(e) = build_system_tray(app.handle()) {
+                    tracing::error!("Failed to create system tray: {}", e);
+                }
+                
+                // Run embedded agent server
+                let port = config.server_port;
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = check_for_updates(app_handle).await {
-                        tracing::error!("Failed to check for updates: {}", e);
+                    if let Err(e) = openbio_agent::run_agent_server(port, None).await {
+                        tracing::error!("Agent server failed: {}", e);
                     }
                 });
+                
+                // Enable auto-start on boot
+                #[cfg(not(debug_assertions))]
+                {
+                    use tauri_plugin_autostart::ManagerExt;
+                    if let Err(e) = app.autolaunch().enable() {
+                        tracing::error!("Failed to enable auto-start: {}", e);
+                    } else {
+                        tracing::info!("Auto-start on boot enabled");
+                    }
+                }
+                
+                tracing::info!("Running in Agent mode (headless)");
+            } else {
+                // Normal client mode - show UI
+                // Check for updates on startup (non-blocking) - only in release builds
+                #[cfg(not(debug_assertions))]
+                {
+                    let app_handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = check_for_updates(app_handle).await {
+                            tracing::error!("Failed to check for updates: {}", e);
+                        }
+                    });
+                }
+
+                // Emit final config to frontend (not in Agent mode since UI is hidden)
+                let api_url = match config.mode {
+                    DeploymentMode::Local | DeploymentMode::Hub => {
+                        format!("http://localhost:{}", config.server_port)
+                    }
+                    DeploymentMode::Spoke | DeploymentMode::Enterprise => {
+                        config.api_url.clone().unwrap_or_default()
+                    }
+                    _ => String::new(),
+                };
+
+                app.emit(
+                    "openbio:config",
+                    serde_json::json!({
+                        "apiUrl": api_url,
+                        "mode": config.mode,
+                    }),
+                )?;
             }
-
-            // Emit final config to frontend
-            // config is moved into this closure since it's a clone
-            let api_url = match config.mode {
-                DeploymentMode::Local | DeploymentMode::Hub => {
-                    format!("http://localhost:{}", config.server_port)
-                }
-                DeploymentMode::Spoke | DeploymentMode::Enterprise => {
-                    config.api_url.clone().unwrap_or_default()
-                }
-                DeploymentMode::Unconfigured => String::new(),
-            };
-
-            app.emit(
-                "openbio:config",
-                serde_json::json!({
-                    "apiUrl": api_url,
-                    "mode": config.mode,
-                }),
-            )?;
 
             Ok(())
         })
