@@ -116,6 +116,11 @@ model Equipment {
   // Scheduling (for booking experiments)
   bookings Experiment[]
 
+  // Lock: exclusive claim by one experiment at a time
+  lockedByExperimentId String?
+  lockedByExperiment   Experiment? @relation("LockedEquipment", fields: [lockedByExperimentId], references: [id])
+  lockedAt             DateTime?
+
   // Maintenance tracking
   maintenanceCycle Int? // Days between maintenance (null = no maintenance required)
   lastMaintenance  DateTime? // Last maintenance date
@@ -221,6 +226,7 @@ model Experiment {
   entries      ExperimentEntry[]
   assets       DigitalAsset[]
   pipelineRuns PipelineRun[]
+  lockedEquipment Equipment[] @relation("LockedEquipment")
 }
 
 /// Many-to-many: Experiment <-> Sample

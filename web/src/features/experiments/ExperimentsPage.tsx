@@ -5,6 +5,9 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   experimentsApi,
+  equipmentApi,
+  Equipment,
+  EquipmentLocation,
   Experiment,
   SearchResult,
 } from '../../lib/api';
@@ -31,6 +34,12 @@ import {
   Microscope,
   ShieldQuestionMark,
   Search,
+  Lock,
+  Building2,
+  Warehouse,
+  Dna,
+  SquareStack,
+  Lightbulb,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, NodeViewWrapper, NodeViewProps, ReactNodeViewRenderer } from '@tiptap/react';
@@ -630,9 +639,13 @@ interface NotebookEditorProps {
   experiment: Experiment;
   onSave: (content: string) => void;
   entities: SearchResult[];
+  onUploadFile: () => void;
+  onAttachEquipment: () => void;
+  lockedEquipmentCount: number;
+  uploadedFileCount: number;
 }
 
-function NotebookEditor({ experiment, onSave, entities }: NotebookEditorProps) {
+function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEquipment, lockedEquipmentCount, uploadedFileCount }: NotebookEditorProps) {
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -737,7 +750,8 @@ function NotebookEditor({ experiment, onSave, entities }: NotebookEditorProps) {
 
   return (
     <div className="flex flex-col gap-4 px-8 pb-6">
-      {/* Toolbar - clean and compact like RichTextEditor */}
+      {/* Toolbar row - formatting left, data actions right */}
+      <div className="flex items-center justify-between gap-3">
       <div className="flex items-center gap-1 p-1 bg-white/5 border border-white/10 rounded-lg w-fit">
         <button
           onClick={() => editor.chain().focus().toggleBold().run()}
@@ -789,6 +803,33 @@ function NotebookEditor({ experiment, onSave, entities }: NotebookEditorProps) {
           <AtSign size={12} />
           <span>to mention</span>
         </div>
+      </div>
+
+      {/* Data action buttons - right side */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onAttachEquipment}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+            lockedEquipmentCount > 0
+              ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
+              : 'bg-brand-primary text-black hover:bg-brand-secondary'
+          }`}
+        >
+          <Microscope size={16} />
+          {lockedEquipmentCount > 0 ? `${lockedEquipmentCount} Equipment Attached` : 'Attach Equipment & Run'}
+        </button>
+        <button
+          onClick={onUploadFile}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+            uploadedFileCount > 0
+              ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25'
+              : 'bg-white/5 hover:bg-white/10 border border-white/10 text-white/80'
+          }`}
+        >
+          <Paperclip size={16} />
+          {uploadedFileCount > 0 ? `Replace Data (${uploadedFileCount} file${uploadedFileCount > 1 ? 's' : ''})` : 'Upload Data File'}
+        </button>
+      </div>
       </div>
 
       {/* Editor Content - clean bordered container */}
@@ -1319,6 +1360,280 @@ function DeleteFolderModal({ onClose, onConfirm, folderName, experimentCount }: 
 }
 
 // ==========================================
+// Equipment Icons (duplicated from EquipmentPage for use in picker)
+// ==========================================
+
+const IncubatorIconSmall = ({ size = 14, className = '' }: { size?: number; className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="M7 2H17C18.1046 2 19 2.89543 19 4V8.5V20C19 21.1046 18.1046 22 17 22H7C5.89543 22 5 21.1046 5 20V8.5V4C5 2.89543 5.89543 2 7 2Z" stroke="currentColor" strokeWidth="2" />
+    <path d="M7 5C7 4.44772 7.44772 4 8 4H16C16.5523 4 17 4.44772 17 5V5C17 5.55228 16.5523 6 16 6H8C7.44772 6 7 5.55228 7 5V5Z" fill="currentColor" />
+    <rect x="8" y="12" width="8" height="7" rx="1" stroke="currentColor" strokeWidth="2" />
+    <path d="M5 8L19 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
+const CentrifugeIconSmall = ({ size = 14, className = '' }: { size?: number; className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 500 500" fill="currentColor" className={className}>
+    <g transform="scale(1)">
+      <path d="M74.6,456.8L74.6,456.8c0.5,2.8,2.9,5,5.9,5h331.3c2.9,0,5.4-2.2,5.8-5h0.1V456v-8v-69.7H74.6V456.8z M367.9,396.5c11.7,0,21.2,9.5,21.2,21.2c0,11.7-9.5,21.2-21.2,21.2s-21.2-9.5-21.2-21.2C346.7,406,356.2,396.5,367.9,396.5z" />
+      <path d="M417.2,368.6L353.4,245c-2.1-4-10.6-7.2-19-7.2H157.8c-8.4,0-16.9,3.2-19,7.2L75.1,368.6c-0.2,0.4-0.4,0.7-0.5,1.1h343.1C417.5,369.3,417.3,369,417.2,368.6z M246.1,357.3c-65.6,0-105.8-34.7-93.2-68.4c9.9-26.5,50.8-44.2,93.2-44.2c42.4,0,83.3,17.7,93.2,44.2C351.9,322.6,311.7,357.3,246.1,357.3z" />
+      <path d="M159.2,219.6H333c9.7,0,17.6-7.9,17.6-17.6V28.2c0-9.7-7.9-17.6-17.6-17.6H159.2c-9.7,0-17.6,7.9-17.6,17.6V202C141.6,211.7,149.5,219.6,159.2,219.6z M246.1,42.2c40.2,0,72.9,32.6,72.9,72.9c0,40.2-32.6,72.9-72.9,72.9c-40.2,0-72.9-32.6-72.9-72.9C173.3,74.8,205.9,42.2,246.1,42.2z" />
+      <circle cx="246.1" cy="115.4" r="17.6" />
+    </g>
+  </svg>
+);
+
+function getPickerEquipmentIcon(type: string) {
+  switch (type) {
+    case 'incubator': return IncubatorIconSmall;
+    case 'centrifuge': return CentrifugeIconSmall;
+    case 'sequencer': return Dna;
+    case 'pcr_machine': return SquareStack;
+    case 'spectrophotometer': return Lightbulb;
+    case 'microscope':
+    default: return Microscope;
+  }
+}
+
+// ==========================================
+// Equipment Picker Modal (for locking equipment to experiment)
+// ==========================================
+
+interface EquipmentPickerModalProps {
+  equipment: Equipment[];
+  locations: EquipmentLocation[];
+  experimentId: string;
+  onLock: (equipmentId: string) => void;
+  onUnlock: (equipmentId: string) => void;
+  onClose: () => void;
+}
+
+function EquipmentPickerModal({ equipment, locations, experimentId, onLock, onUnlock, onClose }: EquipmentPickerModalProps) {
+  // Start with all locations expanded
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set(locations.map((l) => l.id)));
+  const [equipSearch, setEquipSearch] = useState('');
+
+  // Expand all nodes when locations load
+  useEffect(() => {
+    if (locations.length > 0) {
+      setExpandedNodes(new Set(locations.map((l) => l.id)));
+    }
+  }, [locations]);
+
+  // Escape key closes modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  const toggleNode = (id: string) => {
+    setExpandedNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Build location map for hierarchy
+  const locationMap = new Map<string, EquipmentLocation>();
+  locations.forEach((l) => locationMap.set(l.id, l));
+
+  // Root locations (no parent)
+  const rootLocations = locations.filter((l) => !l.parentId);
+
+  // Equipment grouped by locationId
+  const equipByLocation = new Map<string, Equipment[]>();
+  equipment.forEach((e) => {
+    if (e.locationId) {
+      const list = equipByLocation.get(e.locationId) || [];
+      list.push(e);
+      equipByLocation.set(e.locationId, list);
+    }
+  });
+
+  // Check if a location or its descendants have any equipment matching search
+  const locationHasMatch = (locId: string): boolean => {
+    const equips = equipByLocation.get(locId) || [];
+    if (equips.some((e) => matchesSearch(e))) return true;
+    const loc = locationMap.get(locId);
+    if (loc?.children) {
+      return loc.children.some((child) => locationHasMatch(child.id));
+    }
+    return false;
+  };
+
+  const matchesSearch = (e: Equipment) => {
+    if (!equipSearch) return true;
+    const q = equipSearch.toLowerCase();
+    return e.name.toLowerCase().includes(q) || e.type.toLowerCase().includes(q) || (e.model || '').toLowerCase().includes(q);
+  };
+
+  // When searching, auto-expand everything
+  const isExpanded = (id: string) => equipSearch ? true : expandedNodes.has(id);
+
+  // Determine depth level for icon selection (0 = facility, 1 = room, 2+ = sub-room)
+  const getLocationDepth = (loc: EquipmentLocation): number => {
+    let depth = 0;
+    let current = loc;
+    while (current.parentId) {
+      depth++;
+      const parent = locationMap.get(current.parentId);
+      if (!parent) break;
+      current = parent;
+    }
+    return depth;
+  };
+
+  const renderEquipmentItem = (e: Equipment) => {
+    const Icon = getPickerEquipmentIcon(e.type);
+    const isLockedByMe = e.lockedByExperimentId === experimentId;
+    const isLockedByOther = !!e.lockedByExperimentId && !isLockedByMe;
+
+    return (
+      <div
+        key={e.id}
+        className={`flex items-center justify-between py-1.5 pl-2 pr-2 rounded-lg transition-colors ${
+          isLockedByMe
+            ? 'bg-green-500/10 border border-green-500/30'
+            : isLockedByOther
+              ? 'opacity-40'
+              : 'hover:bg-white/5'
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon size={14} className={isLockedByMe ? 'text-green-400' : 'text-white/40'} />
+          <span className={`text-sm truncate ${isLockedByMe ? 'text-green-400 font-medium' : isLockedByOther ? 'text-white/40' : 'text-white/80'}`}>
+            {e.name}
+          </span>
+          {e.model && <span className="text-xs text-white/30 truncate">{e.model}</span>}
+        </div>
+        <div className="flex-shrink-0 ml-2">
+          {isLockedByMe ? (
+            <button
+              onClick={() => onUnlock(e.id)}
+              className="flex items-center justify-center gap-1 w-20 px-2.5 py-1 text-xs font-medium text-green-400 bg-green-500/15 border border-green-500/30 rounded hover:bg-red-500/15 hover:text-red-400 hover:border-red-500/30 transition-colors"
+            >
+              <Lock size={10} />
+              Detach
+            </button>
+          ) : isLockedByOther ? (
+            <span className="flex items-center justify-center gap-1 w-20 px-2.5 py-1 text-xs text-white/30 bg-white/5 border border-white/5 rounded">
+              <Lock size={10} />
+              In use
+            </span>
+          ) : (
+            <button
+              onClick={() => onLock(e.id)}
+              className="flex items-center justify-center gap-1 w-20 px-2.5 py-1 text-xs font-medium  text-cyan-400 bg-cyan-500/15 border border-cyan-500/30 rounded hover:bg-cyan-500/20 transition-colors"
+            >
+              <Lock size={10} />
+              Attach
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderLocation = (loc: EquipmentLocation) => {
+    if (equipSearch && !locationHasMatch(loc.id)) return null;
+
+    const depth = getLocationDepth(loc);
+    const LocationIcon = depth === 0 ? Building2 : Warehouse;
+    const expanded = isExpanded(loc.id);
+    const childLocations = (loc.children || []).filter((c) => !equipSearch || locationHasMatch(c.id));
+    const equips = (equipByLocation.get(loc.id) || []).filter(matchesSearch);
+    const hasChildren = childLocations.length > 0 || equips.length > 0;
+
+    return (
+      <div key={loc.id}>
+        <button
+          onClick={() => toggleNode(loc.id)}
+          className="w-full flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-white/5 transition-colors text-left"
+        >
+          <span className="text-white/30 w-4 flex items-center justify-center">
+            {hasChildren ? (
+              expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
+            ) : (
+              <span className="w-3.5" />
+            )}
+          </span>
+          <LocationIcon size={14} className={loc.color ? '' : 'text-white/50'} style={loc.color ? { color: loc.color } : undefined} />
+          <span className="text-sm text-white/80 font-medium">{loc.name}</span>
+        </button>
+        {expanded && hasChildren && (
+          <div className="ml-6 border-l border-white/5 pl-2">
+            {childLocations.map((child) => {
+              const fullChild = locationMap.get(child.id) || child;
+              return renderLocation(fullChild);
+            })}
+            {equips.map(renderEquipmentItem)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Only show equipment that has a location assigned
+  const assignedEquipment = equipment.filter((e) => e.locationId);
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-neutral-900 border border-white/10 rounded-xl w-full max-w-md max-h-[600px] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/5">
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            <Microscope size={20} className="text-brand-primary" />
+            Attach Equipment & Run
+          </h2>
+          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="px-4 py-3 border-b border-white/5">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <input
+              value={equipSearch}
+              onChange={(e) => setEquipSearch(e.target.value)}
+              placeholder="Search equipment..."
+              className="w-full pl-9 pr-3 py-2 bg-black/30 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+              autoFocus
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 space-y-0.5">
+          {rootLocations.map(renderLocation)}
+
+          {assignedEquipment.length === 0 && (
+            <div className="text-center py-8 text-white/30 text-sm">
+              No equipment found. Add equipment in the Equipment tab.
+            </div>
+          )}
+
+          {assignedEquipment.length > 0 && equipSearch && rootLocations.every((l) => !locationHasMatch(l.id)) && (
+            <div className="text-center py-8 text-white/30 text-sm">
+              No matches found.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
 // Main Experiments Page
 // ==========================================
 
@@ -1331,6 +1646,7 @@ export function ExperimentsPage() {
   const [showDeleteFolderModal, setShowDeleteFolderModal] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showEquipmentPicker, setShowEquipmentPicker] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
@@ -1398,6 +1714,47 @@ export function ExperimentsPage() {
     mutationFn: ({ experimentId, file }: { experimentId: string; file: File }) =>
       experimentsApi.uploadFile(experimentId, file),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['experiments'] });
+      queryClient.invalidateQueries({ queryKey: ['experiment-files'] });
+    },
+  });
+
+  // Query uploaded files for the selected experiment
+  const { data: experimentFiles } = useQuery({
+    queryKey: ['experiment-files', selectedExperiment?.id],
+    queryFn: () => experimentsApi.listFiles(selectedExperiment!.id),
+    enabled: !!selectedExperiment,
+  });
+
+  const uploadedFileCount = experimentFiles?.files?.length ?? 0;
+
+  // Equipment data for the attach picker and button state
+  const { data: allEquipment = [] } = useQuery({
+    queryKey: ['equipment'],
+    queryFn: equipmentApi.list,
+    enabled: !!selectedExperiment || showEquipmentPicker,
+  });
+
+  const { data: equipmentLocations = [] } = useQuery({
+    queryKey: ['equipment-locations'],
+    queryFn: equipmentApi.listLocations,
+    enabled: showEquipmentPicker,
+  });
+
+  const lockEquipmentMutation = useMutation({
+    mutationFn: ({ equipmentId, experimentId }: { equipmentId: string; experimentId: string }) =>
+      equipmentApi.lock(equipmentId, experimentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
+      queryClient.invalidateQueries({ queryKey: ['experiments'] });
+      setShowEquipmentPicker(false);
+    },
+  });
+
+  const unlockEquipmentMutation = useMutation({
+    mutationFn: (equipmentId: string) => equipmentApi.unlock(equipmentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
       queryClient.invalidateQueries({ queryKey: ['experiments'] });
     },
   });
@@ -1500,13 +1857,6 @@ export function ExperimentsPage() {
 
           {selectedExperiment && (
             <>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm font-medium text-white/80 transition-colors"
-              >
-                <Paperclip size={16} />
-                Attach Data File
-              </button>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1673,18 +2023,26 @@ export function ExperimentsPage() {
             </div>
             <div className="flex-1 overflow-auto">
               <h2 className="text-sm font-semibold px-8 text-white/40 uppercase tracking-wider mb-4">Notes</h2>
-              <NotebookEditor experiment={selectedExperiment} onSave={handleContentChange} entities={searchEntities} />
+              <NotebookEditor
+                experiment={selectedExperiment}
+                onSave={handleContentChange}
+                entities={searchEntities}
+                onUploadFile={() => fileInputRef.current?.click()}
+                onAttachEquipment={() => setShowEquipmentPicker(true)}
+                lockedEquipmentCount={allEquipment.filter((e) => e.lockedByExperimentId === selectedExperiment.id).length}
+                uploadedFileCount={uploadedFileCount}
+              />
             </div>
             <div className="px-8 pb-8 pt-4">
-<div className="pt-6 border-t border-white/10">
-              <button
-                onClick={() => setSelectedExperiment(null)}
-                className="text-sm text-white/50 hover:text-white transition-colors"
-              >
-                ← Back to experiments
-              </button>
-            </div>
+              <div className="pt-6 border-t border-white/10">
+                <button
+                  onClick={() => setSelectedExperiment(null)}
+                  className="text-sm text-white/50 hover:text-white transition-colors"
+                >
+                  ← Back to experiments
+                </button>
               </div>
+            </div>
           </div>
         )}
       </div>
@@ -1731,6 +2089,17 @@ export function ExperimentsPage() {
           }}
           folderName={folderToDelete.name}
           experimentCount={experiments.filter((e) => e.folderId === folderToDelete.id).length}
+        />
+      )}
+
+      {showEquipmentPicker && selectedExperiment && (
+        <EquipmentPickerModal
+          equipment={allEquipment}
+          locations={equipmentLocations}
+          experimentId={selectedExperiment.id}
+          onLock={(equipmentId) => lockEquipmentMutation.mutate({ equipmentId, experimentId: selectedExperiment.id })}
+          onUnlock={(equipmentId) => unlockEquipmentMutation.mutate(equipmentId)}
+          onClose={() => setShowEquipmentPicker(false)}
         />
       )}
     </div>

@@ -233,6 +233,10 @@ export const experimentsApi = {
             }
         );
     },
+    listFiles: (experimentId: string) =>
+        apiRequest<{ files: Array<{ filename: string; path: string; size: number }> }>(
+            `/api/experiments/${experimentId}/files`
+        ),
 
     // Entries (for equipment data import)
     listEntries: (experimentId: string) =>
@@ -422,6 +426,8 @@ export interface Equipment {
     autoImport: boolean;
     agentStatus: string; // OFFLINE, ONLINE, LOCKED
     lastSyncAt?: string;
+    lockedByExperimentId?: string;
+    lockedAt?: string;
     maintenanceCycle?: number; // Days between maintenance
     lastMaintenance?: string; // ISO date
     nextMaintenance?: string; // ISO date
@@ -486,5 +492,16 @@ export const equipmentApi = {
     deleteLocation: (id: string) =>
         apiRequest<void>(`/api/equipment/locations/${id}`, {
             method: 'DELETE',
+        }),
+
+    // Lock/Unlock
+    lock: (id: string, experimentId: string) =>
+        apiRequest<Equipment>(`/api/equipment/${id}/lock`, {
+            method: 'POST',
+            body: JSON.stringify({ experiment_id: experimentId }),
+        }),
+    unlock: (id: string) =>
+        apiRequest<Equipment>(`/api/equipment/${id}/unlock`, {
+            method: 'POST',
         }),
 };

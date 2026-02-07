@@ -38,6 +38,10 @@ fn get_migrations() -> Vec<Migration> {
             name: "20260207024808_add_equipment_locations_and_maintenance".to_string(),
             sql: include_str!("../../../../database/migrations/20260207024808_add_equipment_locations_and_maintenance/migration.sql"),
         },
+        Migration {
+            name: "20260207055759_add_equipment_lock".to_string(),
+            sql: include_str!("../../../../database/migrations/20260207055759_add_equipment_lock/migration.sql"),
+        },
     ]
 }
 

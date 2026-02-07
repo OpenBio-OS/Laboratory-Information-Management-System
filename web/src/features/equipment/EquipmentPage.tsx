@@ -17,12 +17,9 @@ import {
   Plus,
   X,
   Trash2,
-  AlertCircle,
   CheckCircle,
   Circle,
   Lock,
-  Play,
-  Beaker,
   Activity,
   Network,
   Save,
@@ -851,8 +848,6 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
   const [lastMaintenance, setLastMaintenance] = useState(
     equipment.lastMaintenance ? new Date(equipment.lastMaintenance).toISOString().split('T')[0] : ''
   );
-  const [showExperimentPicker, setShowExperimentPicker] = useState(false);
-  const [selectedExperiment, setSelectedExperiment] = useState<Experiment | null>(null);
   const [isDiscovering, setIsDiscovering] = useState(false);
 
   const queryClient = useQueryClient();
@@ -860,12 +855,6 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
   const { data: experiments = [] } = useQuery({
     queryKey: ['experiments'],
     queryFn: experimentsApi.list,
-  });
-
-  const { data: entries = [] } = useQuery({
-    queryKey: ['experiment-entries', selectedExperiment?.id],
-    queryFn: () => selectedExperiment ? experimentsApi.listEntries(selectedExperiment.id) : Promise.resolve([]),
-    enabled: !!selectedExperiment,
   });
 
   const maintenanceOverdue = isMaintenanceOverdue(equipment);
@@ -907,33 +896,16 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
     }, 2000);
   };
 
-  const handleAttachExperiment = async () => {
-    if (!selectedExperiment) return;
-
+  const handleForceUnlock = async () => {
     try {
-      await equipmentApi.update(equipment.id, {
-        autoImport: true,
-      });
-
-      const timestamp = new Date().toISOString();
-      const content = `<p><strong>Auto-import configured for ${equipment.name}</strong></p><p>Watch folder: ${equipment.watchFolder || 'Not configured'}</p><p>Started: ${new Date(timestamp).toLocaleString()}</p>`;
-
-      await experimentsApi.createEntry(selectedExperiment.id, {
-        content,
-        author: 'system',
-      });
-
+      const updated = await equipmentApi.unlock(equipment.id);
+      onUpdate(updated);
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
-      alert('Equipment attached to experiment. Data will be automatically uploaded when detected.');
-      setShowExperimentPicker(false);
-      setSelectedExperiment(null);
     } catch (err) {
-      console.error('Failed to attach experiment:', err);
-      alert('Failed to attach experiment');
+      console.error('Failed to unlock equipment:', err);
+      alert('Failed to unlock equipment');
     }
   };
-
-  const hasExistingData = entries.length > 0;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -1135,89 +1107,46 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
 
         <div className="bg-white/5 border border-white/10 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <Beaker size={20} className="text-brand-primary" />
-            Attach to Experiment
+            <Lock size={20} className="text-brand-primary" />
+            Lock Status
           </h3>
 
-          {!showExperimentPicker ? (
+          {equipment.lockedByExperimentId ? (
             <div className="space-y-4">
-              <p className="text-sm text-white/60">
-                Attach this equipment to an experiment to enable automatic data upload when new files are detected.
-              </p>
-              {!equipment.watchFolder && (
-                <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                  <AlertCircle size={16} className="text-yellow-500 mt-0.5" />
-                  <div className="text-xs text-yellow-500/70">
-                    Configure a watch folder above before attaching to an experiment.
+              <div className="flex items-start gap-2 p-3 bg-brand-primary/10 border border-brand-primary/30 rounded-lg">
+                <Lock size={16} className="text-brand-primary mt-0.5" />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-white">Locked by Experiment</div>
+                  <div className="text-xs text-white/50 mt-1">
+                    {(() => {
+                      const exp = experiments.find((e: Experiment) => e.id === equipment.lockedByExperimentId);
+                      return exp ? exp.name : equipment.lockedByExperimentId;
+                    })()}
                   </div>
+                  {equipment.lockedAt && (
+                    <div className="text-xs text-white/40 mt-1">
+                      Since {new Date(equipment.lockedAt).toLocaleString()}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
               <button
-                onClick={() => setShowExperimentPicker(true)}
-                disabled={!equipment.watchFolder}
-                className="flex items-center gap-2 px-4 py-2.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleForceUnlock}
+                className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/20 border border-red-500/20 transition-colors"
               >
-                <Beaker size={16} />
-                Attach Experiment
+                <X size={16} />
+                Force Unlock
               </button>
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-sm font-medium text-white">Select Experiment</h4>
-                <button onClick={() => setShowExperimentPicker(false)} className="text-white/40 hover:text-white">
-                  <X size={18} />
-                </button>
+            <div className="flex items-start gap-2 p-3 bg-white/5 border border-white/10 rounded-lg">
+              <CheckCircle size={16} className="text-green-500 mt-0.5" />
+              <div>
+                <div className="text-sm font-medium text-white">Available</div>
+                <div className="text-xs text-white/50 mt-1">
+                  This equipment is not locked. Use "Attach Equipment & Run" from an experiment notebook to lock it.
+                </div>
               </div>
-
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {experiments.map((exp: Experiment) => (
-                  <button
-                    key={exp.id}
-                    onClick={() => setSelectedExperiment(exp)}
-                    className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${selectedExperiment?.id === exp.id
-                      ? 'bg-brand-primary/20 border-brand-primary text-white'
-                      : 'bg-black/20 border-white/10 text-white/70 hover:border-brand-primary/30'
-                      }`}
-                  >
-                    <div className="font-medium text-sm">{exp.name}</div>
-                    {exp.description && <div className="text-xs text-white/40 mt-1">{exp.description}</div>}
-                  </button>
-                ))}
-              </div>
-
-              {selectedExperiment && (
-                <>
-                  {hasExistingData && (
-                    <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                      <AlertCircle size={16} className="text-red-500 mt-0.5" />
-                      <div className="text-xs text-red-500/70">
-                        This experiment already has data. Auto-import can only be enabled for experiments with no existing data.
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-3 pt-2">
-                    <button
-                      onClick={handleAttachExperiment}
-                      disabled={hasExistingData}
-                      className="flex items-center gap-2 px-4 py-2 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Play size={16} />
-                      {hasExistingData ? 'Experiment Has Data' : 'Attach & Enable Auto-Import'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedExperiment(null);
-                        setShowExperimentPicker(false);
-                      }}
-                      className="px-4 py-2 text-sm text-white/60 hover:text-white transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </>
-              )}
             </div>
           )}
         </div>

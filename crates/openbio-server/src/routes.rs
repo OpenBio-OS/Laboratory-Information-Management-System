@@ -76,6 +76,7 @@ fn experiment_routes() -> Router<AppState> {
             get(list_experiment_mentions).post(create_experiment_mention),
         )
         .route("/{id}/upload", axum::routing::post(upload_experiment_file))
+        .route("/{id}/files", get(list_experiment_files))
         .route("/search-entities", get(search_entities))
         .route("/folders", get(list_experiment_folders).post(create_experiment_folder))
         .route("/folders/{id}", axum::routing::delete(delete_experiment_folder))
@@ -112,6 +113,8 @@ fn equipment_routes() -> Router<AppState> {
                 .patch(update_equipment)
                 .delete(delete_equipment),
         )
+        .route("/{id}/lock", axum::routing::post(lock_equipment))
+        .route("/{id}/unlock", axum::routing::post(unlock_equipment))
         .route("/locations", get(list_equipment_locations).post(create_equipment_location))
         .route("/locations/{id}", axum::routing::delete(delete_equipment_location))
 }
@@ -839,6 +842,12 @@ async fn upload_experiment_file(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     // Create uploads directory if it doesn't exist
     let uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
+    
+    // Delete existing files (replace mode)
+    if uploads_dir.exists() {
+        fs::remove_dir_all(&uploads_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+    
     fs::create_dir_all(&uploads_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let mut uploaded_files = vec![];
@@ -868,6 +877,35 @@ async fn upload_experiment_file(
 
     Ok(Json(serde_json::json!({
         "files": uploaded_files
+    })))
+}
+
+// List uploaded files for an experiment
+async fn list_experiment_files(
+    State(state): State<AppState>,
+    Path(experiment_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
+
+    let mut files = vec![];
+
+    if uploads_dir.exists() {
+        let entries = fs::read_dir(&uploads_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        for entry in entries {
+            let entry = entry.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let metadata = entry.metadata().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            if metadata.is_file() {
+                files.push(serde_json::json!({
+                    "filename": entry.file_name().to_string_lossy().to_string(),
+                    "path": entry.path().to_string_lossy().to_string(),
+                    "size": metadata.len(),
+                }));
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "files": files
     })))
 }
 
@@ -1589,6 +1627,68 @@ async fn delete_equipment(State(state): State<AppState>, Path(id): Path<String>)
         .await
         .expect("Failed to delete equipment");
     Json(())
+}
+
+// Lock equipment to an experiment
+#[derive(Deserialize)]
+pub struct LockEquipmentRequest {
+    pub experiment_id: String,
+}
+
+async fn lock_equipment(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<LockEquipmentRequest>,
+) -> Result<Json<equipment::Data>, (StatusCode, String)> {
+    // Check if already locked
+    let equip = state
+        .db
+        .equipment()
+        .find_unique(equipment::id::equals(id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Equipment not found".to_string()))?;
+
+    if equip.locked_by_experiment_id.is_some() {
+        return Err((StatusCode::CONFLICT, "Equipment is already locked by another experiment".to_string()));
+    }
+
+    let updated = state
+        .db
+        .equipment()
+        .update(
+            equipment::id::equals(id),
+            vec![
+                equipment::locked_by_experiment::connect(experiment::id::equals(payload.experiment_id)),
+                equipment::locked_at::set(Some(prisma_client_rust::chrono::Utc::now().into())),
+            ],
+        )
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(updated))
+}
+
+// Unlock equipment
+async fn unlock_equipment(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<equipment::Data>, (StatusCode, String)> {
+    let updated = state
+        .db
+        .equipment()
+        .update(
+            equipment::id::equals(id),
+            vec![
+                equipment::locked_by_experiment_id::set(None),
+                equipment::locked_at::set(None),
+            ],
+        )
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(updated))
 }
 
 // ==========================================
