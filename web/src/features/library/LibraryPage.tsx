@@ -26,31 +26,40 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
 
   const selectedCollection = collections.find((c) => c.id === value);
 
-  // Update dropdown position when opened
+  // Use useLayoutEffect to calculate position synchronously before browser paint
+  // This prevents the dropdown from flashing at wrong position
   useEffect(() => {
     if (isOpen && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const maxDropdownHeight = 256; // max-h-64 in pixels
-      const spacing = 8; // spacing from viewport edges
-      
-      // Calculate available space below and above the button
-      const spaceBelow = viewportHeight - rect.bottom - spacing;
-      const spaceAbove = rect.top - spacing;
-      
-      // Determine if dropdown should open upward or downward
-      const shouldOpenUpward = spaceBelow < maxDropdownHeight && spaceAbove > spaceBelow;
-      
-      // Calculate the actual max height based on available space
-      const availableHeight = shouldOpenUpward ? spaceAbove : spaceBelow;
-      const calculatedMaxHeight = Math.min(maxDropdownHeight, availableHeight);
-      
-      setPosition({
-        top: shouldOpenUpward ? rect.top - calculatedMaxHeight - 4 : rect.bottom + 4,
-        left: rect.left,
-        width: rect.width,
-        maxHeight: calculatedMaxHeight,
-      });
+      const updatePosition = () => {
+        const rect = buttonRef.current!.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+        const maxDropdownHeight = 256;
+        const spacing = 8;
+
+        const spaceBelow = viewportHeight - rect.bottom - spacing;
+        const spaceAbove = rect.top - spacing;
+        const shouldOpenUpward = spaceBelow < maxDropdownHeight && spaceAbove > spaceBelow;
+        const availableHeight = shouldOpenUpward ? spaceAbove : spaceBelow;
+        const calculatedMaxHeight = Math.min(maxDropdownHeight, availableHeight);
+
+        setPosition({
+          top: shouldOpenUpward ? rect.top - calculatedMaxHeight - 4 : rect.bottom + 4,
+          left: rect.left,
+          width: rect.width,
+          maxHeight: calculatedMaxHeight,
+        });
+      };
+
+      // Calculate immediately
+      updatePosition();
+
+      // Also update on scroll/resize in case modal is scrollable
+      window.addEventListener('scroll', updatePosition, true);
+      window.addEventListener('resize', updatePosition);
+      return () => {
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+      };
     }
   }, [isOpen]);
 
@@ -86,6 +95,31 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
     setIsOpen(false);
   };
 
+  // Calculate position synchronously before render using a ref
+  const getPosition = () => {
+    if (!buttonRef.current) return position;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const maxDropdownHeight = 256;
+    const spacing = 8;
+
+    const spaceBelow = viewportHeight - rect.bottom - spacing;
+    const spaceAbove = rect.top - spacing;
+    const shouldOpenUpward = spaceBelow < maxDropdownHeight && spaceAbove > spaceBelow;
+    const availableHeight = shouldOpenUpward ? spaceAbove : spaceBelow;
+    const calculatedMaxHeight = Math.min(maxDropdownHeight, availableHeight);
+
+    return {
+      top: shouldOpenUpward ? rect.top - calculatedMaxHeight - 4 : rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      maxHeight: calculatedMaxHeight,
+    };
+  };
+
+  // Get position inline for rendering to avoid flash
+  const renderPosition = isOpen ? getPosition() : position;
+
   return (
     <>
       <button
@@ -113,10 +147,10 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
             ref={dropdownRef}
             className="fixed z-[9999] py-1 bg-neutral-900 border border-white/20 rounded-lg shadow-2xl overflow-auto"
             style={{
-              top: position.top,
-              left: position.left,
-              width: position.width,
-              maxHeight: position.maxHeight,
+              top: renderPosition.top,
+              left: renderPosition.left,
+              width: renderPosition.width,
+              maxHeight: renderPosition.maxHeight,
             }}
           >
             {collections.map((collection) => (
@@ -953,7 +987,7 @@ export function LibraryPage() {
                         >
                           <div className="w-3 h-3 rounded" style={{ backgroundColor: collection.color || "#17b978" }} />
                           <span className="flex-1 text-left truncate max-w-[8.5rem]">{collection.name}</span>
-                          <span className="text-xs text-white/40">{papers.filter((p) => p.libraryId === collection.id).length}</span>
+                          <span className="text-xs text-white/40 mr-0.5">{papers.filter((p) => p.libraryId === collection.id).length}</span>
                         </button>
                         <button
                           onClick={() => handleDeleteCollectionClick(collection)}

@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useNavigation } from '../App';
 import { PipelineSetupWizard } from '../components/PipelineSetupWizard';
+import { NewPipelineRunDialog } from '../components/NewPipelineRunDialog';
 import { Plus } from 'lucide-react';
 
 interface PipelineRun {
@@ -19,12 +19,12 @@ interface PipelineRun {
 }
 
 export function PipelineManager() {
-  const { navigateTo } = useNavigation();
   const [runs, setRuns] = useState<PipelineRun[]>([]);
   const [filter, setFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
   // null = still checking, true = needs setup, false = ready
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+  const [showNewRunDialog, setShowNewRunDialog] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,7 +144,7 @@ export function PipelineManager() {
             <p className="text-sm text-white/60 my-auto">Manage and monitor bioinformatics pipelines</p>
           </div>
           <button
-            onClick={() => navigateTo({ tab: 'experiments' })}
+            onClick={() => setShowNewRunDialog(true)}
             className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
           >
             <Plus size={16} />
@@ -158,11 +158,10 @@ export function PipelineManager() {
             <button
               key={status}
               onClick={() => setFilter(status)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                filter === status
-                  ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
-                  : 'text-white/60 hover:bg-white/5 border border-transparent'
-              }`}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === status
+                ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
+                : 'text-white/60 hover:bg-white/5 border border-transparent'
+                }`}
             >
               {status.charAt(0).toUpperCase() + status.slice(1)}
               {status === 'all' && ` (${runs.length})`}
@@ -183,16 +182,16 @@ export function PipelineManager() {
             </div>
             <h3 className="text-lg font-medium text-white mb-1">No pipeline runs yet</h3>
             <p className="text-white/50 mb-4">
-              {filter === 'all' 
+              {filter === 'all'
                 ? 'Start your first bioinformatics pipeline from an experiment'
                 : `No ${filter} pipeline runs`
               }
             </p>
             <button
-              onClick={() => navigateTo({ tab: 'experiments' })}
+              onClick={() => setShowNewRunDialog(true)}
               className="px-4 py-2 bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-all"
             >
-              Go to Experiments
+              Start New Pipeline
             </button>
           </div>
         ) : (
@@ -282,6 +281,17 @@ export function PipelineManager() {
           </div>
         )}
       </div>
+
+      {/* New Pipeline Run Dialog */}
+      {showNewRunDialog && (
+        <NewPipelineRunDialog
+          onClose={() => setShowNewRunDialog(false)}
+          onSuccess={() => {
+            setShowNewRunDialog(false);
+            loadPipelineRuns();
+          }}
+        />
+      )}
     </div>
   );
 }

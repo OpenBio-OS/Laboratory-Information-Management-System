@@ -1,0 +1,867 @@
+// New Pipeline Run Dialog - Select experiment and configure pipeline
+// Enhanced with folder tree view and custom styled selects
+
+import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { experimentsApi, Experiment, ExperimentFolder } from '../lib/api';
+import { CustomSelect, SelectOption } from './CustomSelect';
+import {
+    X,
+    ChevronRight,
+    ChevronLeft,
+    ChevronDown,
+    Search,
+    FlaskConical,
+    FileText,
+    Play,
+    Loader2,
+    AlertCircle,
+    Folder,
+    FolderOpen,
+    Plus,
+} from 'lucide-react';
+
+interface FileInfo {
+    filename: string;
+    path: string;
+    size: number;
+}
+
+interface PipelineTemplate {
+    name: string;
+    description: string;
+    version: string;
+    parameters: ParameterDefinition[];
+    isCustom?: boolean;
+}
+
+interface ParameterDefinition {
+    name: string;
+    label: string;
+    type: 'text' | 'number' | 'select' | 'boolean';
+    required: boolean;
+    default?: string;
+    options?: string[];
+    description?: string;
+}
+
+interface NewPipelineRunDialogProps {
+    onClose: () => void;
+    onSuccess: () => void;
+}
+
+// Folder Tree Node component
+function FolderTreeNode({
+    folder,
+    experiments,
+    selectedExperiment,
+    onSelectExperiment,
+    expandedFolders,
+    onToggleFolder,
+    searchQuery,
+}: {
+    folder: ExperimentFolder;
+    experiments: Experiment[];
+    selectedExperiment: Experiment | null;
+    onSelectExperiment: (exp: Experiment) => void;
+    expandedFolders: Set<string>;
+    onToggleFolder: (folderId: string) => void;
+    searchQuery: string;
+}) {
+    const isExpanded = expandedFolders.has(folder.id);
+    const folderExperiments = experiments.filter(
+        (e) => e.folderId === folder.id &&
+            (searchQuery === '' || e.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+    const experimentCount = experiments.filter((e) => e.folderId === folder.id).length;
+
+    // Skip folder if no matching experiments when searching
+    if (searchQuery && folderExperiments.length === 0) {
+        return null;
+    }
+
+    return (
+        <div>
+            {/* Folder Header */}
+            <button
+                onClick={() => onToggleFolder(folder.id)}
+                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 rounded-lg transition-colors group"
+            >
+                <div
+                    className="w-2 h-2 rounded-sm flex-shrink-0"
+                    style={{ backgroundColor: folder.color || '#17b978' }}
+                />
+                {isExpanded ? (
+                    <FolderOpen size={16} className="text-white/60" />
+                ) : (
+                    <Folder size={16} className="text-white/60" />
+                )}
+                <span className="text-sm font-medium text-white flex-1 text-left truncate">
+                    {folder.name}
+                </span>
+                <span className="text-xs text-white/40">{experimentCount}</span>
+                <ChevronDown
+                    size={14}
+                    className={`text-white/40 transition-transform ${isExpanded ? '' : '-rotate-90'}`}
+                />
+            </button>
+
+            {/* Experiments in Folder */}
+            {isExpanded && (
+                <div className="ml-6 border-l border-white/10 pl-2 space-y-1 mt-1">
+                    {folderExperiments.length === 0 ? (
+                        <div className="text-xs text-white/30 py-2 pl-2">No experiments</div>
+                    ) : (
+                        folderExperiments.map((exp) => (
+                            <button
+                                key={exp.id}
+                                onClick={() => onSelectExperiment(exp)}
+                                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all ${selectedExperiment?.id === exp.id
+                                        ? 'bg-brand-primary/15 border border-brand-primary/30'
+                                        : 'hover:bg-white/5 border border-transparent'
+                                    }`}
+                            >
+                                <FlaskConical
+                                    size={14}
+                                    className={selectedExperiment?.id === exp.id ? 'text-brand-primary' : 'text-white/40'}
+                                />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm text-white truncate">{exp.name}</div>
+                                    <div className="text-xs text-white/40">
+                                        {new Date(exp.createdAt).toLocaleDateString()}
+                                    </div>
+                                </div>
+                                <span
+                                    className={`text-[10px] px-1.5 py-0.5 rounded ${exp.status === 'COMPLETED'
+                                            ? 'bg-brand-primary/10 text-brand-primary'
+                                            : exp.status === 'IN_PROGRESS'
+                                                ? 'bg-blue-500/10 text-blue-400'
+                                                : 'bg-white/5 text-white/40'
+                                        }`}
+                                >
+                                    {exp.status}
+                                </span>
+                            </button>
+                        ))
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialogProps) {
+    // Step management
+    const [step, setStep] = useState<'experiment' | 'pipeline'>('experiment');
+
+    // Folder & experiment state
+    const [folders, setFolders] = useState<ExperimentFolder[]>([]);
+    const [experiments, setExperiments] = useState<Experiment[]>([]);
+    const [selectedExperiment, setSelectedExperiment] = useState<Experiment | null>(null);
+    const [experimentFiles, setExperimentFiles] = useState<FileInfo[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+    const [isLoadingExperiments, setIsLoadingExperiments] = useState(true);
+    const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+
+    // Pipeline configuration state
+    const [availablePipelines, setAvailablePipelines] = useState<PipelineTemplate[]>([]);
+    const [selectedPipeline, setSelectedPipeline] = useState<string>('');
+    const [parameters, setParameters] = useState<Record<string, string>>({});
+    const [isLaunching, setIsLaunching] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [showAddPipeline, setShowAddPipeline] = useState(false);
+
+    // Load experiments and folders on mount
+    useEffect(() => {
+        loadExperimentsAndFolders();
+        loadPipelineTemplates();
+    }, []);
+
+    // Load files when experiment is selected
+    useEffect(() => {
+        if (selectedExperiment) {
+            loadExperimentFiles(selectedExperiment.id);
+        } else {
+            setExperimentFiles([]);
+        }
+    }, [selectedExperiment]);
+
+    const loadExperimentsAndFolders = async () => {
+        setIsLoadingExperiments(true);
+        try {
+            const [experimentsData, foldersData] = await Promise.all([
+                experimentsApi.list(),
+                experimentsApi.listFolders(),
+            ]);
+            setExperiments(experimentsData);
+            setFolders(foldersData);
+            // Expand all folders by default
+            setExpandedFolders(new Set(foldersData.map((f) => f.id)));
+        } catch (err) {
+            console.error('Failed to load experiments:', err);
+            setError('Failed to load experiments');
+        } finally {
+            setIsLoadingExperiments(false);
+        }
+    };
+
+    const loadExperimentFiles = async (experimentId: string) => {
+        setIsLoadingFiles(true);
+        try {
+            const result = await experimentsApi.listFiles(experimentId);
+            setExperimentFiles(result.files || []);
+        } catch (err) {
+            console.error('Failed to load experiment files:', err);
+            setExperimentFiles([]);
+        } finally {
+            setIsLoadingFiles(false);
+        }
+    };
+
+    const loadPipelineTemplates = async () => {
+        try {
+            const templates = await invoke<PipelineTemplate[]>('get_pipeline_templates');
+            setAvailablePipelines(templates);
+            if (templates.length > 0) {
+                setSelectedPipeline(templates[0].name);
+                initializeParameters(templates[0]);
+            }
+        } catch (error) {
+            console.error('Failed to load pipeline templates:', error);
+            // Fallback templates
+            const fallback: PipelineTemplate[] = [
+                {
+                    name: 'nf-core/rnaseq',
+                    description: 'RNA sequencing analysis pipeline',
+                    version: '3.14.0',
+                    parameters: [
+                        { name: 'genome', label: 'Reference Genome', type: 'select', required: true, options: ['GRCh38', 'GRCm39', 'TAIR10'] },
+                        { name: 'aligner', label: 'Aligner', type: 'select', required: true, default: 'star_salmon', options: ['star_salmon', 'star_rsem', 'hisat2'] },
+                    ],
+                },
+                {
+                    name: 'nf-core/scrnaseq',
+                    description: 'Single-cell RNA-seq analysis',
+                    version: '2.7.1',
+                    parameters: [
+                        { name: 'genome', label: 'Reference Genome', type: 'select', required: true, options: ['GRCh38', 'GRCm39'] },
+                        { name: 'protocol', label: 'Protocol', type: 'select', required: true, options: ['10x', 'smartseq2', 'dropseq'] },
+                    ],
+                },
+                {
+                    name: 'nf-core/atacseq',
+                    description: 'ATAC-seq peak calling and analysis',
+                    version: '2.1.2',
+                    parameters: [
+                        { name: 'genome', label: 'Reference Genome', type: 'select', required: true, options: ['GRCh38', 'GRCm39', 'TAIR10'] },
+                        { name: 'narrow_peak', label: 'Call Narrow Peaks', type: 'boolean', required: false, default: 'true' },
+                    ],
+                },
+            ];
+            setAvailablePipelines(fallback);
+            setSelectedPipeline(fallback[0].name);
+            initializeParameters(fallback[0]);
+        }
+    };
+
+    const initializeParameters = (pipeline: PipelineTemplate) => {
+        const params: Record<string, string> = {};
+        pipeline.parameters.forEach((param) => {
+            if (param.default) {
+                params[param.name] = param.default;
+            }
+        });
+        setParameters(params);
+    };
+
+    const handlePipelineChange = (pipelineName: string) => {
+        setSelectedPipeline(pipelineName);
+        const pipeline = availablePipelines.find((p) => p.name === pipelineName);
+        if (pipeline) {
+            initializeParameters(pipeline);
+        }
+    };
+
+    const handleParameterChange = (name: string, value: string) => {
+        setParameters((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const handleToggleFolder = (folderId: string) => {
+        setExpandedFolders((prev) => {
+            const next = new Set(prev);
+            if (next.has(folderId)) {
+                next.delete(folderId);
+            } else {
+                next.add(folderId);
+            }
+            return next;
+        });
+    };
+
+    const handleLaunchPipeline = async () => {
+        if (!selectedExperiment || !selectedPipeline) return;
+
+        setIsLaunching(true);
+        setError(null);
+
+        try {
+            await invoke('start_pipeline', {
+                request: {
+                    experiment_id: selectedExperiment.id,
+                    pipeline_type: selectedPipeline,
+                    genome: parameters.genome || null,
+                    custom_params: parameters,
+                },
+            });
+
+            onSuccess();
+            onClose();
+        } catch (err) {
+            console.error('Failed to start pipeline:', err);
+            setError(`Failed to start pipeline: ${err}`);
+        } finally {
+            setIsLaunching(false);
+        }
+    };
+
+    // Filter experiments that don't belong to any folder (unfiled)
+    const unfiledExperiments = experiments.filter(
+        (e) => !e.folderId &&
+            (searchQuery === '' || e.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+
+    const selectedTemplate = availablePipelines.find((p) => p.name === selectedPipeline);
+
+    const formatFileSize = (bytes: number) => {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    // Convert pipelines to select options
+    const pipelineOptions: SelectOption[] = availablePipelines.map((p) => ({
+        value: p.name,
+        label: p.name,
+        description: `${p.description} (v${p.version})`,
+    }));
+
+    return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <h2 className="text-xl font-bold text-white">New Pipeline Run</h2>
+                        <div className="flex items-center gap-2 text-sm">
+                            <span
+                                className={`px-2 py-0.5 rounded ${step === 'experiment' ? 'bg-brand-primary/20 text-brand-primary' : 'text-white/40'
+                                    }`}
+                            >
+                                1. Select Experiment
+                            </span>
+                            <ChevronRight size={14} className="text-white/20" />
+                            <span
+                                className={`px-2 py-0.5 rounded ${step === 'pipeline' ? 'bg-brand-primary/20 text-brand-primary' : 'text-white/40'
+                                    }`}
+                            >
+                                2. Configure Pipeline
+                            </span>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+                        <X size={20} />
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-auto p-6">
+                    {step === 'experiment' && (
+                        <div className="space-y-4">
+                            {/* Search */}
+                            <div className="relative">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search experiments..."
+                                    className="w-full pl-10 pr-4 py-2.5 bg-black/30 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                                />
+                            </div>
+
+                            {/* Folder Tree */}
+                            <div className="bg-black/20 border border-white/10 rounded-xl p-3 max-h-[300px] overflow-auto">
+                                {isLoadingExperiments ? (
+                                    <div className="flex items-center justify-center py-12">
+                                        <Loader2 className="animate-spin text-brand-primary" size={24} />
+                                    </div>
+                                ) : folders.length === 0 && experiments.length === 0 ? (
+                                    <div className="text-center py-12 text-white/40">
+                                        <FlaskConical size={32} className="mx-auto mb-2 opacity-50" />
+                                        <p>No experiments found</p>
+                                        <p className="text-sm">Create an experiment first to run a pipeline</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {/* Folders */}
+                                        {folders.map((folder) => (
+                                            <FolderTreeNode
+                                                key={folder.id}
+                                                folder={folder}
+                                                experiments={experiments}
+                                                selectedExperiment={selectedExperiment}
+                                                onSelectExperiment={setSelectedExperiment}
+                                                expandedFolders={expandedFolders}
+                                                onToggleFolder={handleToggleFolder}
+                                                searchQuery={searchQuery}
+                                            />
+                                        ))}
+
+                                        {/* Unfiled Experiments */}
+                                        {unfiledExperiments.length > 0 && (
+                                            <div className="pt-2 border-t border-white/10 mt-2">
+                                                <div className="text-xs text-white/40 px-3 py-1">Unfiled</div>
+                                                {unfiledExperiments.map((exp) => (
+                                                    <button
+                                                        key={exp.id}
+                                                        onClick={() => setSelectedExperiment(exp)}
+                                                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all ${selectedExperiment?.id === exp.id
+                                                                ? 'bg-brand-primary/15 border border-brand-primary/30'
+                                                                : 'hover:bg-white/5 border border-transparent'
+                                                            }`}
+                                                    >
+                                                        <FlaskConical
+                                                            size={14}
+                                                            className={
+                                                                selectedExperiment?.id === exp.id ? 'text-brand-primary' : 'text-white/40'
+                                                            }
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="text-sm text-white truncate">{exp.name}</div>
+                                                            <div className="text-xs text-white/40">
+                                                                {new Date(exp.createdAt).toLocaleDateString()}
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Selected Experiment Files Preview */}
+                            {selectedExperiment && (
+                                <div className="p-4 bg-white/5 border border-white/10 rounded-xl">
+                                    <h3 className="text-sm font-medium text-white/60 mb-3 flex items-center gap-2">
+                                        <FileText size={14} />
+                                        Attached Files ({experimentFiles.length})
+                                    </h3>
+                                    {isLoadingFiles ? (
+                                        <div className="flex items-center justify-center py-4">
+                                            <Loader2 className="animate-spin text-white/40" size={16} />
+                                        </div>
+                                    ) : experimentFiles.length === 0 ? (
+                                        <p className="text-sm text-white/40">No files attached to this experiment</p>
+                                    ) : (
+                                        <div className="space-y-2 max-h-32 overflow-auto">
+                                            {experimentFiles.map((file, index) => (
+                                                <div key={index} className="flex items-center justify-between text-sm">
+                                                    <span className="text-white/80 truncate">{file.filename}</span>
+                                                    <span className="text-white/40 ml-2">{formatFileSize(file.size)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {step === 'pipeline' && (
+                        <div className="space-y-6">
+                            {/* Selected Experiment Summary */}
+                            <div className="p-4 bg-brand-primary/5 border border-brand-primary/20 rounded-xl">
+                                <div className="flex items-center gap-3">
+                                    <FlaskConical size={18} className="text-brand-primary" />
+                                    <div>
+                                        <div className="font-medium text-white">{selectedExperiment?.name}</div>
+                                        <div className="text-sm text-white/40">{experimentFiles.length} files attached</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Pipeline Selection with CustomSelect */}
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="block text-sm font-medium text-white/60">Pipeline Type *</label>
+                                    <button
+                                        onClick={() => setShowAddPipeline(true)}
+                                        className="flex items-center gap-1 text-xs text-brand-primary hover:text-brand-secondary transition-colors"
+                                    >
+                                        <Plus size={12} />
+                                        Add Custom
+                                    </button>
+                                </div>
+                                <CustomSelect
+                                    value={selectedPipeline}
+                                    onChange={handlePipelineChange}
+                                    options={pipelineOptions}
+                                    placeholder="Select a pipeline"
+                                    searchable={pipelineOptions.length > 5}
+                                />
+                            </div>
+
+                            {/* Pipeline Parameters */}
+                            {selectedTemplate && selectedTemplate.parameters.length > 0 && (
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-medium text-white/60 border-t border-white/10 pt-4">
+                                        Pipeline Parameters
+                                    </h3>
+
+                                    {selectedTemplate.parameters.map((param) => (
+                                        <div key={param.name}>
+                                            <label className="block text-sm font-medium text-white/80 mb-1.5">
+                                                {param.label} {param.required && <span className="text-red-400">*</span>}
+                                            </label>
+                                            {param.description && (
+                                                <p className="text-xs text-white/40 mb-2">{param.description}</p>
+                                            )}
+
+                                            {param.type === 'select' && param.options && (
+                                                <CustomSelect
+                                                    value={parameters[param.name] || ''}
+                                                    onChange={(value) => handleParameterChange(param.name, value)}
+                                                    options={param.options.map((opt) => ({ value: opt, label: opt }))}
+                                                    placeholder={`Select ${param.label}`}
+                                                />
+                                            )}
+
+                                            {param.type === 'text' && (
+                                                <input
+                                                    type="text"
+                                                    value={parameters[param.name] || ''}
+                                                    onChange={(e) => handleParameterChange(param.name, e.target.value)}
+                                                    className="w-full px-4 py-2.5 bg-black/30 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                                                    required={param.required}
+                                                    placeholder={param.default}
+                                                />
+                                            )}
+
+                                            {param.type === 'number' && (
+                                                <input
+                                                    type="number"
+                                                    value={parameters[param.name] || ''}
+                                                    onChange={(e) => handleParameterChange(param.name, e.target.value)}
+                                                    className="w-full px-4 py-2.5 bg-black/30 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                                                    required={param.required}
+                                                    placeholder={param.default}
+                                                />
+                                            )}
+
+                                            {param.type === 'boolean' && (
+                                                <label className="flex items-center gap-3 cursor-pointer">
+                                                    <div
+                                                        className={`relative w-10 h-5 rounded-full transition-colors ${parameters[param.name] === 'true' ? 'bg-brand-primary' : 'bg-white/10'
+                                                            }`}
+                                                    >
+                                                        <div
+                                                            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${parameters[param.name] === 'true' ? 'translate-x-5' : 'translate-x-0'
+                                                                }`}
+                                                        />
+                                                    </div>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={parameters[param.name] === 'true'}
+                                                        onChange={(e) =>
+                                                            handleParameterChange(param.name, e.target.checked ? 'true' : 'false')
+                                                        }
+                                                        className="sr-only"
+                                                    />
+                                                    <span className="text-sm text-white/60">Enable</span>
+                                                </label>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Error Message */}
+                            {error && (
+                                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-400">
+                                    <AlertCircle size={18} />
+                                    <span className="text-sm">{error}</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between">
+                    <div>
+                        {step === 'pipeline' && (
+                            <button
+                                onClick={() => setStep('experiment')}
+                                className="flex items-center gap-2 px-4 py-2 text-white/60 hover:text-white transition-colors"
+                            >
+                                <ChevronLeft size={16} />
+                                Back
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={onClose}
+                            className="px-4 py-2 border border-white/10 text-white/80 rounded-lg hover:bg-white/5 transition-colors"
+                        >
+                            Cancel
+                        </button>
+
+                        {step === 'experiment' ? (
+                            <button
+                                onClick={() => setStep('pipeline')}
+                                disabled={!selectedExperiment}
+                                className="flex items-center gap-2 px-4 py-2 bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Next
+                                <ChevronRight size={16} />
+                            </button>
+                        ) : (
+                            <button
+                                onClick={handleLaunchPipeline}
+                                disabled={!selectedPipeline || isLaunching}
+                                className="flex items-center gap-2 px-4 py-2 bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isLaunching ? (
+                                    <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        Starting...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Play size={16} />
+                                        Start Pipeline
+                                    </>
+                                )}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Add Pipeline Modal (placeholder - to be implemented) */}
+            {showAddPipeline && (
+                <AddPipelineModal
+                    onClose={() => setShowAddPipeline(false)}
+                    onAdd={(pipeline) => {
+                        setAvailablePipelines((prev) => [...prev, { ...pipeline, isCustom: true }]);
+                        setShowAddPipeline(false);
+                    }}
+                />
+            )}
+        </div>
+    );
+}
+
+// Add Pipeline Modal Component
+function AddPipelineModal({
+    onClose,
+    onAdd,
+}: {
+    onClose: () => void;
+    onAdd: (pipeline: PipelineTemplate) => void;
+}) {
+    const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
+    const [version, setVersion] = useState('1.0.0');
+    const [parameters, setParameters] = useState<ParameterDefinition[]>([]);
+
+    const addParameter = () => {
+        setParameters((prev) => [
+            ...prev,
+            { name: '', label: '', type: 'text', required: false },
+        ]);
+    };
+
+    const updateParameter = (index: number, updates: Partial<ParameterDefinition>) => {
+        setParameters((prev) =>
+            prev.map((p, i) => (i === index ? { ...p, ...updates } : p))
+        );
+    };
+
+    const removeParameter = (index: number) => {
+        setParameters((prev) => prev.filter((_, i) => i !== index));
+    };
+
+    const handleSubmit = () => {
+        if (!name.trim()) return;
+        onAdd({
+            name: name.trim(),
+            description: description.trim(),
+            version,
+            parameters: parameters.filter((p) => p.name.trim() && p.label.trim()),
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+            <div
+                className="bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-white">Add Custom Pipeline</h3>
+                    <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+                        <X size={18} />
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-auto p-6 space-y-4">
+                    {/* Pipeline Info */}
+                    <div>
+                        <label className="block text-sm font-medium text-white/60 mb-1.5">
+                            Pipeline Name *
+                        </label>
+                        <input
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="e.g., my-org/custom-pipeline"
+                            className="w-full px-4 py-2.5 bg-black/30 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-white/60 mb-1.5">Description</label>
+                        <input
+                            type="text"
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            placeholder="Brief description of the pipeline"
+                            className="w-full px-4 py-2.5 bg-black/30 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-white/60 mb-1.5">Version</label>
+                        <input
+                            type="text"
+                            value={version}
+                            onChange={(e) => setVersion(e.target.value)}
+                            placeholder="1.0.0"
+                            className="w-full px-4 py-2.5 bg-black/30 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                        />
+                    </div>
+
+                    {/* Parameters */}
+                    <div className="border-t border-white/10 pt-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <label className="text-sm font-medium text-white/60">Parameters</label>
+                            <button
+                                onClick={addParameter}
+                                className="flex items-center gap-1 text-xs text-brand-primary hover:text-brand-secondary transition-colors"
+                            >
+                                <Plus size={12} />
+                                Add Parameter
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            {parameters.map((param, index) => (
+                                <div key={index} className="p-3 bg-black/20 border border-white/10 rounded-lg space-y-2">
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={param.name}
+                                            onChange={(e) => updateParameter(index, { name: e.target.value })}
+                                            placeholder="param_name"
+                                            className="flex-1 px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={param.label}
+                                            onChange={(e) => updateParameter(index, { label: e.target.value })}
+                                            placeholder="Display Label"
+                                            className="flex-1 px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                                        />
+                                        <button
+                                            onClick={() => removeParameter(index)}
+                                            className="px-2 text-red-400 hover:text-red-300 transition-colors"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <CustomSelect
+                                            value={param.type}
+                                            onChange={(value) =>
+                                                updateParameter(index, { type: value as ParameterDefinition['type'] })
+                                            }
+                                            options={[
+                                                { value: 'text', label: 'Text' },
+                                                { value: 'number', label: 'Number' },
+                                                { value: 'select', label: 'Dropdown' },
+                                                { value: 'boolean', label: 'Toggle' },
+                                            ]}
+                                            className="flex-1"
+                                        />
+                                        <label className="flex items-center gap-2 text-xs text-white/60">
+                                            <input
+                                                type="checkbox"
+                                                checked={param.required}
+                                                onChange={(e) => updateParameter(index, { required: e.target.checked })}
+                                                className="rounded border-white/20"
+                                            />
+                                            Required
+                                        </label>
+                                    </div>
+                                    {param.type === 'select' && (
+                                        <input
+                                            type="text"
+                                            value={param.options?.join(', ') || ''}
+                                            onChange={(e) =>
+                                                updateParameter(index, {
+                                                    options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+                                                })
+                                            }
+                                            placeholder="Options (comma-separated)"
+                                            className="w-full px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
+                                        />
+                                    )}
+                                </div>
+                            ))}
+
+                            {parameters.length === 0 && (
+                                <p className="text-sm text-white/40 text-center py-4">
+                                    No parameters defined. Add parameters to configure the pipeline.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 border-t border-white/10 flex justify-end gap-3">
+                    <button
+                        onClick={onClose}
+                        className="px-4 py-2 border border-white/10 text-white/80 rounded-lg hover:bg-white/5 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleSubmit}
+                        disabled={!name.trim()}
+                        className="px-4 py-2 bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Add Pipeline
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}

@@ -41,7 +41,6 @@ import {
   SquareStack,
   Lightbulb,
   Folder,
-  FileText,
   Atom,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
@@ -775,84 +774,82 @@ function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEq
     <div className="flex flex-col gap-4 px-8 pb-6">
       {/* Toolbar row - formatting left, data actions right */}
       <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-1 p-1 bg-white/5 border border-white/10 rounded-lg w-fit">
-        <button
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          disabled={!editor.can().chain().focus().toggleBold().run()}
-          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('bold') ? 'text-brand-primary bg-white/10' : 'text-white/60'
-            }`}
-          title="Bold"
-        >
-          <Bold size={16} />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          disabled={!editor.can().chain().focus().toggleItalic().run()}
-          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('italic') ? 'text-brand-primary bg-white/10' : 'text-white/60'
-            }`}
-          title="Italic"
-        >
-          <Italic size={16} />
-        </button>
-        <div className="w-px h-4 bg-white/10 mx-1" />
-        <button
-          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('heading', { level: 1 }) ? 'text-brand-primary bg-white/10' : 'text-white/60'
-            }`}
-          title="Heading"
-        >
-          <Heading1 size={16} />
-        </button>
-        <div className="w-px h-4 bg-white/10 mx-1" />
-        <button
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('bulletList') ? 'text-brand-primary bg-white/10' : 'text-white/60'
-            }`}
-          title="Bullet List"
-        >
-          <List size={16} />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('orderedList') ? 'text-brand-primary bg-white/10' : 'text-white/60'
-            }`}
-          title="Ordered List"
-        >
-          <ListOrdered size={16} />
-        </button>
-        <div className="w-px h-4 bg-white/10 mx-1" />
-        <div className="px-2 py-1 text-xs text-white/40 flex items-center gap-1">
-          <span>Type</span>
-          <AtSign size={12} />
-          <span>to mention</span>
+        <div className="flex items-center gap-1 p-1 bg-white/5 border border-white/10 rounded-lg w-fit">
+          <button
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            disabled={!editor.can().chain().focus().toggleBold().run()}
+            className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('bold') ? 'text-brand-primary bg-white/10' : 'text-white/60'
+              }`}
+            title="Bold"
+          >
+            <Bold size={16} />
+          </button>
+          <button
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            disabled={!editor.can().chain().focus().toggleItalic().run()}
+            className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('italic') ? 'text-brand-primary bg-white/10' : 'text-white/60'
+              }`}
+            title="Italic"
+          >
+            <Italic size={16} />
+          </button>
+          <div className="w-px h-4 bg-white/10 mx-1" />
+          <button
+            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+            className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('heading', { level: 1 }) ? 'text-brand-primary bg-white/10' : 'text-white/60'
+              }`}
+            title="Heading"
+          >
+            <Heading1 size={16} />
+          </button>
+          <div className="w-px h-4 bg-white/10 mx-1" />
+          <button
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+            className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('bulletList') ? 'text-brand-primary bg-white/10' : 'text-white/60'
+              }`}
+            title="Bullet List"
+          >
+            <List size={16} />
+          </button>
+          <button
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            className={`p-1.5 rounded hover:bg-white/10 transition-colors ${editor.isActive('orderedList') ? 'text-brand-primary bg-white/10' : 'text-white/60'
+              }`}
+            title="Ordered List"
+          >
+            <ListOrdered size={16} />
+          </button>
+          <div className="w-px h-4 bg-white/10 mx-1" />
+          <div className="px-2 py-1 text-xs text-white/40 flex items-center gap-1">
+            <span>Type</span>
+            <AtSign size={12} />
+            <span>to mention</span>
+          </div>
         </div>
-      </div>
 
-      {/* Data action buttons - right side */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onAttachEquipment}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-            lockedEquipmentCount > 0
-              ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
-              : 'bg-brand-primary text-black hover:bg-brand-secondary'
-          }`}
-        >
-          <Microscope size={16} />
-          {lockedEquipmentCount > 0 ? `${lockedEquipmentCount} Equipment Attached` : 'Attach Equipment & Run'}
-        </button>
-        <button
-          onClick={onUploadFile}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-            uploadedFileCount > 0
-              ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25'
-              : 'bg-white/5 hover:bg-white/10 border border-white/10 text-white/80'
-          }`}
-        >
-          <Paperclip size={16} />
-          {uploadedFileCount > 0 ? 'Replace Data' : 'Upload Data File'}
-        </button>
-      </div>
+        {/* Data action buttons - right side */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onAttachEquipment}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${lockedEquipmentCount > 0
+                ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
+                : 'bg-brand-primary text-black hover:bg-brand-secondary'
+              }`}
+          >
+            <Microscope size={16} />
+            {lockedEquipmentCount > 0 ? `${lockedEquipmentCount} Equipment Attached` : 'Attach Equipment & Run'}
+          </button>
+          <button
+            onClick={onUploadFile}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${uploadedFileCount > 0
+                ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25'
+                : 'bg-white/5 hover:bg-white/10 border border-white/10 text-white/80'
+              }`}
+          >
+            <Paperclip size={16} />
+            {uploadedFileCount > 0 ? 'Replace Data' : 'Upload Data File'}
+          </button>
+        </div>
       </div>
 
       {/* Editor Content - clean bordered container */}
@@ -968,8 +965,8 @@ function FolderSelect({ value, onChange, folders }: FolderSelectProps) {
                 type="button"
                 onClick={() => handleSelect(folder.id)}
                 className={`w-full flex items-center justify-between px-4 py-2.5 text-sm text-left transition-colors ${value === folder.id
-                    ? 'bg-brand-primary/15 text-brand-primary'
-                    : 'text-white/70 hover:bg-white/5'
+                  ? 'bg-brand-primary/15 text-brand-primary'
+                  : 'text-white/70 hover:bg-white/5'
                   }`}
               >
                 <span className="flex items-center gap-2">
@@ -1408,11 +1405,11 @@ const CentrifugeIconSmall = ({ size = 14, className = '' }: { size?: number; cla
 
 const FlowCytometerIcon = ({ size = 14, className = '' }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 512 512" fill="currentColor" className={className}>
-	<g>
-		<path d="M171.501,464.698v-237.9l-166.3-192.6c-8.9-10.9-7.9-33.3,15.1-33.3h443.6c21.6,0,26.6,19.8,15.1,33.3l-162.3,187.5v147.2
+    <g>
+      <path d="M171.501,464.698v-237.9l-166.3-192.6c-8.9-10.9-7.9-33.3,15.1-33.3h443.6c21.6,0,26.6,19.8,15.1,33.3l-162.3,187.5v147.2
 			c0,6-2,11.1-7.1,15.1l-103.8,95.8C193.801,488.698,171.501,483.898,171.501,464.698z M64.701,41.298l142.2,164.3c3,4,5,8.1,5,13.1
 			v200.6l64.5-58.5v-146.1c0-5,2-9.1,5-13.1l138.1-160.3L64.701,41.298L64.701,41.298z"/>
-	</g>
+    </g>
   </svg>
 );
 
@@ -1445,7 +1442,7 @@ function getPickerEquipmentIcon(type: string) {
     case 'flow_cytometer': return FlowCytometerIcon;
     case 'plate_reader': return PlateReaderIcon;
     case 'spectrophotometer': return Lightbulb;
-    
+
     case 'microscope':
     default: return Microscope;
   }
@@ -1552,13 +1549,12 @@ function EquipmentPickerModal({ equipment, locations, experimentId, onLock, onUn
     return (
       <div
         key={e.id}
-        className={`flex items-center justify-between py-1.5 pl-2 pr-2 rounded-lg transition-colors ${
-          isLockedByMe
+        className={`flex items-center justify-between py-1.5 pl-2 pr-2 rounded-lg transition-colors ${isLockedByMe
             ? 'bg-green-500/10 border border-green-500/30'
             : isLockedByOther
               ? 'opacity-40'
               : 'hover:bg-white/5'
-        }`}
+          }`}
       >
         <div className="flex items-center gap-2 min-w-0">
           <Icon size={14} className={isLockedByMe ? 'text-green-400' : 'text-white/40'} />
@@ -1851,11 +1847,11 @@ export function ExperimentsPage() {
 
   const currentFolder = folders.find((f) => f.id === selectedFolderId);
   const currentFolderExperiments = searchQuery
-    ? experiments.filter((e) => 
-        e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (e.description && e.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (e.content && e.content.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
+    ? experiments.filter((e) =>
+      e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (e.description && e.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (e.content && e.content.toLowerCase().includes(searchQuery.toLowerCase()))
+    )
     : experiments.filter((e) => e.folderId === selectedFolderId);
 
   return (
@@ -1988,13 +1984,13 @@ export function ExperimentsPage() {
                         <button
                           onClick={() => setSelectedFolderId(folder.id)}
                           className={`flex-1 flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${selectedFolderId === folder.id
-                              ? 'bg-brand-primary/20 text-brand-primary'
-                              : 'text-white/70 hover:bg-white/5'
+                            ? 'bg-brand-primary/20 text-brand-primary'
+                            : 'text-white/70 hover:bg-white/5'
                             }`}
                         >
                           <div className="w-3 h-3 rounded" style={{ backgroundColor: folder.color || '#17b978' }} />
                           <span className="flex-1 text-left truncate max-w-[8.5rem]">{folder.name}</span>
-                          <span className="text-xs text-white/40">
+                          <span className="text-xs text-white/40 mr-0.5">
                             {experiments.filter((e) => e.folderId === folder.id).length}
                           </span>
                         </button>
