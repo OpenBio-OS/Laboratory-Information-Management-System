@@ -4,10 +4,11 @@
 //! Exposes HTTP API for configuration and status.
 //! Broadcasts presence via mDNS for discovery by clients.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use anyhow::Result;
 use axum::{
@@ -48,8 +49,8 @@ pub struct AgentState {
     locked_by: Arc<Mutex<Option<String>>>,
     /// Handle to stop the file watcher
     watcher_active: Arc<Mutex<bool>>,
-    /// Set of files already known (to avoid re-uploading)
-    known_files: Arc<Mutex<HashSet<PathBuf>>>,
+    /// Map of known files -> (size, modified_time) to detect changes
+    known_files: Arc<Mutex<HashMap<PathBuf, (u64, SystemTime)>>>,
 }
 
 impl AgentState {
@@ -58,7 +59,7 @@ impl AgentState {
             config: Arc::new(Mutex::new(config)),
             locked_by: Arc::new(Mutex::new(None)),
             watcher_active: Arc::new(Mutex::new(false)),
-            known_files: Arc::new(Mutex::new(HashSet::new())),
+            known_files: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -205,13 +206,17 @@ async fn upload_file_to_server(api_url: &str, equipment_id: &str, file_path: &Pa
 }
 
 /// Scan a directory for existing files and record them as known
-fn scan_existing_files(dir: &PathBuf) -> HashSet<PathBuf> {
-    let mut files = HashSet::new();
+fn scan_existing_files(dir: &PathBuf) -> HashMap<PathBuf, (u64, SystemTime)> {
+    let mut files = HashMap::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_file() {
-                files.insert(path);
+                if let Ok(meta) = std::fs::metadata(&path) {
+                    let size = meta.len();
+                    let mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+                    files.insert(path, (size, mtime));
+                }
             }
         }
     }
@@ -312,42 +317,76 @@ fn spawn_file_watcher(state: AgentState) {
         }
     });
     
-    // Spawn async task to process file events and upload
+    // Spawn async task to process file events and upload.
+    // We debounce: wait for events to settle, then deduplicate by path.
     tokio::spawn(async move {
-        while let Some(path) = rx.recv().await {
+        loop {
+            // Wait for the first event (blocks until something arrives)
+            let first = match rx.recv().await {
+                Some(p) => p,
+                None => break, // channel closed
+            };
+
             // Check if watcher is still active
             if !*watcher_active.lock().unwrap() {
                 info!("Watcher deactivated, stopping upload processor");
                 break;
             }
-            
-            // Skip if we already know this file
-            {
-                let known = known_files.lock().unwrap();
-                if known.contains(&path) {
-                    continue;
+
+            // Collect the first path and then drain any further events that
+            // arrive within a 1.5-second debounce window.  This collapses the
+            // Create + Modify burst that `notify` fires into a single upload.
+            let mut pending = std::collections::HashSet::<PathBuf>::new();
+            pending.insert(first);
+
+            let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(1500);
+            loop {
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                match tokio::time::timeout(remaining, rx.recv()).await {
+                    Ok(Some(p)) => { pending.insert(p); }
+                    _ => break,
                 }
             }
-            
-            // Small delay to let the file finish writing
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            
-            // Verify file still exists and is not empty
-            match tokio::fs::metadata(&path).await {
-                Ok(meta) if meta.len() > 0 => {}
-                _ => continue,
-            }
-            
-            // Upload the file
-            match upload_file_to_server(&api_url, &equipment_id, &path).await {
-                Ok(()) => {
-                    // Mark as known so we don't re-upload
-                    known_files.lock().unwrap().insert(path.clone());
-                    info!("File ingested: {:?}", path);
+
+            // Process each unique path once
+            for path in pending {
+                // Verify file still exists and is not empty, and read metadata
+                let meta = match tokio::fs::metadata(&path).await {
+                    Ok(m) if m.len() > 0 => m,
+                    _ => continue,
+                };
+                let size = meta.len();
+                let mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+
+                // Skip if we already uploaded this exact version (same size + mtime)
+                {
+                    let known = known_files.lock().unwrap();
+                    if let Some(&(known_size, known_mtime)) = known.get(&path) {
+                        if known_size == size && known_mtime == mtime {
+                            continue;
+                        }
+                    }
                 }
-                Err(e) => {
-                    error!("Failed to ingest file {:?}: {}", path, e);
-                    // Don't mark as known - will retry on next modification event
+
+                // Upload the file
+                match upload_file_to_server(&api_url, &equipment_id, &path).await {
+                    Ok(()) => {
+                        // Re-read metadata after upload in case it changed during transfer
+                        let final_meta = tokio::fs::metadata(&path).await;
+                        let (final_size, final_mtime) = match final_meta {
+                            Ok(m) => (m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)),
+                            _ => (size, mtime),
+                        };
+                        known_files.lock().unwrap().insert(path.clone(), (final_size, final_mtime));
+                        info!("File ingested: {:?}", path);
+                    }
+                    Err(e) => {
+                        error!("Failed to ingest file {:?}: {}", path, e);
+                        // Don't mark as known - will retry on next modification event
+                    }
                 }
             }
         }

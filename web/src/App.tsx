@@ -65,7 +65,37 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
-  const { isConnected, isLoading, setApiUrl } = useApi();
+  const { isConnected, isLoading, setApiUrl, apiUrl } = useApi();
+
+  // Auto-restart agents for equipment that is still locked (survives app restart).
+  // When the app boots, any equipment locked to an experiment should have its watcher re-spawned.
+  useEffect(() => {
+    if (!isConnected || !apiUrl) return;
+    (async () => {
+      try {
+        const resp = await fetch(`${apiUrl}/api/equipment`);
+        if (!resp.ok) return;
+        const equipment: Array<{ id: string; lockedByExperimentId?: string; watchFolder?: string; name: string }> = await resp.json();
+        const locked = equipment.filter(e => e.lockedByExperimentId && e.watchFolder);
+        for (const equip of locked) {
+          try {
+            const running = await invoke<boolean>('is_local_agent_running', { equipmentId: equip.id });
+            if (!running) {
+              console.log(`[AgentRestart] Re-spawning agent for locked equipment: ${equip.name} (${equip.id})`);
+              await invoke('spawn_local_agent', { equipmentId: equip.id, watchFolder: equip.watchFolder });
+            }
+          } catch (err) {
+            console.warn(`[AgentRestart] Failed to restart agent for ${equip.name}:`, err);
+          }
+        }
+        if (locked.length > 0) {
+          console.log(`[AgentRestart] Checked ${locked.length} locked equipment, agents re-spawned as needed`);
+        }
+      } catch (err) {
+        console.warn('[AgentRestart] Could not check for locked equipment:', err);
+      }
+    })();
+  }, [isConnected, apiUrl]);
 
   const navigateTo = useCallback((target: NavigationTarget) => {
     if (target.itemId) {

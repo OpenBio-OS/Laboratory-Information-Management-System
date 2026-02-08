@@ -635,15 +635,6 @@ const MentionList = React.forwardRef<MentionListRef, MentionListProps>(
 // Notebook Editor with @Mentions
 // ==========================================
 
-interface AutoImportEvent {
-  filename: string;
-  equipmentId: string;
-  equipmentName: string;
-  equipmentType: string;
-  lastCalibration: string | null;
-  timestamp: string;
-}
-
 interface NotebookEditorProps {
   experiment: Experiment;
   onSave: (content: string) => void;
@@ -652,11 +643,9 @@ interface NotebookEditorProps {
   onAttachEquipment: () => void;
   lockedEquipmentCount: number;
   uploadedFileCount: number;
-  autoImportEvent: AutoImportEvent | null;
 }
 
-function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEquipment, lockedEquipmentCount, uploadedFileCount, autoImportEvent }: NotebookEditorProps) {
-  const lastProcessedImportRef = useRef<string | null>(null);
+function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEquipment, lockedEquipmentCount, uploadedFileCount }: NotebookEditorProps) {
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -755,47 +744,25 @@ function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEq
     },
   });
 
-  // Insert auto-import mention into editor when new file detected
-  // Must be in useEffect — editor commands are side effects, not render logic
+  // Sync editor content when experiment.content changes from server (e.g. auto-import)
+  // Only update if the server content is different AND longer (new content appended).
+  // We compare lengths to avoid fighting with the editor's own onUpdate saves.
+  const lastKnownContentRef = useRef(experiment.content || '');
   useEffect(() => {
-    if (!editor || !autoImportEvent) return;
-    if (autoImportEvent.timestamp === lastProcessedImportRef.current) return;
-    lastProcessedImportRef.current = autoImportEvent.timestamp;
-
-    const calText = autoImportEvent.lastCalibration
-      ? `Last calibrated ${autoImportEvent.lastCalibration}`
-      : 'Last calibration unknown';
-
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const dateStr = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-
-    const mentionAttrs: MentionData = {
-      id: autoImportEvent.equipmentId,
-      name: autoImportEvent.equipmentName,
-      entityType: 'equipment',
-      category: 'Equipment',
-      subcategory: autoImportEvent.equipmentType,
-      path: [autoImportEvent.equipmentName],
-      mentionedAt: new Date().toISOString(),
-    };
-
-    // Insert at end of document, just like typing — onUpdate fires and saves to DB
-    editor
-      .chain()
-      .focus('end')
-      .insertContent([
-        {
-          type: 'paragraph',
-          content: [
-            { type: 'text', text: `📎 ${autoImportEvent.filename} auto imported from ` },
-            { type: 'mention', attrs: mentionAttrs },
-            { type: 'text', text: ` (${calText}) at ${dateStr}` },
-          ],
-        },
-      ])
-      .run();
-  }, [editor, autoImportEvent]);
+    if (!editor) return;
+    const serverContent = experiment.content || '';
+    const editorContent = editor.getHTML();
+    // Only sync if the server has content that the editor doesn't have yet
+    // (i.e. server appended import text while we were looking at it, or user navigated back)
+    if (serverContent !== lastKnownContentRef.current && serverContent !== editorContent) {
+      // Check the server content is genuinely new (not just our own save echoing back)
+      if (serverContent.length > editorContent.length || !serverContent.startsWith(editorContent.slice(0, 20))) {
+        console.log('[NotebookEditor] Syncing editor with server content (auto-import detected)');
+        editor.commands.setContent(serverContent, { emitUpdate: false });
+      }
+    }
+    lastKnownContentRef.current = serverContent;
+  }, [editor, experiment.content]);
 
   if (!editor) {
     return null;
@@ -1735,13 +1702,22 @@ export function ExperimentsPage() {
   const [showEquipmentPicker, setShowEquipmentPicker] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const prevFileRef = useRef<string>('__UNSET__');
-  const [autoImportEvent, setAutoImportEvent] = useState<AutoImportEvent | null>(null);
   const queryClient = useQueryClient();
+
+  // Equipment data — must be before experiments query since we poll experiments when equipment is locked
+  const { data: allEquipment = [] } = useQuery({
+    queryKey: ['equipment'],
+    queryFn: equipmentApi.list,
+    enabled: !!selectedExperiment || showEquipmentPicker,
+  });
+
+  const hasLockedEquipment = allEquipment.some((e) => e.lockedByExperimentId === selectedExperiment?.id);
 
   const { data: experiments = [] } = useQuery({
     queryKey: ['experiments'],
     queryFn: experimentsApi.list,
+    // Poll when equipment is attached — the server appends import text to experiment content
+    refetchInterval: hasLockedEquipment ? 3000 : false,
   });
 
   const { data: folders = [], isLoading: foldersLoading } = useQuery({
@@ -1807,15 +1783,6 @@ export function ExperimentsPage() {
     },
   });
 
-  // Equipment data for the attach picker and button state (must be before queries that depend on it)
-  const { data: allEquipment = [] } = useQuery({
-    queryKey: ['equipment'],
-    queryFn: equipmentApi.list,
-    enabled: !!selectedExperiment || showEquipmentPicker,
-  });
-
-  const hasLockedEquipment = allEquipment.some((e) => e.lockedByExperimentId === selectedExperiment?.id);
-
   // Query uploaded files for the selected experiment
   const { data: experimentFiles } = useQuery({
     queryKey: ['experiment-files', selectedExperiment?.id],
@@ -1827,51 +1794,15 @@ export function ExperimentsPage() {
 
   const uploadedFileCount = experimentFiles?.files?.length ?? 0;
 
-  // Detect auto-imported files: when a new/different file appears while equipment is attached
-  const currentFile = experimentFiles?.files?.[0]?.filename ?? '';
+  // Keep selectedExperiment in sync with latest data from the experiments query.
+  // This ensures the editor picks up server-side content changes (auto-import text).
   useEffect(() => {
-    if (!hasLockedEquipment) return;
-
-    // First time this effect runs for this experiment: seed the ref with whatever is there now
-    // If a file already existed on page load, record it so we don't re-announce it.
-    // If no file existed yet, record '' so the next change from '' → filename triggers.
-    if (prevFileRef.current === '__UNSET__') {
-      prevFileRef.current = currentFile;
-      return;
+    if (!selectedExperiment) return;
+    const fresh = experiments.find((e) => e.id === selectedExperiment.id);
+    if (fresh && fresh.content !== selectedExperiment.content) {
+      setSelectedExperiment(fresh);
     }
-
-    // No change
-    if (currentFile === prevFileRef.current) return;
-
-    // File went from something (or nothing) to a new filename
-    const previousFile = prevFileRef.current;
-    prevFileRef.current = currentFile;
-
-    // Only fire when a file actually appeared (not when it was deleted / became empty)
-    if (!currentFile) return;
-
-    // Find the attached equipment
-    const attachedEquip = allEquipment.find((e) => e.lockedByExperimentId === selectedExperiment?.id);
-    if (!attachedEquip) return;
-
-    console.log('[AutoImport] Detected new file:', currentFile, 'previous:', previousFile);
-    setAutoImportEvent({
-      filename: currentFile,
-      equipmentId: attachedEquip.id,
-      equipmentName: attachedEquip.name,
-      equipmentType: attachedEquip.type,
-      lastCalibration: attachedEquip.lastMaintenance
-        ? new Date(attachedEquip.lastMaintenance).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '/')
-        : null,
-      timestamp: new Date().toISOString(),
-    });
-  }, [currentFile, hasLockedEquipment, allEquipment, selectedExperiment?.id]);
-
-  // Reset auto-import tracking when experiment changes
-  useEffect(() => {
-    prevFileRef.current = '__UNSET__';
-    setAutoImportEvent(null);
-  }, [selectedExperiment?.id]);
+  }, [experiments, selectedExperiment]);
 
   const { data: equipmentLocations = [] } = useQuery({
     queryKey: ['equipment-locations'],
@@ -2171,7 +2102,6 @@ export function ExperimentsPage() {
                 onAttachEquipment={() => setShowEquipmentPicker(true)}
                 lockedEquipmentCount={allEquipment.filter((e) => e.lockedByExperimentId === selectedExperiment.id).length}
                 uploadedFileCount={uploadedFileCount}
-                autoImportEvent={autoImportEvent}
               />
             </div>
             <div className="px-8 pb-8 pt-4">

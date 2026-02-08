@@ -1796,9 +1796,58 @@ async fn ingest_equipment_file(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Build calibration info for the response (client will insert mention into editor)
-    let last_calibration = equip.last_maintenance.as_ref()
-        .map(|lm| lm.format("%d/%m/%Y").to_string());
+    // Build calibration info from equipment data
+    let cal_text = match equip.last_maintenance.as_ref() {
+        Some(lm) => format!("Last calibrated {}", lm.format("%d/%m/%Y")),
+        None => "Last calibration unknown".to_string(),
+    };
+
+    let timestamp = prisma_client_rust::chrono::Utc::now();
+    let ts_str = timestamp.format("%d/%m/%Y %H:%M:%S").to_string();
+
+    // Build the mention HTML span (same format the TipTap RichMention extension parses)
+    let equip_type = equip.r#type.clone();
+    let mention_html = format!(
+        r#"<span data-type="mention" data-id="{}" data-name="{}" data-entity-type="equipment" data-category="Equipment" data-subcategory="{}" data-path="{}" data-mentioned-at="{}">@{}</span>"#,
+        html_escape(&equip.id),
+        html_escape(&equip.name),
+        html_escape(&equip_type),
+        html_escape(&format!("[\"{}\"]", equip.name)),
+        timestamp.to_rfc3339(),
+        html_escape(&equip.name),
+    );
+
+    // Build the auto-import note as HTML paragraph and append to experiment content
+    let import_html = format!(
+        "<p>📎 {} auto imported from {} ({}) at {}</p>",
+        html_escape(&filename),
+        mention_html,
+        html_escape(&cal_text),
+        html_escape(&ts_str),
+    );
+
+    let exp = state
+        .db
+        .experiment()
+        .find_unique(experiment::id::equals(experiment_id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Experiment not found".to_string()))?;
+
+    let mut new_content = exp.content.clone();
+    new_content.push_str(&import_html);
+
+    state
+        .db
+        .experiment()
+        .update(
+            experiment::id::equals(experiment_id.clone()),
+            vec![experiment::content::set(new_content)],
+        )
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Update equipment last sync time
     let _ = state
@@ -1816,10 +1865,6 @@ async fn ingest_equipment_file(
         "asset_id": asset.id,
         "filename": filename,
         "experiment_id": experiment_id,
-        "equipment_id": equipment_id,
-        "equipment_name": equip.name,
-        "equipment_type": equip.r#type,
-        "last_calibration": last_calibration,
     })))
 }
 

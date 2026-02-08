@@ -1191,7 +1191,7 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
             className="flex items-center gap-2 px-4 py-2.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50"
           >
             <Network size={16} />
-            {isDiscovering ? 'Searching...' : 'Find on Network'}
+            {isDiscovering ? 'Searching...' : 'Find on Network (or Attach Local Agent)'}
           </button>
           {equipment.agentStatus === 'ONLINE' && (
             <p className="mt-3 text-sm text-green-500 flex items-center gap-2">
