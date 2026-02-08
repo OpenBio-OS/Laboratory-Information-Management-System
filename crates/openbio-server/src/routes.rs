@@ -1754,13 +1754,25 @@ async fn ingest_equipment_file(
     file.write_all(&data)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write file: {}", e)))?;
 
-    // Also copy to experiment uploads dir for the list_experiment_files endpoint
+    // Replace existing files in experiment uploads dir (1 file per experiment)
     let experiment_uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
+    if experiment_uploads_dir.exists() {
+        fs::remove_dir_all(&experiment_uploads_dir)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to clean experiment uploads dir: {}", e)))?;
+    }
     fs::create_dir_all(&experiment_uploads_dir)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create experiment uploads dir: {}", e)))?;
     let experiment_file_path = experiment_uploads_dir.join(&filename);
     fs::copy(&file_path, &experiment_file_path)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to copy to experiment dir: {}", e)))?;
+
+    // Delete old DigitalAsset records for this experiment (only 1 data file per experiment)
+    let _ = state
+        .db
+        .digital_asset()
+        .delete_many(vec![digital_asset::experiment_id::equals(Some(experiment_id.clone()))])
+        .exec()
+        .await;
 
     // Create DigitalAsset record
     let mut asset_params: Vec<digital_asset::SetParam> = vec![
@@ -1784,78 +1796,16 @@ async fn ingest_equipment_file(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Build calibration info from equipment data
-    let cal_info = {
-        let mut parts = Vec::new();
-        if let Some(ref lm) = equip.last_maintenance {
-            parts.push(format!("Last calibrated: {}", lm.format("%b %d, %Y")));
-        }
-        if let Some(ref nm) = equip.next_maintenance {
-            let overdue = nm < &prisma_client_rust::chrono::Utc::now().with_timezone(nm.offset());
-            let overdue_str = if overdue { " ⚠️ OVERDUE" } else { "" };
-            parts.push(format!("Next calibration: {}{}", nm.format("%b %d, %Y"), overdue_str));
-        }
-        if parts.is_empty() {
-            "No calibration data for tool".to_string()
-        } else {
-            parts.join(" · ")
-        }
-    };
-
-    // Build the mention HTML span (same format the TipTap RichMention extension parses)
-    let equip_type = equip.r#type.clone();
-    let mention_html = format!(
-        r#"<span data-type="mention" data-id="{}" data-name="{}" data-entity-type="equipment" data-category="Equipment" data-subcategory="{}" data-path="{}" data-mentioned-at="{}">@{}</span>"#,
-        html_escape(&equip.id),
-        html_escape(&equip.name),
-        html_escape(&equip_type),
-        html_escape(&format!("[\"{}\"]", equip.name)),
-        prisma_client_rust::chrono::Utc::now().to_rfc3339(),
-        html_escape(&equip.name),
-    );
-
-    let timestamp = prisma_client_rust::chrono::Utc::now().format("%m/%d/%Y, %I:%M:%S %p UTC").to_string();
-
-    // Build the auto-import note as HTML paragraph
-    let import_html = format!(
-        r#"<p>📎 <strong>{}</strong> auto-imported from {} <em>({}) — {}</em></p>"#,
-        html_escape(&filename),
-        mention_html,
-        html_escape(&cal_info),
-        html_escape(&timestamp),
-    );
-
-    // Read current experiment content, append the import note, and save it back.
-    // This is just text in the content field — same as if the user typed it.
-    let exp = state
-        .db
-        .experiment()
-        .find_unique(experiment::id::equals(experiment_id.clone()))
-        .exec()
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or((StatusCode::NOT_FOUND, "Experiment not found".to_string()))?;
-
-    let mut new_content = exp.content.clone();
-    new_content.push_str(&import_html);
-
-    state
-        .db
-        .experiment()
-        .update(
-            experiment::id::equals(experiment_id.clone()),
-            vec![experiment::content::set(new_content)],
-        )
-        .exec()
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Build calibration info for the response (client will insert mention into editor)
+    let last_calibration = equip.last_maintenance.as_ref()
+        .map(|lm| lm.format("%d/%m/%Y").to_string());
 
     // Update equipment last sync time
     let _ = state
         .db
         .equipment()
         .update(
-            equipment::id::equals(equipment_id),
+            equipment::id::equals(equipment_id.clone()),
             vec![equipment::last_sync_at::set(Some(prisma_client_rust::chrono::Utc::now().into()))],
         )
         .exec()
@@ -1866,10 +1816,15 @@ async fn ingest_equipment_file(
         "asset_id": asset.id,
         "filename": filename,
         "experiment_id": experiment_id,
+        "equipment_id": equipment_id,
+        "equipment_name": equip.name,
+        "equipment_type": equip.r#type,
+        "last_calibration": last_calibration,
     })))
 }
 
 /// Escape HTML special characters for safe embedding in HTML content
+#[allow(dead_code)]
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")

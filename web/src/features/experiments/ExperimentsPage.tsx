@@ -635,6 +635,15 @@ const MentionList = React.forwardRef<MentionListRef, MentionListProps>(
 // Notebook Editor with @Mentions
 // ==========================================
 
+interface AutoImportEvent {
+  filename: string;
+  equipmentId: string;
+  equipmentName: string;
+  equipmentType: string;
+  lastCalibration: string | null;
+  timestamp: string;
+}
+
 interface NotebookEditorProps {
   experiment: Experiment;
   onSave: (content: string) => void;
@@ -643,9 +652,11 @@ interface NotebookEditorProps {
   onAttachEquipment: () => void;
   lockedEquipmentCount: number;
   uploadedFileCount: number;
+  autoImportEvent: AutoImportEvent | null;
 }
 
-function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEquipment, lockedEquipmentCount, uploadedFileCount }: NotebookEditorProps) {
+function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEquipment, lockedEquipmentCount, uploadedFileCount, autoImportEvent }: NotebookEditorProps) {
+  const lastProcessedImportRef = useRef<string | null>(null);
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -748,6 +759,46 @@ function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEq
     return null;
   }
 
+  // Insert auto-import mention into editor when new file detected
+  // This mimics typing — editor.onUpdate fires and saves to DB
+  if (autoImportEvent && autoImportEvent.timestamp !== lastProcessedImportRef.current) {
+    lastProcessedImportRef.current = autoImportEvent.timestamp;
+
+    const calText = autoImportEvent.lastCalibration
+      ? `Last calibrated ${autoImportEvent.lastCalibration}`
+      : 'Last calibration unknown';
+
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const dateStr = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+    const mentionAttrs: MentionData = {
+      id: autoImportEvent.equipmentId,
+      name: autoImportEvent.equipmentName,
+      entityType: 'equipment',
+      category: 'Equipment',
+      subcategory: autoImportEvent.equipmentType,
+      path: [autoImportEvent.equipmentName],
+      mentionedAt: new Date().toISOString(),
+    };
+
+    // Insert at end of document, just like typing
+    editor
+      .chain()
+      .focus('end')
+      .insertContent([
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: `📎 ${autoImportEvent.filename} auto imported from ` },
+            { type: 'mention', attrs: mentionAttrs },
+            { type: 'text', text: ` (${calText}) at ${dateStr}` },
+          ],
+        },
+      ])
+      .run();
+  }
+
   return (
     <div className="flex flex-col gap-4 px-8 pb-6">
       {/* Toolbar row - formatting left, data actions right */}
@@ -827,7 +878,7 @@ function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEq
           }`}
         >
           <Paperclip size={16} />
-          {uploadedFileCount > 0 ? `Replace Data (${uploadedFileCount} file${uploadedFileCount > 1 ? 's' : ''})` : 'Upload Data File'}
+          {uploadedFileCount > 0 ? 'Replace Data' : 'Upload Data File'}
         </button>
       </div>
       </div>
@@ -1682,6 +1733,8 @@ export function ExperimentsPage() {
   const [showEquipmentPicker, setShowEquipmentPicker] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const prevFileRef = useRef<string | null>(null);
+  const [autoImportEvent, setAutoImportEvent] = useState<AutoImportEvent | null>(null);
   const queryClient = useQueryClient();
 
   const { data: experiments = [] } = useQuery({
@@ -1771,6 +1824,39 @@ export function ExperimentsPage() {
   });
 
   const uploadedFileCount = experimentFiles?.files?.length ?? 0;
+
+  // Detect auto-imported files: when a new/different file appears while equipment is attached
+  const currentFile = experimentFiles?.files?.[0]?.filename ?? null;
+  useEffect(() => {
+    if (!hasLockedEquipment || !currentFile) return;
+    // Skip if this is the same file we already processed
+    if (currentFile === prevFileRef.current) return;
+    const isFirstLoad = prevFileRef.current === null;
+    prevFileRef.current = currentFile;
+    // Don't fire on first mount — only on actual changes
+    if (isFirstLoad) return;
+
+    // Find the attached equipment
+    const attachedEquip = allEquipment.find((e) => e.lockedByExperimentId === selectedExperiment?.id);
+    if (!attachedEquip) return;
+
+    setAutoImportEvent({
+      filename: currentFile,
+      equipmentId: attachedEquip.id,
+      equipmentName: attachedEquip.name,
+      equipmentType: attachedEquip.type,
+      lastCalibration: attachedEquip.lastMaintenance
+        ? new Date(attachedEquip.lastMaintenance).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '/')
+        : null,
+      timestamp: new Date().toISOString(),
+    });
+  }, [currentFile, hasLockedEquipment, allEquipment, selectedExperiment?.id]);
+
+  // Reset auto-import tracking when experiment changes
+  useEffect(() => {
+    prevFileRef.current = null;
+    setAutoImportEvent(null);
+  }, [selectedExperiment?.id]);
 
   const { data: equipmentLocations = [] } = useQuery({
     queryKey: ['equipment-locations'],
@@ -1930,7 +2016,7 @@ export function ExperimentsPage() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto pr-4 pl-2.5 pb-4">
+              <div className="flex-1 overflow-y-auto ml-1.5 pr-4 pl-2.5 pb-4">
                 {foldersLoading ? (
                   <div className="flex items-center justify-center py-4">
                     <div className="w-5 h-5 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
@@ -2070,6 +2156,7 @@ export function ExperimentsPage() {
                 onAttachEquipment={() => setShowEquipmentPicker(true)}
                 lockedEquipmentCount={allEquipment.filter((e) => e.lockedByExperimentId === selectedExperiment.id).length}
                 uploadedFileCount={uploadedFileCount}
+                autoImportEvent={autoImportEvent}
               />
             </div>
             <div className="px-8 pb-8 pt-4">
