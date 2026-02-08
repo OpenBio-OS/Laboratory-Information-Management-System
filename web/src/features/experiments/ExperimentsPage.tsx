@@ -755,13 +755,11 @@ function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEq
     },
   });
 
-  if (!editor) {
-    return null;
-  }
-
   // Insert auto-import mention into editor when new file detected
-  // This mimics typing — editor.onUpdate fires and saves to DB
-  if (autoImportEvent && autoImportEvent.timestamp !== lastProcessedImportRef.current) {
+  // Must be in useEffect — editor commands are side effects, not render logic
+  useEffect(() => {
+    if (!editor || !autoImportEvent) return;
+    if (autoImportEvent.timestamp === lastProcessedImportRef.current) return;
     lastProcessedImportRef.current = autoImportEvent.timestamp;
 
     const calText = autoImportEvent.lastCalibration
@@ -782,7 +780,7 @@ function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEq
       mentionedAt: new Date().toISOString(),
     };
 
-    // Insert at end of document, just like typing
+    // Insert at end of document, just like typing — onUpdate fires and saves to DB
     editor
       .chain()
       .focus('end')
@@ -797,6 +795,10 @@ function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEq
         },
       ])
       .run();
+  }, [editor, autoImportEvent]);
+
+  if (!editor) {
+    return null;
   }
 
   return (
@@ -1733,7 +1735,7 @@ export function ExperimentsPage() {
   const [showEquipmentPicker, setShowEquipmentPicker] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const prevFileRef = useRef<string | null>(null);
+  const prevFileRef = useRef<string>('__UNSET__');
   const [autoImportEvent, setAutoImportEvent] = useState<AutoImportEvent | null>(null);
   const queryClient = useQueryClient();
 
@@ -1826,20 +1828,33 @@ export function ExperimentsPage() {
   const uploadedFileCount = experimentFiles?.files?.length ?? 0;
 
   // Detect auto-imported files: when a new/different file appears while equipment is attached
-  const currentFile = experimentFiles?.files?.[0]?.filename ?? null;
+  const currentFile = experimentFiles?.files?.[0]?.filename ?? '';
   useEffect(() => {
-    if (!hasLockedEquipment || !currentFile) return;
-    // Skip if this is the same file we already processed
+    if (!hasLockedEquipment) return;
+
+    // First time this effect runs for this experiment: seed the ref with whatever is there now
+    // If a file already existed on page load, record it so we don't re-announce it.
+    // If no file existed yet, record '' so the next change from '' → filename triggers.
+    if (prevFileRef.current === '__UNSET__') {
+      prevFileRef.current = currentFile;
+      return;
+    }
+
+    // No change
     if (currentFile === prevFileRef.current) return;
-    const isFirstLoad = prevFileRef.current === null;
+
+    // File went from something (or nothing) to a new filename
+    const previousFile = prevFileRef.current;
     prevFileRef.current = currentFile;
-    // Don't fire on first mount — only on actual changes
-    if (isFirstLoad) return;
+
+    // Only fire when a file actually appeared (not when it was deleted / became empty)
+    if (!currentFile) return;
 
     // Find the attached equipment
     const attachedEquip = allEquipment.find((e) => e.lockedByExperimentId === selectedExperiment?.id);
     if (!attachedEquip) return;
 
+    console.log('[AutoImport] Detected new file:', currentFile, 'previous:', previousFile);
     setAutoImportEvent({
       filename: currentFile,
       equipmentId: attachedEquip.id,
@@ -1854,7 +1869,7 @@ export function ExperimentsPage() {
 
   // Reset auto-import tracking when experiment changes
   useEffect(() => {
-    prevFileRef.current = null;
+    prevFileRef.current = '__UNSET__';
     setAutoImportEvent(null);
   }, [selectedExperiment?.id]);
 
