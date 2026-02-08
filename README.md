@@ -23,6 +23,12 @@ _Local-first Laboratory Information Management System built with Tauri (Rust) an
    ```
    *Required only once - generates the Rust client from the schema.*
 
+3. Download micromamba binaries (required for pipeline features):
+   ```bash
+   ./scripts/download-micromamba.sh
+   ```
+   *Downloads platform-specific binaries (~60MB total). Required before building the app.*
+
 ## Running
 
 Start the development server:

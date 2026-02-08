@@ -1,0 +1,3 @@
+# Micromamba binaries - downloaded via scripts/download-micromamba.sh
+micromamba-*
+*.exe

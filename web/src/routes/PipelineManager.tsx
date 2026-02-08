@@ -1,0 +1,287 @@
+// Pipeline Management - List and manage multiple pipeline runs
+
+import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { useNavigation } from '../App';
+import { PipelineSetupWizard } from '../components/PipelineSetupWizard';
+import { Plus } from 'lucide-react';
+
+interface PipelineRun {
+  id: string;
+  experimentId: string;
+  experimentName: string;
+  pipelineType: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  progress?: number;
+  startedAt: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export function PipelineManager() {
+  const { navigateTo } = useNavigation();
+  const [runs, setRuns] = useState<PipelineRun[]>([]);
+  const [filter, setFilter] = useState<string>('all');
+  const [isLoading, setIsLoading] = useState(true);
+  // null = still checking, true = needs setup, false = ready
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const check = async () => {
+      try {
+        console.log('[PipelineManager] checking pipeline environment...');
+        const initialized = await invoke<boolean>('check_pipeline_environment');
+        console.log('[PipelineManager] check result:', initialized);
+        if (!cancelled) {
+          setNeedsSetup(!initialized);
+          if (initialized) setIsLoading(false);
+        }
+      } catch (e) {
+        console.error('[PipelineManager] check failed:', e);
+        if (!cancelled) setNeedsSetup(true);
+      }
+    };
+
+    check();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (needsSetup !== false) return;
+
+    loadPipelineRuns();
+    const interval = setInterval(loadPipelineRuns, 5000);
+    return () => clearInterval(interval);
+  }, [needsSetup]);
+
+  const handleSetupComplete = () => {
+    setNeedsSetup(false);
+    setIsLoading(false);
+    loadPipelineRuns();
+  };
+
+  const loadPipelineRuns = async () => {
+    try {
+      const data = await invoke<PipelineRun[]>('list_pipeline_runs');
+      setRuns(data);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Failed to load pipeline runs:', error);
+      setIsLoading(false);
+    }
+  };
+
+  const cancelRun = async (runId: string) => {
+    try {
+      await invoke('cancel_pipeline', { runId });
+      await loadPipelineRuns();
+    } catch (error) {
+      console.error('Failed to cancel pipeline:', error);
+    }
+  };
+
+  const viewLogs = (runId: string) => {
+    // TODO: Navigate to logs view when implemented
+    console.log('View logs for', runId);
+  };
+
+  const viewResults = (runId: string) => {
+    // TODO: Navigate to results view when implemented
+    console.log('View results for', runId);
+  };
+
+  const filteredRuns = runs.filter(run => {
+    if (filter === 'all') return true;
+    return run.status === filter.toUpperCase();
+  });
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'RUNNING': return 'bg-blue-500/10 text-blue-400 border border-blue-500/20';
+      case 'COMPLETED': return 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20';
+      case 'FAILED': return 'bg-red-500/10 text-red-400 border border-red-500/20';
+      case 'CANCELLED': return 'bg-white/5 text-white/60 border border-white/10';
+      default: return 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20';
+    }
+  };
+
+  // Still checking if setup is needed
+  if (needsSetup === null) {
+    return (
+      <div className="flex items-center justify-center h-full bg-main">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-primary mx-auto mb-4" />
+          <p className="text-white/60">Checking pipeline environment...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show setup wizard if needed
+  if (needsSetup) {
+    return <PipelineSetupWizard onComplete={handleSetupComplete} />;
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full bg-main">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-primary mx-auto mb-4" />
+          <p className="text-white/60">Loading pipeline runs...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col bg-main">
+      {/* Header */}
+      <div className="bg-surface/30 backdrop-blur-md border-b border-white/5 px-6 py-4">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm text-white/60 my-auto">Manage and monitor bioinformatics pipelines</p>
+          </div>
+          <button
+            onClick={() => navigateTo({ tab: 'experiments' })}
+            className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
+          >
+            <Plus size={16} />
+            New Pipeline Run
+          </button>
+        </div>
+
+        {/* Filter Tabs */}
+        <div className="flex gap-2">
+          {['all', 'running', 'completed', 'failed'].map((status) => (
+            <button
+              key={status}
+              onClick={() => setFilter(status)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                filter === status
+                  ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
+                  : 'text-white/60 hover:bg-white/5 border border-transparent'
+              }`}
+            >
+              {status.charAt(0).toUpperCase() + status.slice(1)}
+              {status === 'all' && ` (${runs.length})`}
+              {status !== 'all' && ` (${runs.filter(r => r.status === status.toUpperCase()).length})`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Pipeline Runs List */}
+      <div className="flex-1 overflow-auto p-6">
+        {filteredRuns.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="text-white/20 mb-4">
+              <svg className="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-medium text-white mb-1">No pipeline runs yet</h3>
+            <p className="text-white/50 mb-4">
+              {filter === 'all' 
+                ? 'Start your first bioinformatics pipeline from an experiment'
+                : `No ${filter} pipeline runs`
+              }
+            </p>
+            <button
+              onClick={() => navigateTo({ tab: 'experiments' })}
+              className="px-4 py-2 bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-all"
+            >
+              Go to Experiments
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredRuns.map((run) => (
+              <div
+                key={run.id}
+                className="bg-neutral-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-all"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-lg font-semibold text-white">
+                        {run.experimentName}
+                      </h3>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(run.status)}`}>
+                        {run.status}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-white/50">
+                      <span className="flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        </svg>
+                        {run.pipelineType}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {new Date(run.startedAt).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2">
+                    {run.status === 'RUNNING' && (
+                      <button
+                        onClick={() => cancelRun(run.id)}
+                        className="px-3 py-1.5 text-sm border border-red-500/20 text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    <button
+                      onClick={() => viewLogs(run.id)}
+                      className="px-3 py-1.5 text-sm border border-white/10 text-white/80 rounded-lg hover:bg-white/5 transition-all"
+                    >
+                      View Logs
+                    </button>
+                    {run.status === 'COMPLETED' && (
+                      <button
+                        onClick={() => viewResults(run.id)}
+                        className="px-3 py-1.5 text-sm bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-all"
+                      >
+                        View Results
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                {run.status === 'RUNNING' && run.progress !== undefined && (
+                  <div className="mt-4">
+                    <div className="flex justify-between text-sm text-white/60 mb-1">
+                      <span>Progress</span>
+                      <span>{Math.round(run.progress * 100)}%</span>
+                    </div>
+                    <div className="w-full bg-white/10 rounded-full h-2">
+                      <div
+                        className="bg-brand-primary h-2 rounded-full transition-all duration-500 shadow-[0_0_10px_rgba(23,185,120,0.3)]"
+                        style={{ width: `${run.progress * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Message */}
+                {run.status === 'FAILED' && run.error && (
+                  <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
+                    <strong>Error:</strong> {run.error}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

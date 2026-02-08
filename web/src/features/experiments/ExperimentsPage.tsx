@@ -40,6 +40,9 @@ import {
   Dna,
   SquareStack,
   Lightbulb,
+  Folder,
+  FileText,
+  Atom,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, NodeViewWrapper, NodeViewProps, ReactNodeViewRenderer } from '@tiptap/react';
@@ -1962,14 +1965,14 @@ export function ExperimentsPage() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto ml-1.5 pr-4 pl-2.5 pb-4">
+              <div className="flex-1 overflow-y-auto pr-4 pl-2.5 pb-4">
                 {foldersLoading ? (
                   <div className="flex items-center justify-center py-4">
                     <div className="w-5 h-5 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
                   </div>
                 ) : folders.length === 0 ? (
-                  <div className="text-sm text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
-                    No folders yet.
+                  <div className="text-sm text-white/30 px-2 ml-1.5 py-4 text-center border border-dashed border-white/10 rounded-lg">
+                    No folders yet
                     <br />
                     <button
                       onClick={() => setShowCreateFolderModal(true)}
@@ -1984,14 +1987,14 @@ export function ExperimentsPage() {
                       <div key={folder.id} className="group flex items-center">
                         <button
                           onClick={() => setSelectedFolderId(folder.id)}
-                          className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${selectedFolderId === folder.id
+                          className={`flex-1 flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${selectedFolderId === folder.id
                               ? 'bg-brand-primary/20 text-brand-primary'
                               : 'text-white/70 hover:bg-white/5'
                             }`}
                         >
                           <div className="w-3 h-3 rounded" style={{ backgroundColor: folder.color || '#17b978' }} />
-                          <span className="flex-1 text-left truncate">{folder.name}</span>
-                          <span className="text-xs text-white/40 mr-2">
+                          <span className="flex-1 text-left truncate max-w-[8.5rem]">{folder.name}</span>
+                          <span className="text-xs text-white/40">
                             {experiments.filter((e) => e.folderId === folder.id).length}
                           </span>
                         </button>
@@ -2016,30 +2019,34 @@ export function ExperimentsPage() {
               {selectedFolderId === null ? (
                 <div className="flex flex-col items-center pt-16 text-white/30">
                   <div className="w-16 h-16 mb-4 rounded-xl bg-white/5 flex items-center justify-center">
-                    <FlaskConical size={32} className="opacity-50" />
+                    <Folder size={32} className="opacity-50" />
                   </div>
                   <p className="text-lg font-medium">Select a folder</p>
                   <p className="text-sm">Choose a folder from the sidebar to view experiments</p>
                 </div>
               ) : (
                 <div>
-                  <div className="mb-6">
+                  {/* <div className="mb-6">
                     <h2 className="text-2xl font-bold text-white">{currentFolder?.name}</h2>
                     {currentFolder?.description && (
                       <p className="text-white/40 text-sm">{currentFolder.description}</p>
                     )}
-                  </div>
+                  </div> */}
 
                   {currentFolderExperiments.length === 0 ? (
-                    <div className="text-center py-12 text-white/40">
-                      No experiments in this folder yet.
-                      <br />
-                      <button
+                    <div className="text-center pt-16">
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-white/5 flex items-center justify-center">
+                        <Atom size={32} className="text-white/20" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-white">No experiments in this folder yet</h3>
+                      <p className="text-white/40 text-sm mb-6">Add your first paper to get started</p>
+                      {/* <button
                         onClick={() => setShowCreateExperimentModal(true)}
-                        className="text-brand-primary hover:underline mt-2"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors"
                       >
-                        Create your first experiment
-                      </button>
+                        <Plus size={16} />
+                        Create experiment
+                      </button> */}
                     </div>
                   ) : (
                     <div className="grid gap-4">

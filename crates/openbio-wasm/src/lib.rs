@@ -1,9 +1,20 @@
 //! OpenBio WASM Engine
 //! 
 //! WebAssembly module for single-cell data analysis and visualization.
-//! Handles matrix parsing, gating, and statistical tests.
+//! Runs in Web Worker for non-blocking computation with SharedArrayBuffer.
+
+mod matrix;
+mod gating;
+mod stats;
+mod utils;
 
 use wasm_bindgen::prelude::*;
+use serde::{Deserialize, Serialize};
+
+// Re-export modules
+pub use matrix::{MatrixData, parse_mtx};
+pub use gating::{Point, Polygon, point_in_polygon, gate_cells};
+pub use stats::{mann_whitney_u, differential_expression};
 
 /// Initialize the WASM module (call once on load)
 #[wasm_bindgen(start)]
@@ -13,116 +24,146 @@ pub fn init() {
     console_error_panic_hook::set_once();
 }
 
-/// Parse a Matrix Market (.mtx) file
+/// Cell data structure for visualization
 #[wasm_bindgen]
-pub fn parse_mtx(data: &[u8]) -> Result<MatrixData, JsError> {
-    // TODO: Implement Matrix Market parser
-    // This will parse the sparse matrix format used by single-cell tools
-    Ok(MatrixData::default())
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Cell {
+    pub x: f32,
+    pub y: f32,
+    pub cluster: u32,
+    pub selected: bool,
 }
 
-/// Matrix data structure for JavaScript interop
+/// Main WASM Engine - manages data and computation
 #[wasm_bindgen]
-#[derive(Default)]
-pub struct MatrixData {
-    rows: usize,
-    cols: usize,
-    nnz: usize, // number of non-zero entries
+pub struct WasmEngine {
+    matrix: Option<MatrixData>,
+    cells: Vec<Cell>,
+    selection_mask: Vec<bool>,
 }
 
 #[wasm_bindgen]
-impl MatrixData {
-    #[wasm_bindgen(getter)]
-    pub fn rows(&self) -> usize {
-        self.rows
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn cols(&self) -> usize {
-        self.cols
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn nnz(&self) -> usize {
-        self.nnz
-    }
-}
-
-/// Check if a point is inside a polygon (for gating)
-#[wasm_bindgen]
-pub fn point_in_polygon(x: f64, y: f64, polygon_x: &[f64], polygon_y: &[f64]) -> bool {
-    if polygon_x.len() != polygon_y.len() || polygon_x.len() < 3 {
-        return false;
-    }
-
-    let n = polygon_x.len();
-    let mut inside = false;
-    let mut j = n - 1;
-
-    for i in 0..n {
-        let xi = polygon_x[i];
-        let yi = polygon_y[i];
-        let xj = polygon_x[j];
-        let yj = polygon_y[j];
-
-        if ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
-            inside = !inside;
+impl WasmEngine {
+    /// Create new engine instance
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        utils::set_panic_hook();
+        Self {
+            matrix: None,
+            cells: Vec::new(),
+            selection_mask: Vec::new(),
         }
-        j = i;
     }
 
-    inside
-}
+    /// Load matrix data from bytes (zero-copy via SharedArrayBuffer)
+    /// This is called from Web Worker with data streamed from Rust backend
+    pub fn load_matrix(&mut self, data: &[u8]) -> Result<(), JsValue> {
+        self.matrix = Some(parse_mtx(data)?);
+        self.cells = Vec::new(); // Will be populated during UMAP calculation
+        Ok(())
+    }
 
-/// Perform a two-sample t-test
-#[wasm_bindgen]
-pub fn t_test(sample1: &[f64], sample2: &[f64]) -> TTestResult {
-    let mean1 = mean(sample1);
-    let mean2 = mean(sample2);
-    let var1 = variance(sample1, mean1);
-    let var2 = variance(sample2, mean2);
-    let n1 = sample1.len() as f64;
-    let n2 = sample2.len() as f64;
+    /// Get matrix dimensions
+    pub fn get_dimensions(&self) -> Result<String, JsValue> {
+        if let Some(matrix) = &self.matrix {
+            Ok(format!("{}x{}", matrix.n_cells, matrix.n_genes))
+        } else {
+            Err(JsValue::from_str("No matrix loaded"))
+        }
+    }
 
-    let se = ((var1 / n1) + (var2 / n2)).sqrt();
-    let t_stat = if se > 0.0 { (mean1 - mean2) / se } else { 0.0 };
+    /// Set cell coordinates (from UMAP/t-SNE calculation)
+    pub fn set_coordinates(&mut self, coords: &[f32]) -> Result<(), JsValue> {
+        if coords.len() % 2 != 0 {
+            return Err(JsValue::from_str("Coordinates must be pairs (x, y)"));
+        }
 
-    TTestResult {
-        t_statistic: t_stat,
-        mean_diff: mean1 - mean2,
+        self.cells.clear();
+        for chunk in coords.chunks_exact(2) {
+            self.cells.push(Cell {
+                x: chunk[0],
+                y: chunk[1],
+                cluster: 0,
+                selected: false,
+            });
+        }
+
+        self.selection_mask = vec![false; self.cells.len()];
+        Ok(())
+    }
+
+    /// Feature A: Gating - apply lasso selection
+    pub fn apply_gate(&mut self, polygon: Vec<f32>) -> Result<usize, JsValue> {
+        if polygon.len() % 2 != 0 {
+            return Err(JsValue::from_str("Polygon must be pairs (x, y)"));
+        }
+
+        let poly_points: Vec<Point> = polygon
+            .chunks_exact(2)
+            .map(|chunk| Point {
+                x: chunk[0],
+                y: chunk[1],
+            })
+            .collect();
+
+        let poly = Polygon::new(poly_points);
+        let mut count = 0;
+
+        for (i, cell) in self.cells.iter_mut().enumerate() {
+            let point = Point { x: cell.x, y: cell.y };
+            let inside = point_in_polygon(&point, &poly);
+            self.selection_mask[i] = inside;
+            cell.selected = inside;
+            if inside {
+                count += 1;
+            }
+        }
+
+        Ok(count)
+    }
+
+    /// Feature B: Differential expression on selected cells
+    pub fn analyze_selection(&self) -> Result<String, JsValue> {
+        if self.matrix.is_none() {
+            return Err(JsValue::from_str("No matrix loaded"));
+        }
+
+        // Get indices of selected cells
+        let selected: Vec<usize> = self
+            .selection_mask
+            .iter()
+            .enumerate()
+            .filter(|(_, &selected)| selected)
+            .map(|(i, _)| i)
+            .collect();
+
+        if selected.is_empty() {
+            return Err(JsValue::from_str("No cells selected"));
+        }
+
+        // Run differential expression analysis
+        // TODO: Implement actual statistics
+        
+        Ok(format!("{} cells selected", selected.len()))
+    }
+
+    /// Get cell data for rendering (returns JSON)
+    pub fn get_cells_json(&self) -> String {
+        serde_json::to_string(&self.cells).unwrap_or_default()
+    }
+
+    /// Get selection mask as array
+    pub fn get_selection_mask(&self) -> Vec<u8> {
+        self.selection_mask
+            .iter()
+            .map(|&b| if b { 1 } else { 0 })
+            .collect()
     }
 }
 
-#[wasm_bindgen]
-pub struct TTestResult {
-    t_statistic: f64,
-    mean_diff: f64,
-}
-
-#[wasm_bindgen]
-impl TTestResult {
-    #[wasm_bindgen(getter)]
-    pub fn t_statistic(&self) -> f64 {
-        self.t_statistic
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn mean_diff(&self) -> f64 {
-        self.mean_diff
+impl Default for WasmEngine {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-fn mean(data: &[f64]) -> f64 {
-    if data.is_empty() {
-        return 0.0;
-    }
-    data.iter().sum::<f64>() / data.len() as f64
-}
-
-fn variance(data: &[f64], mean: f64) -> f64 {
-    if data.len() < 2 {
-        return 0.0;
-    }
-    let sum_sq: f64 = data.iter().map(|&x| (x - mean).powi(2)).sum();
-    sum_sq / (data.len() - 1) as f64
-}

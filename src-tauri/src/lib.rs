@@ -3,6 +3,8 @@
 //! Handles app lifecycle, config management, and embedded server spawning.
 
 mod licensing;
+mod commands;
+mod pipeline_env;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -847,6 +849,28 @@ pub fn run() {
             update_agent_name,
             reset_database_and_storage,
             reinitialize,
+            // Pipeline commands
+            commands::start_pipeline,
+            commands::get_pipeline_status,
+            commands::cancel_pipeline,
+            commands::list_pipelines,
+            commands::list_pipeline_runs,
+            // Pipeline environment commands
+            commands::check_pipeline_environment,
+            commands::check_docker_installed,
+            commands::get_docker_info,
+            commands::setup_pipeline_environment,
+            commands::get_pipeline_environment,
+            commands::get_nextflow_path,
+            commands::verify_pipeline_environment,
+            // Insight commands
+            commands::get_experiment_files,
+            commands::stream_file_chunk,
+            commands::load_coordinates,
+            commands::get_experiment_metadata,
+            commands::list_insight_instances,
+            commands::delete_insight_instance,
+            commands::create_insight_instance,
         ])
         .setup(move |app| {
             // Check if running in Agent mode

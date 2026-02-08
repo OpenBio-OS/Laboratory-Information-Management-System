@@ -113,7 +113,7 @@ export function InventoryPage() {
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="h-16 flex items-center justify-between px-6 border-b border-white/5 bg-surface/30 backdrop-blur-md flex-shrink-0">
-        <h2 className="text-lg font-semibold text-white">&nbsp;</h2>
+        <h2 className="text-sm text-white/60 my-auto">Sample, reagent and container storage.</h2>
 
         <div className="flex items-center gap-3">
           <div className="relative group">
@@ -364,7 +364,7 @@ export function InventoryPage() {
               </>
             ) : (
               /* Empty State - Prompt to use the tree */
-              <div className="flex flex-col items-center pt-16 text-white/30">
+              <div className="flex flex-col items-center pt-16 text-white/30 -mt-6">
                 <div className="w-16 h-16 mb-4 rounded-xl bg-white/5 flex items-center justify-center">
                   <LayoutGrid size={32} className="opacity-50" />
                 </div>

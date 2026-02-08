@@ -1,11 +1,11 @@
 import { useState, useEffect, createContext, useContext, useCallback } from "react";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { queryClient } from "./lib/queryClient";
 import { ApiProvider, useApi } from "./lib/ApiContext";
 import { SetupWizard, SetupConfig } from "./features/setup";
-import { ChartScatter, Database, FlaskConical, LayoutDashboard, Microscope, Refrigerator, ScatterChart, Settings, SquareLibrary } from "lucide-react";
+import { ChartScatter, Database, FlaskConical, LayoutDashboard, Microscope, Refrigerator, Settings, SquareLibrary, SquareFunction } from "lucide-react";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DeleteConfirmDialog } from "./components/DeleteConfirmDialog";
 import "./App.css";
@@ -14,7 +14,7 @@ import "./App.css";
 // Navigation Context
 // ==========================================
 
-export type TabId = 'dashboard' | 'freezer' | 'library' | 'experiments' | 'insight' | 'equipment' | 'settings';
+export type TabId = 'dashboard' | 'freezer' | 'library' | 'experiments' | 'pipelines' | 'insight' | 'equipment' | 'settings';
 
 interface NavigationTarget {
   tab: TabId;
@@ -56,8 +56,9 @@ const navItems = [
   { id: "freezer", label: "Freezer", icon: Refrigerator },
   { id: "library", label: "Library", icon: SquareLibrary },
   { id: "experiments", label: "Experiments", icon: FlaskConical },
-  { id: "equipment", label: 'Equipment', icon: Microscope },
+  { id: "pipelines", label: "Pipelines", icon: SquareFunction },
   { id: "insight", label: "Insight", icon: ChartScatter },
+  { id: "equipment", label: 'Equipment', icon: Microscope },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -226,7 +227,7 @@ function AppContent() {
         {/* Main content */}
         <main className="flex-1 flex flex-col overflow-hidden relative">
           <header className="h-20 flex items-center px-8 z-10">
-            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
+            <h1 className="text-2xl font-bold">
               {navItems.find(n => n.id === activeTab)?.label}
             </h1>
           </header>
@@ -238,7 +239,8 @@ function AppContent() {
               {activeTab === "library" && <LibraryPage />}
               {activeTab === "equipment" && <EquipmentPage />}
               {activeTab === "experiments" && <ExperimentsView />}
-              {activeTab === "insight" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><InsightView /></div></div>}
+              {activeTab === "pipelines" && <div className="h-full overflow-hidden"><PipelineManager /></div>}
+              {activeTab === "insight" && <div className="h-full overflow-hidden"><InsightGallery /></div>}
               {activeTab === "settings" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><SettingsView onResetSetup={() => setNeedsSetup(true)} /></div></div>}
             </div>
           </div>
@@ -273,8 +275,8 @@ import { InventoryPage } from "./features/inventory/InventoryPage";
 import { LibraryPage } from "./features/library/LibraryPage";
 import { ExperimentsPage } from "./features/experiments/ExperimentsPage";
 import { EquipmentPage } from "./features/equipment/EquipmentPage";
-
-// ... existing imports
+import { PipelineManager } from "./routes/PipelineManager";
+import { InsightGallery } from "./routes/InsightGallery";
 
 // Views
 function DashboardView() {
@@ -326,21 +328,6 @@ function ExperimentsView() {
   return <ExperimentsPage />;
 }
 
-function InsightView() {
-  return (
-    <div className="h-full flex flex-col items-center justify-center min-h-[400px]">
-      <div className="text-center max-w-md animate-slide-in-from-bottom">
-        <div className="w-20 h-20 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-white/5 shadow-inner">
-          <ScatterChart size={32} className="text-brand-primary" />
-        </div>
-        <h3 className="text-2xl font-bold mb-2">Insight Module</h3>
-        <p className="text-white/50 mb-8">Single-cell data visualization and analysis. Upload a matrix file to begin exploring.</p>
-        <Button className="w-full justify-center">Upload Data</Button>
-      </div>
-    </div>
-  );
-}
-
 function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
   const [config, setConfig] = useState<any>(null);
   const [autoStart, setAutoStart] = useState(false);
@@ -352,6 +339,7 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
   const [loading, setLoading] = useState(true);
   const [showResetSetupDialog, setShowResetSetupDialog] = useState(false);
   const [showResetDatabaseDialog, setShowResetDatabaseDialog] = useState(false);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     invoke('get_config').then((cfg: any) => {
@@ -416,6 +404,8 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
   const handleResetDatabase = async () => {
     try {
       await invoke('reset_database_and_storage');
+      // Clear all cached data from React Query before reloading
+      queryClient.clear();
       window.location.reload();
     } catch (err) {
       console.error("Failed to reset database:", err);

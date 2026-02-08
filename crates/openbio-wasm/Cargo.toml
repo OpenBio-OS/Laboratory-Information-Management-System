@@ -16,5 +16,11 @@ serde_json.workspace = true
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["console"] }
 
+# Optional: Better panic messages in browser
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[features]
+default = ["console_error_panic_hook"]
+
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

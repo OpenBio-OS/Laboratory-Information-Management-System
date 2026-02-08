@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run prisma:generate && npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "./scripts/download-micromamba.sh && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -19,7 +19,11 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "headers": {
+        "Cross-Origin-Embedder-Policy": "require-corp",
+        "Cross-Origin-Opener-Policy": "same-origin"
+      }
     }
   },
   "bundle": {
@@ -32,6 +36,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "resources": [
+      "bin/micromamba*"
     ]
   },
   "plugins": {

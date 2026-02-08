@@ -171,7 +171,7 @@ export function HierarchyTree({ containers, isLoading, selectedId, onSelect, onC
         </div>
       ) : rootContainers.length === 0 ? (
         <div className="text-sm mx-4 text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
-          No facilities yet.
+          No facilities yet
           <br />
           <button
             onClick={() => onCreateConfirm(null)}

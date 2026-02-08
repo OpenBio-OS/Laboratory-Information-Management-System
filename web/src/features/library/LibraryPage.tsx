@@ -8,7 +8,7 @@ import {
   getApiBaseUrl,
 } from "../../lib/api";
 import { useNavigation } from "../../App";
-import { Plus, Search, X, Pin, ExternalLink, FileText, ChevronDown, Check, Trash, Upload, AlertTriangle, Trash2 } from "lucide-react";
+import { Plus, Search, X, Pin, ExternalLink, FileText, ChevronDown, Check, Trash, Upload, AlertTriangle, Trash2, Folder, BookText } from "lucide-react";
 import { RichTextEditor } from "../../components/editor/RichTextEditor";
 
 // Portal-based dropdown that escapes modal overflow
@@ -22,7 +22,7 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0, maxHeight: 0 });
 
   const selectedCollection = collections.find((c) => c.id === value);
 
@@ -30,10 +30,26 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
   useEffect(() => {
     if (isOpen && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const maxDropdownHeight = 256; // max-h-64 in pixels
+      const spacing = 8; // spacing from viewport edges
+      
+      // Calculate available space below and above the button
+      const spaceBelow = viewportHeight - rect.bottom - spacing;
+      const spaceAbove = rect.top - spacing;
+      
+      // Determine if dropdown should open upward or downward
+      const shouldOpenUpward = spaceBelow < maxDropdownHeight && spaceAbove > spaceBelow;
+      
+      // Calculate the actual max height based on available space
+      const availableHeight = shouldOpenUpward ? spaceAbove : spaceBelow;
+      const calculatedMaxHeight = Math.min(maxDropdownHeight, availableHeight);
+      
       setPosition({
-        top: rect.bottom + 4,
+        top: shouldOpenUpward ? rect.top - calculatedMaxHeight - 4 : rect.bottom + 4,
         left: rect.left,
         width: rect.width,
+        maxHeight: calculatedMaxHeight,
       });
     }
   }, [isOpen]);
@@ -95,11 +111,12 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
         createPortal(
           <div
             ref={dropdownRef}
-            className="fixed z-[9999] py-1 bg-neutral-900 border border-white/20 rounded-lg shadow-2xl max-h-64 overflow-auto"
+            className="fixed z-[9999] py-1 bg-neutral-900 border border-white/20 rounded-lg shadow-2xl overflow-auto"
             style={{
               top: position.top,
               left: position.left,
               width: position.width,
+              maxHeight: position.maxHeight,
             }}
           >
             {collections.map((collection) => (
@@ -917,7 +934,7 @@ export function LibraryPage() {
                   </div>
                 ) : collections.length === 0 ? (
                   <div className="text-sm mx-4 text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
-                    No collections yet.
+                    No collections yet
                     <br />
                     <button
                       onClick={() => setShowCollectionModal(true)}
@@ -932,11 +949,11 @@ export function LibraryPage() {
                       <div key={collection.id} className="group flex items-center ml-2.5 mr-4">
                         <button
                           onClick={() => setSelectedCollection(collection.id)}
-                          className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${selectedCollection === collection.id ? "bg-brand-primary/20 text-brand-primary" : "text-white/70 hover:bg-white/5"}`}
+                          className={`flex-1 flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${selectedCollection === collection.id ? "bg-brand-primary/20 text-brand-primary" : "text-white/70 hover:bg-white/5"}`}
                         >
                           <div className="w-3 h-3 rounded" style={{ backgroundColor: collection.color || "#17b978" }} />
-                          <span className="flex-1 text-left truncate">{collection.name}</span>
-                          <span className="text-xs text-white/40 mr-2">{papers.filter((p) => p.libraryId === collection.id).length}</span>
+                          <span className="flex-1 text-left truncate max-w-[8.5rem]">{collection.name}</span>
+                          <span className="text-xs text-white/40">{papers.filter((p) => p.libraryId === collection.id).length}</span>
                         </button>
                         <button
                           onClick={() => handleDeleteCollectionClick(collection)}
@@ -956,7 +973,7 @@ export function LibraryPage() {
               {selectedCollection === null ? (
                 <div className="flex flex-col items-center pt-16 text-white/30">
                   <div className="w-16 h-16 mb-4 rounded-xl bg-white/5 flex items-center justify-center">
-                    <FileText size={32} className="opacity-50" />
+                    <Folder size={32} className="opacity-50" />
                   </div>
                   <p className="text-lg font-medium">Select a collection</p>
                   <p className="text-sm">Choose a collection from the sidebar to view papers</p>
@@ -968,19 +985,19 @@ export function LibraryPage() {
                       <div className="w-8 h-8 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
                     </div>
                   ) : sortedPapers.length === 0 ? (
-                    <div className="text-center py-24">
+                    <div className="text-center pt-16">
                       <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-white/5 flex items-center justify-center">
-                        <FileText size={32} className="text-white/20" />
+                        <BookText size={32} className="text-white/20" />
                       </div>
-                      <h3 className="text-lg font-semibold text-white mb-2">No papers yet</h3>
+                      <h3 className="text-lg font-semibold text-white">No papers in this collection yet</h3>
                       <p className="text-white/40 text-sm mb-6">Add your first paper to get started</p>
-                      <button
+                      {/* <button
                         onClick={() => setShowAddModal(true)}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors"
                       >
                         <Plus size={16} />
                         Add Paper
-                      </button>
+                      </button> */}
                     </div>
                   ) : (
                     <div className="space-y-3">

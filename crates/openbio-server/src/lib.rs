@@ -11,6 +11,8 @@ use tower_http::trace::TraceLayer;
 pub mod db;
 pub mod routes;
 pub mod state;
+pub mod pipeline;
+pub mod error;
 
 pub use state::AppState;
 
