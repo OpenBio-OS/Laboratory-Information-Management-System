@@ -3780,7 +3780,7 @@ dependencies = [
 
 [[package]]
 name = "openbio"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -3808,7 +3808,7 @@ dependencies = [
 
 [[package]]
 name = "openbio-agent"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "anyhow",
  "axum",
@@ -3827,7 +3827,7 @@ dependencies = [
 
 [[package]]
 name = "openbio-core"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "dirs 6.0.0",
  "serde",
@@ -3838,7 +3838,7 @@ dependencies = [
 
 [[package]]
 name = "openbio-server"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "anyhow",
  "axum",
@@ -3860,7 +3860,7 @@ dependencies = [
 
 [[package]]
 name = "openbio-wasm"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "js-sys",
  "serde",
@@ -4412,7 +4412,7 @@ checksum = "925383efa346730478fb4838dbe9137d2a47675ad789c546d150a6e1dd4ab31c"
 
 [[package]]
 name = "prisma-cli"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "prisma-client-rust-cli",
 ]

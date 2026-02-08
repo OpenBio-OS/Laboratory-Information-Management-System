@@ -1436,7 +1436,7 @@ export const EquipmentPage: React.FC = () => {
               </button>
             </div>
 
-            {locationsLoading ? (
+            {locationsLoading || equipmentLoading ? (
               <div className="flex items-center justify-center py-4">
                 <div className="w-5 h-5 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
               </div>
