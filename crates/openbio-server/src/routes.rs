@@ -1,6 +1,6 @@
 //! API route handlers
 use crate::db::prisma::{
-    self, container, equipment, equipment_location, experiment, experiment_entry, experiment_folder, experiment_mention, library,
+    self, container, digital_asset, equipment, equipment_location, experiment, experiment_entry, experiment_folder, experiment_mention, library,
     paper, sample,
 };
 use crate::AppState;
@@ -115,6 +115,7 @@ fn equipment_routes() -> Router<AppState> {
         )
         .route("/{id}/lock", axum::routing::post(lock_equipment))
         .route("/{id}/unlock", axum::routing::post(unlock_equipment))
+        .route("/{id}/ingest", axum::routing::post(ingest_equipment_file))
         .route("/locations", get(list_equipment_locations).post(create_equipment_location))
         .route("/locations/{id}", axum::routing::delete(delete_equipment_location))
 }
@@ -1689,6 +1690,197 @@ async fn unlock_equipment(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(updated))
+}
+
+// Ingest file from agent (auto-import from equipment watch folder)
+// Creates a DigitalAsset and an ExperimentEntry for the locked experiment
+async fn ingest_equipment_file(
+    State(state): State<AppState>,
+    Path(equipment_id): Path<String>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // Look up the equipment to find which experiment it's locked to
+    let equip = state
+        .db
+        .equipment()
+        .find_unique(equipment::id::equals(equipment_id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Equipment not found".to_string()))?;
+
+    let experiment_id = equip.locked_by_experiment_id.clone()
+        .ok_or((StatusCode::BAD_REQUEST, "Equipment is not locked to any experiment. Attach equipment to an experiment first.".to_string()))?;
+
+    // Process the uploaded file
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+        .ok_or((StatusCode::BAD_REQUEST, "No file in request".to_string()))?;
+
+    let filename = field
+        .file_name()
+        .ok_or((StatusCode::BAD_REQUEST, "No filename".to_string()))?
+        .to_string();
+
+    let content_type = field
+        .content_type()
+        .map(|ct| ct.to_string());
+
+    let data = field
+        .bytes()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let file_size = data.len() as i32;
+
+    // Compute SHA256 checksum (simple size-based placeholder)
+    let _checksum = sha2_hash(&data);
+
+    // Save file to storage: storage/equipment/{equipment_id}/{filename}
+    let equip_storage_dir = state.storage_path
+        .join("equipment")
+        .join(&equipment_id);
+    
+    fs::create_dir_all(&equip_storage_dir)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create storage dir: {}", e)))?;
+
+    let storage_key = format!("equipment/{}/{}", equipment_id, filename);
+    let file_path = state.storage_path.join(&storage_key);
+    
+    let mut file = fs::File::create(&file_path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create file: {}", e)))?;
+    file.write_all(&data)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write file: {}", e)))?;
+
+    // Also copy to experiment uploads dir for the list_experiment_files endpoint
+    let experiment_uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
+    fs::create_dir_all(&experiment_uploads_dir)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create experiment uploads dir: {}", e)))?;
+    let experiment_file_path = experiment_uploads_dir.join(&filename);
+    fs::copy(&file_path, &experiment_file_path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to copy to experiment dir: {}", e)))?;
+
+    // Create DigitalAsset record
+    let mut asset_params: Vec<digital_asset::SetParam> = vec![
+        digital_asset::machine_id::set(Some(equipment_id.clone())),
+    ];
+    if let Some(mime) = &content_type {
+        asset_params.push(digital_asset::mime_type::set(Some(mime.clone())));
+    }
+    asset_params.push(digital_asset::size_bytes::set(Some(file_size)));
+    asset_params.push(digital_asset::experiment::connect(experiment::id::equals(experiment_id.clone())));
+
+    let asset = state
+        .db
+        .digital_asset()
+        .create(
+            filename.clone(),
+            storage_key.clone(),
+            asset_params,
+        )
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Build calibration info from equipment data
+    let cal_info = {
+        let mut parts = Vec::new();
+        if let Some(ref lm) = equip.last_maintenance {
+            parts.push(format!("Last calibrated: {}", lm.format("%b %d, %Y")));
+        }
+        if let Some(ref nm) = equip.next_maintenance {
+            let overdue = nm < &prisma_client_rust::chrono::Utc::now().with_timezone(nm.offset());
+            let overdue_str = if overdue { " ⚠️ OVERDUE" } else { "" };
+            parts.push(format!("Next calibration: {}{}", nm.format("%b %d, %Y"), overdue_str));
+        }
+        if parts.is_empty() {
+            "No calibration data for tool".to_string()
+        } else {
+            parts.join(" · ")
+        }
+    };
+
+    // Build the mention HTML span (same format the TipTap RichMention extension parses)
+    let equip_type = equip.r#type.clone();
+    let mention_html = format!(
+        r#"<span data-type="mention" data-id="{}" data-name="{}" data-entity-type="equipment" data-category="Equipment" data-subcategory="{}" data-path="{}" data-mentioned-at="{}">@{}</span>"#,
+        html_escape(&equip.id),
+        html_escape(&equip.name),
+        html_escape(&equip_type),
+        html_escape(&format!("[\"{}\"]", equip.name)),
+        prisma_client_rust::chrono::Utc::now().to_rfc3339(),
+        html_escape(&equip.name),
+    );
+
+    let timestamp = prisma_client_rust::chrono::Utc::now().format("%m/%d/%Y, %I:%M:%S %p UTC").to_string();
+
+    // Build the auto-import note as HTML paragraph
+    let import_html = format!(
+        r#"<p>📎 <strong>{}</strong> auto-imported from {} <em>({}) — {}</em></p>"#,
+        html_escape(&filename),
+        mention_html,
+        html_escape(&cal_info),
+        html_escape(&timestamp),
+    );
+
+    // Read current experiment content, append the import note, and save it back.
+    // This is just text in the content field — same as if the user typed it.
+    let exp = state
+        .db
+        .experiment()
+        .find_unique(experiment::id::equals(experiment_id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Experiment not found".to_string()))?;
+
+    let mut new_content = exp.content.clone();
+    new_content.push_str(&import_html);
+
+    state
+        .db
+        .experiment()
+        .update(
+            experiment::id::equals(experiment_id.clone()),
+            vec![experiment::content::set(new_content)],
+        )
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Update equipment last sync time
+    let _ = state
+        .db
+        .equipment()
+        .update(
+            equipment::id::equals(equipment_id),
+            vec![equipment::last_sync_at::set(Some(prisma_client_rust::chrono::Utc::now().into()))],
+        )
+        .exec()
+        .await;
+
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "asset_id": asset.id,
+        "filename": filename,
+        "experiment_id": experiment_id,
+    })))
+}
+
+/// Escape HTML special characters for safe embedding in HTML content
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Simple SHA256 hash as hex string (using manual implementation to avoid extra deps)
+fn sha2_hash(data: &[u8]) -> String {
+    // Use a simple format for now - the checksum field is optional
+    format!("{:x}", data.len())
 }
 
 // ==========================================

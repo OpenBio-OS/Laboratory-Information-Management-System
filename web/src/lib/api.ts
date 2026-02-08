@@ -168,6 +168,22 @@ export interface ExperimentEntry {
     updatedAt: string;
 }
 
+export interface DigitalAsset {
+    id: string;
+    filename: string;
+    storageKey: string;
+    mimeType?: string;
+    sizeBytes?: number;
+    checksum?: string;
+    experimentId?: string;
+    sampleId?: string;
+    pipelineRunId?: string;
+    assetType: string;
+    createdAt: string;
+    uploadedBy?: string;
+    machineId?: string;
+}
+
 export interface ExperimentMention {
     id: string;
     experimentId: string;

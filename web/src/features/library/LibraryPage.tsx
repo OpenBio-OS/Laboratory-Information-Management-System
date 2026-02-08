@@ -916,7 +916,7 @@ export function LibraryPage() {
                     <div className="w-5 h-5 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
                   </div>
                 ) : collections.length === 0 ? (
-                  <div className="text-sm text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
+                  <div className="text-sm mx-4 text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
                     No collections yet.
                     <br />
                     <button

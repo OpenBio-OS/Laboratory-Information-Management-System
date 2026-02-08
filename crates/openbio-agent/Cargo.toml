@@ -24,7 +24,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
 clap = { version = "4", features = ["derive", "env"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "multipart"] }
 axum = "0.8"
 mdns-sd = "0.11"
 hostname = "0.4"

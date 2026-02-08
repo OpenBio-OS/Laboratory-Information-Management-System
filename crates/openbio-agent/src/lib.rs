@@ -4,6 +4,7 @@
 //! Exposes HTTP API for configuration and status.
 //! Broadcasts presence via mDNS for discovery by clients.
 
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -15,8 +16,10 @@ use axum::{
     Json, Router,
 };
 use mdns_sd::{ServiceDaemon, ServiceInfo};
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tokio::sync::mpsc;
+use tracing::{info, warn, error};
 
 /// Agent configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +46,10 @@ pub struct AgentConfig {
 pub struct AgentState {
     config: Arc<Mutex<AgentConfig>>,
     locked_by: Arc<Mutex<Option<String>>>,
+    /// Handle to stop the file watcher
+    watcher_active: Arc<Mutex<bool>>,
+    /// Set of files already known (to avoid re-uploading)
+    known_files: Arc<Mutex<HashSet<PathBuf>>>,
 }
 
 impl AgentState {
@@ -50,6 +57,8 @@ impl AgentState {
         Self {
             config: Arc::new(Mutex::new(config)),
             locked_by: Arc::new(Mutex::new(None)),
+            watcher_active: Arc::new(Mutex::new(false)),
+            known_files: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 }
@@ -129,15 +138,233 @@ async fn broadcast_mdns(port: u16, agent_name: Option<String>) -> Result<()> {
     }
 }
 
+/// Upload a file to the server's ingest endpoint
+async fn upload_file_to_server(api_url: &str, equipment_id: &str, file_path: &PathBuf) -> Result<()> {
+    let filename = file_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let file_data = tokio::fs::read(file_path).await?;
+    let file_size = file_data.len();
+
+    // Guess mime type from extension
+    let mime_type = match file_path.extension().and_then(|e| e.to_str()) {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("tif") | Some("tiff") => "image/tiff",
+        Some("bmp") => "image/bmp",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("pdf") => "application/pdf",
+        Some("csv") => "text/csv",
+        Some("tsv") => "text/tab-separated-values",
+        Some("txt") => "text/plain",
+        Some("json") => "application/json",
+        Some("xml") => "application/xml",
+        Some("xlsx") => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        Some("xls") => "application/vnd.ms-excel",
+        Some("zip") => "application/zip",
+        Some("gz") => "application/gzip",
+        Some("fasta") | Some("fa") => "text/plain",
+        Some("fastq") | Some("fq") => "text/plain",
+        Some("bam") => "application/octet-stream",
+        Some("vcf") => "text/plain",
+        _ => "application/octet-stream",
+    };
+
+    // Build multipart form
+    let file_part = reqwest::multipart::Part::bytes(file_data)
+        .file_name(filename.clone())
+        .mime_str(mime_type)?;
+
+    let form = reqwest::multipart::Form::new()
+        .part("file", file_part);
+
+    let client = reqwest::Client::new();
+    let url = format!("{}/api/equipment/{}/ingest", api_url, equipment_id);
+
+    info!("Uploading {} ({} bytes) to {}", filename, file_size, url);
+
+    let response = client
+        .post(&url)
+        .multipart(form)
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        info!("Successfully uploaded {}", filename);
+    } else {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        error!("Failed to upload {}: {} - {}", filename, status, body);
+        anyhow::bail!("Upload failed: {} - {}", status, body);
+    }
+
+    Ok(())
+}
+
+/// Scan a directory for existing files and record them as known
+fn scan_existing_files(dir: &PathBuf) -> HashSet<PathBuf> {
+    let mut files = HashSet::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                files.insert(path);
+            }
+        }
+    }
+    files
+}
+
+/// Start the file watcher background task
+fn spawn_file_watcher(state: AgentState) {
+    let config = state.config.lock().unwrap().clone();
+    
+    let watch_dir = match &config.watch_dir {
+        Some(dir) => dir.clone(),
+        None => {
+            warn!("No watch directory configured, cannot start watcher");
+            return;
+        }
+    };
+    
+    let api_url = match &config.upload_api_url {
+        Some(url) => url.clone(),
+        None => {
+            warn!("No upload API URL configured, cannot start watcher");
+            return;
+        }
+    };
+    
+    let equipment_id = match &config.equipment_id {
+        Some(id) => id.clone(),
+        None => {
+            warn!("No equipment ID configured, cannot start watcher");
+            return;
+        }
+    };
+    
+    // Scan existing files so we don't re-upload them
+    let existing = scan_existing_files(&watch_dir);
+    {
+        let mut known = state.known_files.lock().unwrap();
+        *known = existing;
+    }
+    
+    info!("Starting file watcher on {:?} ({} existing files)", watch_dir, state.known_files.lock().unwrap().len());
+    
+    // Mark watcher as active
+    *state.watcher_active.lock().unwrap() = true;
+    
+    let watcher_active = state.watcher_active.clone();
+    let known_files = state.known_files.clone();
+    
+    // Use a channel to bridge sync notify callbacks to async tokio
+    let (tx, mut rx) = mpsc::channel::<PathBuf>(256);
+    
+    // Spawn the notify watcher in a blocking thread
+    let watch_dir_clone = watch_dir.clone();
+    std::thread::spawn(move || {
+        let tx_clone = tx.clone();
+        let mut watcher = match RecommendedWatcher::new(
+            move |res: Result<Event, notify::Error>| {
+                match res {
+                    Ok(event) => {
+                        // We care about newly created or modified files
+                        match event.kind {
+                            EventKind::Create(_) | EventKind::Modify(_) => {
+                                for path in event.paths {
+                                    if path.is_file() {
+                                        let _ = tx_clone.blocking_send(path);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(e) => {
+                        error!("File watcher error: {}", e);
+                    }
+                }
+            },
+            Config::default(),
+        ) {
+            Ok(w) => w,
+            Err(e) => {
+                error!("Failed to create file watcher: {}", e);
+                return;
+            }
+        };
+        
+        if let Err(e) = watcher.watch(&watch_dir_clone, RecursiveMode::NonRecursive) {
+            error!("Failed to watch directory {:?}: {}", watch_dir_clone, e);
+            return;
+        }
+        
+        info!("File watcher active on {:?}", watch_dir_clone);
+        
+        // Keep thread alive while watcher is active
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            // Note: watcher is dropped when this thread exits
+        }
+    });
+    
+    // Spawn async task to process file events and upload
+    tokio::spawn(async move {
+        while let Some(path) = rx.recv().await {
+            // Check if watcher is still active
+            if !*watcher_active.lock().unwrap() {
+                info!("Watcher deactivated, stopping upload processor");
+                break;
+            }
+            
+            // Skip if we already know this file
+            {
+                let known = known_files.lock().unwrap();
+                if known.contains(&path) {
+                    continue;
+                }
+            }
+            
+            // Small delay to let the file finish writing
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            
+            // Verify file still exists and is not empty
+            match tokio::fs::metadata(&path).await {
+                Ok(meta) if meta.len() > 0 => {}
+                _ => continue,
+            }
+            
+            // Upload the file
+            match upload_file_to_server(&api_url, &equipment_id, &path).await {
+                Ok(()) => {
+                    // Mark as known so we don't re-upload
+                    known_files.lock().unwrap().insert(path.clone());
+                    info!("File ingested: {:?}", path);
+                }
+                Err(e) => {
+                    error!("Failed to ingest file {:?}: {}", path, e);
+                    // Don't mark as known - will retry on next modification event
+                }
+            }
+        }
+    });
+}
+
 /// GET / - Status endpoint
 async fn get_status(State(state): State<AgentState>) -> Json<serde_json::Value> {
     let config = state.config.lock().unwrap();
     let locked = state.locked_by.lock().unwrap();
+    let watching = *state.watcher_active.lock().unwrap();
     Json(serde_json::json!({
         "status": "running",
         "agent_name": config.agent_name,
         "equipment_id": config.equipment_id,
-        "watching": config.watch_dir.is_some(),
+        "watching": watching,
+        "watch_dir": config.watch_dir,
         "locked": locked.is_some(),
         "locked_by": locked.as_ref(),
     }))
@@ -186,15 +413,35 @@ async fn unlock_agent(State(state): State<AgentState>) -> Json<serde_json::Value
     Json(serde_json::json!({"status": "unlocked"}))
 }
 
-/// POST /start - Start watching directory
-async fn start_watching(State(_state): State<AgentState>) -> Json<serde_json::Value> {
-    // TODO: Implement file watching with notify crate
-    // For now just acknowledge
+/// POST /start - Start watching directory for new files
+async fn start_watching(State(state): State<AgentState>) -> Json<serde_json::Value> {
+    // Check if already watching
+    if *state.watcher_active.lock().unwrap() {
+        return Json(serde_json::json!({"status": "already_watching"}));
+    }
+    
+    // Validate configuration
+    {
+        let config = state.config.lock().unwrap();
+        if config.watch_dir.is_none() {
+            return Json(serde_json::json!({"status": "error", "message": "No watch directory configured"}));
+        }
+        if config.upload_api_url.is_none() {
+            return Json(serde_json::json!({"status": "error", "message": "No upload API URL configured"}));
+        }
+        if config.equipment_id.is_none() {
+            return Json(serde_json::json!({"status": "error", "message": "No equipment ID configured"}));
+        }
+    }
+    
+    spawn_file_watcher(state);
+    
     Json(serde_json::json!({"status": "watching"}))
 }
 
 /// POST /stop - Stop watching directory
-async fn stop_watching(State(_state): State<AgentState>) -> Json<serde_json::Value> {
-    // TODO: Implement stopping file watcher
+async fn stop_watching(State(state): State<AgentState>) -> Json<serde_json::Value> {
+    *state.watcher_active.lock().unwrap() = false;
+    info!("File watcher stopped");
     Json(serde_json::json!({"status": "stopped"}))
 }

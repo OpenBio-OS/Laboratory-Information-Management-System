@@ -1752,21 +1752,25 @@ export function ExperimentsPage() {
     },
   });
 
-  // Query uploaded files for the selected experiment
-  const { data: experimentFiles } = useQuery({
-    queryKey: ['experiment-files', selectedExperiment?.id],
-    queryFn: () => experimentsApi.listFiles(selectedExperiment!.id),
-    enabled: !!selectedExperiment,
-  });
-
-  const uploadedFileCount = experimentFiles?.files?.length ?? 0;
-
-  // Equipment data for the attach picker and button state
+  // Equipment data for the attach picker and button state (must be before queries that depend on it)
   const { data: allEquipment = [] } = useQuery({
     queryKey: ['equipment'],
     queryFn: equipmentApi.list,
     enabled: !!selectedExperiment || showEquipmentPicker,
   });
+
+  const hasLockedEquipment = allEquipment.some((e) => e.lockedByExperimentId === selectedExperiment?.id);
+
+  // Query uploaded files for the selected experiment
+  const { data: experimentFiles } = useQuery({
+    queryKey: ['experiment-files', selectedExperiment?.id],
+    queryFn: () => experimentsApi.listFiles(selectedExperiment!.id),
+    enabled: !!selectedExperiment,
+    // Poll when equipment attached since agent may be adding files
+    refetchInterval: hasLockedEquipment ? 3000 : false,
+  });
+
+  const uploadedFileCount = experimentFiles?.files?.length ?? 0;
 
   const { data: equipmentLocations = [] } = useQuery({
     queryKey: ['equipment-locations'],
@@ -1780,6 +1784,7 @@ export function ExperimentsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
       queryClient.invalidateQueries({ queryKey: ['experiments'] });
+      queryClient.invalidateQueries({ queryKey: ['experiment-files'] });
       setShowEquipmentPicker(false);
     },
   });
@@ -1789,6 +1794,7 @@ export function ExperimentsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
       queryClient.invalidateQueries({ queryKey: ['experiments'] });
+      queryClient.invalidateQueries({ queryKey: ['experiment-files'] });
     },
   });
 

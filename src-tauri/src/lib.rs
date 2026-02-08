@@ -101,6 +101,24 @@ fn storage_path() -> PathBuf {
     config_dir().join("storage")
 }
 
+/// Get the logs directory path
+fn logs_dir() -> PathBuf {
+    config_dir().join("logs")
+}
+
+/// Write a timestamped line to the agent log file (creates/appends)
+fn write_agent_log(equipment_id: &str, msg: &str) {
+    let dir = logs_dir();
+    let _ = fs::create_dir_all(&dir);
+    let log_path = dir.join(format!("agent-{}.log", equipment_id));
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    let line = format!("[{}] {}\n", timestamp, msg);
+    use std::io::Write;
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
 /// Get current config
 #[tauri::command]
 fn get_config(state: State<AppState>) -> AppConfig {
@@ -196,62 +214,178 @@ fn spawn_local_agent(
     watch_folder: String,
     state: State<AppState>,
 ) -> Result<(), String> {
+    write_agent_log(&equipment_id, "========== SPAWN LOCAL AGENT ==========");
+    write_agent_log(&equipment_id, &format!("equipment_id: {}", equipment_id));
+    write_agent_log(&equipment_id, &format!("watch_folder: {}", watch_folder));
+
     let config = state.config.lock().unwrap();
     
     // Get API URL based on current mode
     let api_url = match config.mode {
         DeploymentMode::Local | DeploymentMode::Hub => {
-            // Local/Hub mode: agents upload to the local server
             format!("http://localhost:{}", config.server_port)
         }
         _ => {
-            return Err("Can only spawn local agents in Local or Hub mode".to_string());
+            let msg = "Can only spawn local agents in Local or Hub mode";
+            write_agent_log(&equipment_id, &format!("ERROR: {}", msg));
+            return Err(msg.to_string());
         }
     };
+    let server_port = config.server_port;
+    write_agent_log(&equipment_id, &format!("server_port: {}, api_url: {}", server_port, api_url));
     drop(config);
 
-    // Get path to the openbio-agent binary (should be in same dir as main executable)
-    let agent_exe = std::env::current_exe()
+    // Get path to the openbio-agent binary
+    let current_exe = std::env::current_exe();
+    write_agent_log(&equipment_id, &format!("current_exe: {:?}", current_exe));
+    
+    let agent_exe = current_exe
         .ok()
         .and_then(|exe| exe.parent().map(|p| p.join("openbio-agent")))
         .ok_or_else(|| "Could not determine agent executable path".to_string())?;
+    
+    write_agent_log(&equipment_id, &format!("agent_exe path: {:?}", agent_exe));
+    write_agent_log(&equipment_id, &format!("agent_exe exists: {}", agent_exe.exists()));
 
-    // Check if agent binary exists
     if !agent_exe.exists() {
-        // Try with .exe extension on Windows
         #[cfg(target_os = "windows")]
         let agent_exe = agent_exe.with_extension("exe");
         
         #[cfg(not(target_os = "windows"))]
         if !agent_exe.exists() {
-            return Err(format!("Agent executable not found at {:?}", agent_exe));
+            let msg = format!("Agent executable not found at {:?}", agent_exe);
+            write_agent_log(&equipment_id, &format!("ERROR: {}", msg));
+            return Err(msg);
         }
     }
 
-    // Find an available port for this agent (start from 8080)
-    let agent_port = find_available_port(8080);
-    tracing::info!("Using port {} for agent {}", agent_port, equipment_id);
+    // Check watch folder exists
+    let watch_path = std::path::Path::new(&watch_folder);
+    write_agent_log(&equipment_id, &format!("watch_folder exists: {}", watch_path.exists()));
+    write_agent_log(&equipment_id, &format!("watch_folder is_dir: {}", watch_path.is_dir()));
+    if !watch_path.is_dir() {
+        let msg = format!("Watch folder does not exist or is not a directory: {}", watch_folder);
+        write_agent_log(&equipment_id, &format!("ERROR: {}", msg));
+        return Err(msg);
+    }
 
-    // Spawn the agent process
+    // Find an available port for this agent
+    let agent_port = find_available_port(8080);
+    write_agent_log(&equipment_id, &format!("agent_port: {}", agent_port));
+
+    // Create log file for agent process stdout/stderr
+    let agent_stdout_path = logs_dir().join(format!("agent-{}-stdout.log", equipment_id));
+    let agent_stderr_path = logs_dir().join(format!("agent-{}-stderr.log", equipment_id));
+    let _ = fs::create_dir_all(logs_dir());
+    
+    let stdout_file = fs::File::create(&agent_stdout_path)
+        .map_err(|e| format!("Failed to create stdout log: {}", e))?;
+    let stderr_file = fs::File::create(&agent_stderr_path)
+        .map_err(|e| format!("Failed to create stderr log: {}", e))?;
+    
+    write_agent_log(&equipment_id, &format!("stdout log: {:?}", agent_stdout_path));
+    write_agent_log(&equipment_id, &format!("stderr log: {:?}", agent_stderr_path));
+
+    // Spawn the agent process with stdout/stderr redirected to log files
+    write_agent_log(&equipment_id, "Spawning agent process...");
     let child = Command::new(&agent_exe)
         .arg("--port")
         .arg(agent_port.to_string())
         .arg("--equipment-id")
         .arg(&equipment_id)
+        .stdout(std::process::Stdio::from(stdout_file))
+        .stderr(std::process::Stdio::from(stderr_file))
         .spawn()
-        .map_err(|e| format!("Failed to spawn agent: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("Failed to spawn agent: {}", e);
+            write_agent_log(&equipment_id, &format!("ERROR: {}", msg));
+            msg
+        })?;
+
+    write_agent_log(&equipment_id, &format!("Agent process spawned, pid: {}", child.id()));
 
     // Store the child process
     let mut agents = state.local_agents.lock().unwrap();
-    
-    // Kill existing agent for this equipment if any
     if let Some(mut old_child) = agents.remove(&equipment_id) {
+        write_agent_log(&equipment_id, "Killing previous agent process");
         let _ = old_child.kill();
     }
-    
     agents.insert(equipment_id.clone(), child);
+    drop(agents);
     
-    tracing::info!("Spawned local agent for equipment {}", equipment_id);
+    // Configure the agent in a background thread
+    let equip_id = equipment_id.clone();
+    let watch_folder_clone = watch_folder.clone();
+    std::thread::spawn(move || {
+        write_agent_log(&equip_id, "Background thread: waiting 2s for agent to start...");
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        
+        let agent_api = format!("http://localhost:{}", agent_port);
+        write_agent_log(&equip_id, &format!("Agent API: {}", agent_api));
+        
+        // First, check if agent is alive
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap();
+        
+        match client.get(&agent_api).send() {
+            Ok(resp) => {
+                let body = resp.text().unwrap_or_default();
+                write_agent_log(&equip_id, &format!("Agent health check OK: {}", body));
+            }
+            Err(e) => {
+                write_agent_log(&equip_id, &format!("ERROR: Agent not reachable at {}: {}", agent_api, e));
+                return;
+            }
+        }
+        
+        // Configure the agent
+        let config_payload = serde_json::json!({
+            "equipment_id": equip_id,
+            "agent_name": null,
+            "watch_dir": watch_folder_clone,
+            "upload_api_url": format!("http://localhost:{}", server_port),
+            "api_key": null,
+        });
+        
+        write_agent_log(&equip_id, &format!("Sending config: {}", config_payload));
+        
+        match client.post(format!("{}/config", agent_api))
+            .json(&config_payload)
+            .send()
+        {
+            Ok(resp) => {
+                let status = resp.status();
+                let body = resp.text().unwrap_or_default();
+                write_agent_log(&equip_id, &format!("Config response: {} - {}", status, body));
+            }
+            Err(e) => {
+                write_agent_log(&equip_id, &format!("ERROR: Failed to set config: {}", e));
+                return;
+            }
+        }
+        
+        // Start watching
+        write_agent_log(&equip_id, "Sending /start...");
+        match client.post(format!("{}/start", agent_api))
+            .send()
+        {
+            Ok(resp) => {
+                let status = resp.status();
+                let body = resp.text().unwrap_or_default();
+                write_agent_log(&equip_id, &format!("Start response: {} - {}", status, body));
+            }
+            Err(e) => {
+                write_agent_log(&equip_id, &format!("ERROR: Failed to start watcher: {}", e));
+            }
+        }
+        
+        write_agent_log(&equip_id, "========== AGENT SETUP COMPLETE ==========");
+    });
+
+    let log_location = logs_dir().join(format!("agent-{}.log", equipment_id));
+    write_agent_log(&equipment_id, &format!("Setup initiated. Full log at: {:?}", log_location));
     Ok(())
 }
 
