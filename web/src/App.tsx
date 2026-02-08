@@ -6,6 +6,8 @@ import { queryClient } from "./lib/queryClient";
 import { ApiProvider, useApi } from "./lib/ApiContext";
 import { SetupWizard, SetupConfig } from "./features/setup";
 import { ChartScatter, Database, FlaskConical, LayoutDashboard, Microscope, Refrigerator, ScatterChart, Settings, SquareLibrary } from "lucide-react";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { DeleteConfirmDialog } from "./components/DeleteConfirmDialog";
 import "./App.css";
 
 // ==========================================
@@ -318,6 +320,8 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
   const [editingLabName, setEditingLabName] = useState(false);
   const [editingAgentName, setEditingAgentName] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showResetSetupDialog, setShowResetSetupDialog] = useState(false);
+  const [showResetDatabaseDialog, setShowResetDatabaseDialog] = useState(false);
 
   useEffect(() => {
     invoke('get_config').then((cfg: any) => {
@@ -379,15 +383,27 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
     onResetSetup();
   };
 
+  const handleResetDatabase = async () => {
+    try {
+      await invoke('reset_database_and_storage');
+      window.location.reload();
+    } catch (err) {
+      console.error("Failed to reset database:", err);
+      alert(`Failed to reset database: ${err}`);
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-full"><div className="text-white/40">Loading settings...</div></div>;
   }
 
   const isHub = config?.mode === 'hub';
   const isAgent = config?.mode === 'agent';
+  const isLocal = config?.mode === 'local';
+  const canResetDatabase = isLocal || isHub;
 
   return (
-    <div className="space-y-6 max-w-3xl px-8">
+    <div className="space-y-6 px-8">
       <Card>
         <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
           <div className="w-1 h-6 bg-brand-primary rounded-full"></div>
@@ -509,18 +525,50 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
           Danger Zone
         </h3>
 
-        <div className="space-y-1">
-          <div className="flex items-center !mt-6 justify-between p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+        <div className="space-y-4">
+          {canResetDatabase && (
+            <div className="flex items-center justify-between p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+              <div>
+                <h4 className="font-medium text-white mb-1">Reset Database & Storage</h4>
+                <p className="text-sm text-white/40">Permanently delete all experiments, samples, and files. This cannot be undone.</p>
+              </div>
+              <Button variant="secondary" onClick={() => setShowResetDatabaseDialog(true)} className="hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/30">
+                Delete All Data
+              </Button>
+            </div>
+          )}
+          
+          <div className="flex items-center justify-between p-4 rounded-xl bg-red-500/5 border border-red-500/10">
             <div>
               <h4 className="font-medium text-white mb-1">Reset Application</h4>
               <p className="text-sm text-white/40">Re-run the setup wizard to change your deployment mode.</p>
             </div>
-            <Button variant="secondary" onClick={handleResetSetup} className="hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/30">
+            <Button variant="secondary" onClick={() => setShowResetSetupDialog(true)} className="hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/30">
               Re-run Setup
             </Button>
           </div>
         </div>
       </Card>
-    </div>
+      
+      {showResetSetupDialog && (
+        <ConfirmDialog
+          title="Reset Application"
+          message="Are you sure you want to re-run the setup wizard? This will require you to reconfigure your deployment mode and connection settings."
+          onClose={() => setShowResetSetupDialog(false)}
+          onConfirm={handleResetSetup}
+          confirmText="Reset Setup"
+          variant="warning"
+        />
+      )}
+      
+      {showResetDatabaseDialog && (
+        <DeleteConfirmDialog
+          title="Delete All Data"
+          message="⚠️ WARNING: This will permanently delete ALL your data including experiments, samples, and uploaded files. This action CANNOT be undone."
+          onClose={() => setShowResetDatabaseDialog(false)}
+          onConfirm={handleResetDatabase}
+          confirmWord="DELETE"
+        />
+      )}    </div>
   );
 }

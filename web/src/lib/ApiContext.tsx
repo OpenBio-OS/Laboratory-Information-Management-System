@@ -49,14 +49,14 @@ export function ApiProvider({ children }: { children: ReactNode }) {
         }
     }
 
-    function setApiUrl(url: string) {
+    function setApiUrlWrapper(url: string) {
         setApiBaseUrl(url);
         setApiUrlState(url);
         checkConnection();
     }
 
     return (
-        <ApiContext.Provider value={{ apiUrl, isConnected, isLoading, setApiUrl }}>
+        <ApiContext.Provider value={{ apiUrl, isConnected, isLoading, setApiUrl: setApiUrlWrapper }}>
             {children}
         </ApiContext.Provider>
     );

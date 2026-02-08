@@ -66,7 +66,7 @@ INSERT INTO licenses (
   'TRIAL-' || gen_random_uuid()::text,
   'hub',
   'active',
-  'trial@openbio.app',
+  'trial@openbio.is-a.software',
   'Trial Account',
   NOW() + INTERVAL '3 months'
 );

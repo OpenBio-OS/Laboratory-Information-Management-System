@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, AlertTriangle } from 'lucide-react';
 
 interface DeleteConfirmModalProps {
@@ -12,6 +12,17 @@ export function DeleteConfirmModal({ onClose, onConfirm, itemName, itemType }: D
     const [confirmText, setConfirmText] = useState('');
     const isValid = confirmText.toLowerCase() === 'delete';
 
+    useEffect(() => {
+        const handleEscape = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose();
+            }
+        };
+        
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [onClose]);
+
     const handleConfirm = () => {
         if (isValid) {
             onConfirm();
@@ -21,7 +32,7 @@ export function DeleteConfirmModal({ onClose, onConfirm, itemName, itemType }: D
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-            <div className="w-full max-w-md bg-surface border border-red-500/20 rounded-2xl shadow-xl overflow-hidden">
+            <div className="w-full max-w-md bg-neutral-900 border border-red-500/20 rounded-2xl shadow-xl overflow-hidden">
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
                     <div className="flex items-center gap-2">

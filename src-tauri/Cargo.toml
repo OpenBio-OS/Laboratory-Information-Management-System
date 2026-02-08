@@ -29,6 +29,10 @@ dirs = "6"
 mdns-sd = "0.11"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 hostname = "0.4"
+rand = "0.8"
+lazy_static = "1.4"
+chrono = "0.4"
+reqwest = { version = "0.12", features = ["json"] }
 
 # Internal crates for embedded server
 openbio-server = { path = "../crates/openbio-server" }
@@ -38,3 +42,4 @@ openbio-core = { path = "../crates/openbio-core" }
 # Logging
 tracing = "0.1"
 tracing-subscriber = "0.3"
+tauri-plugin-process = "2"

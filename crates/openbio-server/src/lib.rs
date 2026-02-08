@@ -29,6 +29,13 @@ pub async fn run_server(addr: SocketAddr, state: AppState) -> anyhow::Result<()>
         .with_state(state);
 
     tracing::info!("Starting OpenBio server on {}", addr);
+    
+    // Log if API key validation is enabled
+    if std::env::var("OPENBIO_API_KEY").is_ok() {
+        tracing::info!("API key authentication is ENABLED");
+    } else {
+        tracing::info!("API key authentication is DISABLED (local/hub mode)");
+    }
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

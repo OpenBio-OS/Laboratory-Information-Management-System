@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Wifi, Monitor, Building2, Network, Loader2 } from 'lucide-react';
 
 type ConnectionMode = 'local' | 'mdns' | 'enterprise';
@@ -13,6 +13,17 @@ export function AgentConnectionDialog({ onClose, onConnect }: AgentConnectionDia
   const [ipAddress, setIpAddress] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isConnecting) {
+        onClose();
+      }
+    };
+    
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose, isConnecting]);
 
   const handleConnect = async () => {
     if (!selectedMode) return;

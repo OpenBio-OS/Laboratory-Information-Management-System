@@ -40,7 +40,7 @@
    ├─ Solo → Free, no license needed
    └─ Hub/Enterprise → Show payment options
       ├─ Start 14-day trial (generates offline license)
-      └─ Go to openbio.app/pricing → Pay with Stripe → Get license key
+      └─ Go to openbio.is-a.software/pricing → Pay with Stripe → Get license key
    ↓
 3. Enter License Key in Setup
    ↓

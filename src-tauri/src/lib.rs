@@ -2,6 +2,8 @@
 //!
 //! Handles app lifecycle, config management, and embedded server spawning.
 
+mod licensing;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -38,6 +40,8 @@ pub struct AppConfig {
     pub agent_name: Option<String>,
     #[serde(rename = "apiUrl")]
     pub api_url: Option<String>,
+    #[serde(rename = "licenseKey")]
+    pub license_key: Option<String>,
     #[serde(rename = "serverPort")]
     pub server_port: u16,
     #[serde(rename = "autoStart", default)]
@@ -111,6 +115,19 @@ fn save_config(mut config: AppConfig, state: State<AppState>, app: AppHandle) ->
         config.auto_start = true;
     }
     
+    // Validate SERVER license for Hub and Enterprise modes
+    if licensing::requires_license(&config.mode) {
+        if let Some(license_key) = &config.license_key {
+            if license_key.is_empty() {
+                return Err("License key is required for Hub and Enterprise modes".to_string());
+            }
+            // TODO: Validate license with online service here
+            // For now, just check it's not empty
+        } else {
+            return Err("License key is required for Hub and Enterprise modes".to_string());
+        }
+    }
+    
     // Create config directory if needed
     let dir = config_dir();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -135,6 +152,9 @@ fn save_config(mut config: AppConfig, state: State<AppState>, app: AppHandle) ->
                 if let Some(lab_name) = &config.lab_name {
                     start_mdns_broadcast(lab_name.clone(), config.server_port);
                 }
+                
+                // License is already validated above
+                tracing::info!("Hub instance running with valid license");
             }
         }
         _ => {}
@@ -349,6 +369,37 @@ fn update_agent_name(agent_name: String, state: State<AppState>) -> Result<(), S
     tracing::info!("Agent name updated to: {}", agent_name);
     
     // Note: mDNS broadcast needs app restart to take effect
+    Ok(())
+}
+
+/// Reset database and storage (delete all data)
+#[tauri::command]
+fn reset_database_and_storage(state: State<AppState>) -> Result<(), String> {
+    // Stop all running local agents first
+    let mut agents = state.local_agents.lock().unwrap();
+    let agent_ids: Vec<String> = agents.keys().cloned().collect();
+    
+    for equipment_id in agent_ids {
+        if let Some(mut child) = agents.remove(&equipment_id) {
+            let _ = child.kill();
+            tracing::info!("Stopped local agent for equipment {} during reset", equipment_id);
+        }
+    }
+    drop(agents); // Release lock
+    
+    let db_path = database_path();
+    let storage_dir = storage_path();
+    
+    // Delete database file
+    if db_path.exists() {
+        fs::remove_file(&db_path).map_err(|e| format!("Failed to delete database: {}", e))?;
+    }
+    
+    // Delete storage directory
+    if storage_dir.exists() {
+        fs::remove_dir_all(&storage_dir).map_err(|e| format!("Failed to delete storage: {}", e))?;
+    }
+    
     Ok(())
 }
 
@@ -642,6 +693,7 @@ pub fn run() {
         .manage(state)
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -659,6 +711,7 @@ pub fn run() {
             update_minimize_to_tray,
             update_lab_name,
             update_agent_name,
+            reset_database_and_storage,
             reinitialize,
         ])
         .setup(move |app| {

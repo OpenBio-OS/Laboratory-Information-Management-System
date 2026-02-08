@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Server
 } from 'lucide-react';
+import { LicenseAgreementScreen } from './LicenseAgreementScreen';
 
 export type DeploymentMode = 'local' | 'hub' | 'spoke' | 'enterprise' | 'agent';
 
@@ -29,6 +30,7 @@ export interface SetupConfig {
   labName?: string;
   agentName?: string;
   apiUrl?: string;
+  licenseKey?: string;
   serverPort: number;
 }
 
@@ -37,12 +39,23 @@ interface SetupWizardProps {
 }
 
 export function SetupWizard({ onComplete }: SetupWizardProps) {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0); // Start at 0 for license agreement
   const [config, setConfig] = useState<SetupConfig>({
     mode: 'local',
     serverPort: 3000,
   });
   const [isInitializing, setIsInitializing] = useState(false);
+
+  const handleLicenseAccept = () => {
+    setStep(1); // Move to mode selection
+  };
+
+  const handleLicenseReject = () => {
+    // User declined the license - show message to close manually
+    alert('You must accept the license agreement to use OpenBio. Please close the application.');
+    // Attempt to close window (works in some contexts)
+    window.close();
+  };
 
   const handleModeSelect = (mode: DeploymentMode) => {
     setConfig({ ...config, mode });
@@ -59,6 +72,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       onComplete(config);
     }, 1500);
   };
+
+  // Show license agreement screen first
+  if (step === 0) {
+    return <LicenseAgreementScreen onAccept={handleLicenseAccept} onReject={handleLicenseReject} />;
+  }
 
   return (
     <div className="flex justify-center items-center min-h-screen bg-main p-8 font-sans text-white">
@@ -252,6 +270,17 @@ function Step2Configure({ config, setConfig, onBack, onNext }: Step2Props) {
               />
               <span className="text-xs text-white/40">This name will appear when teammates search for your lab</span>
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-white/60">License Key</label>
+              <input
+                type="text"
+                placeholder="LIC-XXXX-XXXX-XXXX-XXXX"
+                className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white font-mono text-sm placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-brand-primary/50 focus:border-brand-primary/50 transition-all duration-200"
+                value={config.licenseKey || ''}
+                onChange={(e) => setConfig({ ...config, licenseKey: e.target.value })}
+              />
+              <span className="text-xs text-white/40">Purchase at openbio.is-a.software/licensing or start free trial</span>
+            </div>
           </>
         )}
 
@@ -325,16 +354,21 @@ function Step2Configure({ config, setConfig, onBack, onNext }: Step2Props) {
         )}
 
         {config.mode === 'enterprise' && (
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-white/60">Enterprise API URL</label>
-            <input
-              type="text"
-              placeholder="https://api.biotech-corp.com"
-              className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-brand-primary/50 focus:border-brand-primary/50 transition-all duration-200"
-              value={config.apiUrl || ''}
-              onChange={(e) => setConfig({ ...config, apiUrl: e.target.value })}
-            />
-            <span className="text-xs text-white/40">Contact your IT department for this URL</span>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-white/60">Enterprise API URL</label>
+              <input
+                type="text"
+                placeholder="https://api.biotech-corp.com"
+                className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-brand-primary/50 focus:border-brand-primary/50 transition-all duration-200"
+                value={config.apiUrl || ''}
+                onChange={(e) => setConfig({ ...config, apiUrl: e.target.value })}
+              />
+              <span className="text-xs text-white/40">Contact your IT department for this URL</span>
+            </div>
+            <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl text-sm text-white/70">
+              <p>Enterprise instances are licensed servers running in Docker. Clients connect freely to licensed servers.</p>
+            </div>
           </div>
         )}
 

@@ -206,8 +206,9 @@ export function InventoryPage() {
         </div>
 
         {/* View Area */}
-        <div className="flex-1 overflow-auto p-6">
-          <div className="max-w-6xl mx-auto">
+        <div className="flex-1 overflow-auto">
+          <div className="p-6 min-w-max">
+            <div className="mx-auto m-6">
             {searchQuery ? (
               /* Search Results View */
               <div>
@@ -270,7 +271,7 @@ export function InventoryPage() {
                   </div>
 
                   {/* Sample Management Panel */}
-                  <div className="w-96 bg-surface/30 border border-white/5 rounded-xl p-4 -mt-14">
+                  <div className="w-96 min-w-96 bg-surface/30 border border-white/5 rounded-xl p-4 -mt-14">
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="text-sm font-medium text-white/60">Sample Management</h4>
                     </div>
@@ -373,6 +374,7 @@ export function InventoryPage() {
                 </p>
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>

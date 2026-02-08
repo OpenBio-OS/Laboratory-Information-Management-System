@@ -3782,18 +3782,23 @@ dependencies = [
 name = "openbio"
 version = "0.1.22"
 dependencies = [
+ "chrono",
  "dirs 6.0.0",
  "hostname 0.4.2",
+ "lazy_static",
  "mdns-sd",
  "openbio-agent",
  "openbio-core",
  "openbio-server",
+ "rand 0.8.5",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
  "tauri-plugin-opener",
+ "tauri-plugin-process",
  "tauri-plugin-updater",
  "tokio",
  "toml 0.8.2",
@@ -6394,6 +6399,16 @@ dependencies = [
  "url",
  "windows",
  "zbus",
+]
+
+[[package]]
+name = "tauri-plugin-process"
+version = "2.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d55511a7bf6cd70c8767b02c97bf8134fa434daf3926cfc1be0a0f94132d165a"
+dependencies = [
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]
