@@ -832,8 +832,8 @@ function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEq
           <button
             onClick={onAttachEquipment}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${lockedEquipmentCount > 0
-                ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
-                : 'bg-brand-primary text-black hover:bg-brand-secondary'
+              ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
+              : 'bg-brand-primary text-black hover:bg-brand-secondary'
               }`}
           >
             <Microscope size={16} />
@@ -842,8 +842,8 @@ function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEq
           <button
             onClick={onUploadFile}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${uploadedFileCount > 0
-                ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25'
-                : 'bg-white/5 hover:bg-white/10 border border-white/10 text-white/80'
+              ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25'
+              : 'bg-white/5 hover:bg-white/10 border border-white/10 text-white/80'
               }`}
           >
             <Paperclip size={16} />
@@ -874,20 +874,19 @@ function FolderSelect({ value, onChange, folders }: FolderSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
 
   const selectedFolder = folders.find((f) => f.id === value);
 
-  useEffect(() => {
-    if (isOpen && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      setPosition({
-        top: rect.bottom + 4,
-        left: rect.left,
-        width: rect.width,
-      });
-    }
-  }, [isOpen]);
+  // Calculate position synchronously for rendering
+  const getPosition = () => {
+    if (!buttonRef.current) return { top: 0, left: 0, width: 0 };
+    const rect = buttonRef.current.getBoundingClientRect();
+    return {
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    };
+  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -919,6 +918,9 @@ function FolderSelect({ value, onChange, folders }: FolderSelectProps) {
     onChange(id);
     setIsOpen(false);
   };
+
+  // Get position inline for rendering - this calculates on every render when open
+  const position = isOpen ? getPosition() : { top: 0, left: 0, width: 0 };
 
   return (
     <>
@@ -1550,10 +1552,10 @@ function EquipmentPickerModal({ equipment, locations, experimentId, onLock, onUn
       <div
         key={e.id}
         className={`flex items-center justify-between py-1.5 pl-2 pr-2 rounded-lg transition-colors ${isLockedByMe
-            ? 'bg-green-500/10 border border-green-500/30'
-            : isLockedByOther
-              ? 'opacity-40'
-              : 'hover:bg-white/5'
+          ? 'bg-green-500/10 border border-green-500/30'
+          : isLockedByOther
+            ? 'opacity-40'
+            : 'hover:bg-white/5'
           }`}
       >
         <div className="flex items-center gap-2 min-w-0">

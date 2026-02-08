@@ -22,48 +22,20 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0, maxHeight: 0 });
 
   const selectedCollection = collections.find((c) => c.id === value);
 
-  // Use useLayoutEffect to calculate position synchronously before browser paint
-  // This prevents the dropdown from flashing at wrong position
-  useEffect(() => {
-    if (isOpen && buttonRef.current) {
-      const updatePosition = () => {
-        const rect = buttonRef.current!.getBoundingClientRect();
-        const viewportHeight = window.innerHeight;
-        const maxDropdownHeight = 256;
-        const spacing = 8;
+  // Calculate position synchronously for rendering
+  const getPosition = () => {
+    if (!buttonRef.current) return { top: 0, left: 0, width: 0 };
+    const rect = buttonRef.current.getBoundingClientRect();
+    return {
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    };
+  };
 
-        const spaceBelow = viewportHeight - rect.bottom - spacing;
-        const spaceAbove = rect.top - spacing;
-        const shouldOpenUpward = spaceBelow < maxDropdownHeight && spaceAbove > spaceBelow;
-        const availableHeight = shouldOpenUpward ? spaceAbove : spaceBelow;
-        const calculatedMaxHeight = Math.min(maxDropdownHeight, availableHeight);
-
-        setPosition({
-          top: shouldOpenUpward ? rect.top - calculatedMaxHeight - 4 : rect.bottom + 4,
-          left: rect.left,
-          width: rect.width,
-          maxHeight: calculatedMaxHeight,
-        });
-      };
-
-      // Calculate immediately
-      updatePosition();
-
-      // Also update on scroll/resize in case modal is scrollable
-      window.addEventListener('scroll', updatePosition, true);
-      window.addEventListener('resize', updatePosition);
-      return () => {
-        window.removeEventListener('scroll', updatePosition, true);
-        window.removeEventListener('resize', updatePosition);
-      };
-    }
-  }, [isOpen]);
-
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -95,30 +67,8 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
     setIsOpen(false);
   };
 
-  // Calculate position synchronously before render using a ref
-  const getPosition = () => {
-    if (!buttonRef.current) return position;
-    const rect = buttonRef.current.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
-    const maxDropdownHeight = 256;
-    const spacing = 8;
-
-    const spaceBelow = viewportHeight - rect.bottom - spacing;
-    const spaceAbove = rect.top - spacing;
-    const shouldOpenUpward = spaceBelow < maxDropdownHeight && spaceAbove > spaceBelow;
-    const availableHeight = shouldOpenUpward ? spaceAbove : spaceBelow;
-    const calculatedMaxHeight = Math.min(maxDropdownHeight, availableHeight);
-
-    return {
-      top: shouldOpenUpward ? rect.top - calculatedMaxHeight - 4 : rect.bottom + 4,
-      left: rect.left,
-      width: rect.width,
-      maxHeight: calculatedMaxHeight,
-    };
-  };
-
-  // Get position inline for rendering to avoid flash
-  const renderPosition = isOpen ? getPosition() : position;
+  // Get position inline for rendering - this calculates on every render when open
+  const position = isOpen ? getPosition() : { top: 0, left: 0, width: 0 };
 
   return (
     <>
@@ -145,12 +95,11 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
         createPortal(
           <div
             ref={dropdownRef}
-            className="fixed z-[9999] py-1 bg-neutral-900 border border-white/20 rounded-lg shadow-2xl overflow-auto"
+            className="fixed z-[9999] py-1 bg-neutral-900 border border-white/20 rounded-lg shadow-2xl max-h-64 overflow-auto"
             style={{
-              top: renderPosition.top,
-              left: renderPosition.left,
-              width: renderPosition.width,
-              maxHeight: renderPosition.maxHeight,
+              top: position.top,
+              left: position.left,
+              width: position.width,
             }}
           >
             {collections.map((collection) => (
