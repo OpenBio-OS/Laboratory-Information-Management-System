@@ -1298,12 +1298,12 @@ export const EquipmentPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const queryClient = useQueryClient();
 
-  const { data: equipment = [] } = useQuery({
+  const { data: equipment = [], isLoading: equipmentLoading } = useQuery({
     queryKey: ['equipment'],
     queryFn: equipmentApi.list,
   });
 
-  const { data: locations = [] } = useQuery({
+  const { data: locations = [], isLoading: locationsLoading } = useQuery({
     queryKey: ['equipment-locations'],
     queryFn: equipmentApi.listLocations,
   });
@@ -1436,7 +1436,11 @@ export const EquipmentPage: React.FC = () => {
               </button>
             </div>
 
-            {locations.length === 0 ? (
+            {locationsLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <div className="w-5 h-5 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
+              </div>
+            ) : locations.length === 0 ? (
               <div className="text-sm mx-4 text-white/30 px-2 py-4 text-center border border-dashed border-white/10 rounded-lg">
                 No facilities yet.
                 <br />

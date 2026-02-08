@@ -22,7 +22,7 @@ export function InventoryPage() {
   const { pendingItemId, clearPendingItem } = useNavigation();
 
   // Fetch samples
-  const { data: samples = [] } = useQuery({
+  const { data: samples = [], isLoading: samplesLoading } = useQuery({
     queryKey: ['samples'],
     queryFn: inventoryApi.listSamples
   });
@@ -209,7 +209,11 @@ export function InventoryPage() {
         <div className="flex-1 overflow-auto">
           <div className="p-6 min-w-max">
             <div className="mx-auto m-6">
-            {searchQuery ? (
+            {samplesLoading || containersLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="w-8 h-8 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
+              </div>
+            ) : searchQuery ? (
               /* Search Results View */
               <div>
                 <div className="mb-6">
