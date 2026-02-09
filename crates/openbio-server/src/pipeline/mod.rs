@@ -1,19 +1,13 @@
-// Module: Pipeline Automator
-// Role: The "Factory" - wraps Nextflow/Snakemake to automate bioinformatics pipelines
-
-mod nextflow;
-mod websocket;
-
-pub use nextflow::{NextflowConfig, NextflowWrapper, PipelineStatus};
-pub use websocket::PipelineWebSocket;
+// Module: Pipeline Metadata Storage
+// Role: Store and retrieve pipeline run records from the database
+// NOTE: The SERVER does NOT spawn Nextflow. All execution happens CLIENT-SIDE in Tauri.
 
 use crate::db::prisma::PrismaClient;
 use crate::error::ServerError;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
-/// Pipeline execution request
+/// Pipeline execution request (metadata for creating a run record)
 #[derive(Debug, Deserialize)]
 pub struct PipelineRequest {
     pub experiment_id: String,
@@ -30,150 +24,62 @@ pub struct PipelineResponse {
     pub message: String,
 }
 
-/// Manages active pipeline runs
+/// Status of a pipeline run
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PipelineStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed(String),
+    Cancelled,
+    Unknown,
+}
+
+/// Manages pipeline run metadata in the database
+/// NOTE: Does NOT spawn processes - that happens client-side
 pub struct PipelineManager {
     db: Arc<PrismaClient>,
-    active_runs: Arc<RwLock<std::collections::HashMap<String, NextflowWrapper>>>,
 }
 
 impl PipelineManager {
     pub fn new(db: Arc<PrismaClient>) -> Self {
-        Self {
-            db,
-            active_runs: Arc::new(RwLock::new(std::collections::HashMap::new())),
-        }
+        Self { db }
     }
 
-    /// Start a new pipeline run
+    /// Create a new pipeline run record (metadata only)
+    /// The actual pipeline execution happens client-side in Tauri
     pub async fn start_pipeline(
         &self,
         request: PipelineRequest,
     ) -> Result<PipelineResponse, ServerError> {
-        // Job A: Dynamic Configuration - generate config from DB state
-        let config = self.generate_config(&request).await?;
-
-        // Create pipeline run record in DB
+        // Create pipeline run record in DB with PENDING status
         let run_id = self.create_run_record(&request).await?;
-
-        // Job B: Process Management - spawn Nextflow in background
-        let wrapper = NextflowWrapper::new(run_id.clone(), config);
-
-        // Store active run
-        self.active_runs
-            .write()
-            .await
-            .insert(run_id.clone(), wrapper);
-
-        // Update status in DB to RUNNING
-        self.update_run_status(&run_id, "RUNNING", None).await?;
 
         Ok(PipelineResponse {
             run_id: run_id.clone(),
-            status: "RUNNING".to_string(),
-            message: format!("Pipeline {} started", run_id),
+            status: "PENDING".to_string(),
+            message: format!(
+                "Pipeline run {} created. Client will start execution.",
+                run_id
+            ),
         })
-    }
-
-    /// Generate Nextflow configuration from database state
-    async fn generate_config(
-        &self,
-        request: &PipelineRequest,
-    ) -> Result<NextflowConfig, ServerError> {
-        let mut config = NextflowConfig::default();
-        config.pipeline_name = request.pipeline_type.clone();
-
-        // Parse custom_params to get experiment inputs
-        if let Some(params) = &request.custom_params {
-            if let Some(inputs) = params.get("experiment_inputs").and_then(|v| v.as_array()) {
-                // Generate samplesheet content
-                let mut csv_content =
-                    String::from("sample,fastq_1,fastq_2,strandedness,replicate\n");
-
-                for input in inputs {
-                    let experiment_name = input["experiment_name"].as_str().unwrap_or("unknown");
-                    let group = input["group"].as_str().unwrap_or("treatment"); // Default to treatment if missing
-                                                                                // Use group as sample name prefix or just use experiment name?
-                                                                                // For now, use experiment name as sample name to keep it simple
-                                                                                // But maybe user wants group info in samplesheet?
-                                                                                // The standard nf-core/rnaseq samplesheet has: sample,fastq_1,fastq_2,strandedness
-                                                                                // Some pipelines use 'group' column. Let's include 'group' if possible or map it to sample name.
-                                                                                // Actually, let's stick to the standard 4 columns: sample,fastq_1,fastq_2,strandedness
-                                                                                // And replicate?
-
-                    // Let's use the schema: sample,fastq_1,fastq_2,strandedness
-                    // And maybe append group to sample name: "ExperimentName_Group"
-                    let sample_name = format!("{}_{}", experiment_name, group);
-
-                    let files = input["files"].as_array();
-                    if let Some(files) = files {
-                        // Naive pairing: find first two fastq files
-                        let fastqs: Vec<&str> = files
-                            .iter()
-                            .filter_map(|f| {
-                                let path = f["path"].as_str()?;
-                                if path.ends_with(".fastq")
-                                    || path.ends_with(".fastq.gz")
-                                    || path.ends_with(".fq")
-                                    || path.ends_with(".fq.gz")
-                                {
-                                    Some(path)
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-
-                        if !fastqs.is_empty() {
-                            let fq1 = fastqs[0];
-                            let fq2 = if fastqs.len() > 1 { fastqs[1] } else { "" };
-                            let strandedness = "auto"; // Default
-                            let replicate = "1"; // Default
-
-                            // Standard nf-core/rnaseq: sample,fastq_1,fastq_2,strandedness
-                            // Custom columns can be added. Let's add 'replicate' too just in case.
-                            // CSV line: sample,fastq_1,fastq_2,strandedness
-                            csv_content.push_str(&format!(
-                                "{},{},{},{}\n",
-                                sample_name, fq1, fq2, strandedness
-                            ));
-                        }
-                    }
-                }
-
-                // Write to temp file
-                use std::io::Write;
-                let mut temp_path = std::env::temp_dir();
-                temp_path.push(format!("samplesheet_{}.csv", uuid::Uuid::new_v4()));
-
-                let mut file = std::fs::File::create(&temp_path).map_err(|e| {
-                    ServerError::Internal(format!("Failed to create samplesheet: {}", e))
-                })?;
-
-                file.write_all(csv_content.as_bytes()).map_err(|e| {
-                    ServerError::Internal(format!("Failed to write samplesheet: {}", e))
-                })?;
-
-                config.input_samplesheet = temp_path;
-            }
-        }
-
-        // Output directory (temp for now)
-        let mut out_dir = std::env::temp_dir();
-        out_dir.push(format!("nf_out_{}", uuid::Uuid::new_v4()));
-        config.output_dir = out_dir;
-
-        Ok(config)
     }
 
     /// Create pipeline run record in database
     async fn create_run_record(&self, request: &PipelineRequest) -> Result<String, ServerError> {
         use crate::db::prisma::pipeline_run;
 
+        // Serialize custom params to JSON string
         let config_json = request
             .custom_params
             .as_ref()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "{}".to_string());
+            .map(|p| serde_json::to_string(p).ok())
+            .flatten();
+
+        let mut params = vec![pipeline_run::status::set("PENDING".to_string())];
+        if let Some(json) = config_json {
+            params.push(pipeline_run::config_json::set(Some(json)));
+        }
 
         let run = self
             .db
@@ -181,11 +87,7 @@ impl PipelineManager {
             .create(
                 crate::db::prisma::experiment::id::equals(request.experiment_id.clone()),
                 request.pipeline_type.clone(),
-                vec![
-                    pipeline_run::status::set("PENDING".to_string()),
-                    pipeline_run::started_at::set(Some(chrono::Utc::now().into())),
-                    pipeline_run::config_json::set(Some(config_json)),
-                ],
+                params,
             )
             .exec()
             .await
@@ -194,25 +96,35 @@ impl PipelineManager {
         Ok(run.id)
     }
 
-    /// Update status in database
-    async fn update_run_status(
+    /// Update status in database (called by client via API)
+    pub async fn update_run_status(
         &self,
         run_id: &str,
         status: &str,
-        exit_code: Option<i32>,
+        error_message: Option<String>,
     ) -> Result<(), ServerError> {
         use crate::db::prisma::pipeline_run;
 
         let mut updates = vec![pipeline_run::status::set(status.to_string())];
 
-        if let Some(code) = exit_code {
-            updates.push(pipeline_run::exit_code::set(Some(code)));
+        // Set started_at when transitioning to RUNNING
+        if status == "RUNNING" {
+            updates.push(pipeline_run::started_at::set(Some(
+                chrono::Utc::now().fixed_offset(),
+            )));
         }
 
+        // Set completed_at when finished
         if status == "COMPLETED" || status == "FAILED" || status == "CANCELLED" {
             updates.push(pipeline_run::completed_at::set(Some(
-                chrono::Utc::now().into(),
+                chrono::Utc::now().fixed_offset(),
             )));
+        }
+
+        // Store error message in config_json if failed
+        if let Some(err) = error_message {
+            let error_json = serde_json::json!({ "error": err }).to_string();
+            updates.push(pipeline_run::config_json::set(Some(error_json)));
         }
 
         self.db
@@ -225,25 +137,13 @@ impl PipelineManager {
         Ok(())
     }
 
-    /// Cancel a running pipeline
+    /// Cancel a pipeline (just updates status - actual cancellation happens client-side)
     pub async fn cancel_pipeline(&self, run_id: &str) -> Result<(), ServerError> {
-        if let Some(wrapper) = self.active_runs.write().await.remove(run_id) {
-            wrapper.cancel().await?;
-        }
-
-        self.update_run_status(run_id, "CANCELLED", None).await?;
-
-        Ok(())
+        self.update_run_status(run_id, "CANCELLED", None).await
     }
 
     /// Get status of a pipeline run
     pub async fn get_status(&self, run_id: &str) -> Result<PipelineStatus, ServerError> {
-        // First check active runs (in memory)
-        if let Some(wrapper) = self.active_runs.read().await.get(run_id) {
-            return Ok(wrapper.status());
-        }
-
-        // If not active, check database
         use crate::db::prisma::pipeline_run;
 
         let run = self
@@ -260,7 +160,18 @@ impl PipelineManager {
             "PENDING" => Ok(PipelineStatus::Pending),
             "RUNNING" => Ok(PipelineStatus::Running),
             "COMPLETED" => Ok(PipelineStatus::Completed),
-            "FAILED" => Ok(PipelineStatus::Failed("Detailed error in logs".to_string())),
+            "FAILED" => {
+                let error_msg = run
+                    .config_json
+                    .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+                    .and_then(|v| {
+                        v.get("error")
+                            .and_then(|e| e.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .unwrap_or_else(|| "Check logs for details".to_string());
+                Ok(PipelineStatus::Failed(error_msg))
+            }
             "CANCELLED" => Ok(PipelineStatus::Cancelled),
             _ => Ok(PipelineStatus::Unknown),
         }
@@ -292,7 +203,12 @@ impl PipelineManager {
                 "status": r.status,
                 "startedAt": r.started_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
                 "completedAt": r.completed_at.map(|d| d.to_rfc3339()),
-                "error": if r.status == "FAILED" { Some("Pipeline execution failed") } else { None }
+                "error": if r.status == "FAILED" {
+                    r.config_json.as_ref()
+                        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+                        .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(|s| s.to_string()))
+                        .or_else(|| Some("Pipeline execution failed".to_string()))
+                } else { None }
             })
         }).collect();
 

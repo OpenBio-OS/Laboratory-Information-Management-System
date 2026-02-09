@@ -21,6 +21,7 @@ import {
   Plus,
   Check,
 } from 'lucide-react';
+import { DockerRequirementModal } from './DockerRequirementModal';
 
 interface FileInfo {
   filename: string;
@@ -63,6 +64,8 @@ interface NewPipelineRunDialogProps {
 interface SelectedExperimentInput {
   experiment: Experiment;
   group: string;
+  sampleName: string;
+  replicate: string;
 }
 
 // Folder Tree Node component
@@ -186,7 +189,9 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
 
   // Pipeline configuration state
   const [availablePipelines, setAvailablePipelines] = useState<PipelineTemplate[]>([]);
-  const [selectedPipeline, setSelectedPipeline] = useState<string>('');
+  const [selectedTemplate, setSelectedTemplate] = useState<PipelineTemplate | null>(null);
+  const [showDockerModal, setShowDockerModal] = useState(false);
+  const [isCheckingDocker, setIsCheckingDocker] = useState(false);
   const [parameters, setParameters] = useState<Record<string, string>>({});
   const [isLaunching, setIsLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -247,19 +252,38 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
       const templates = await invoke<PipelineTemplate[]>('get_pipeline_templates');
       setAvailablePipelines(templates);
       if (templates.length > 0) {
-        setSelectedPipeline(templates[0].name);
+        setSelectedTemplate(templates[0]);
         initializeParameters(templates[0]);
       }
     } catch (error) {
       console.error('Failed to load pipeline templates:', error);
-      // Fallback templates
       const fallback: PipelineTemplate[] = [
         {
           name: 'nf-core/rnaseq',
           description: 'RNA sequencing analysis pipeline',
           version: '3.14.0',
           parameters: [
-            { name: 'genome', label: 'Reference Genome', type: 'select', required: true, options: ['GRCh38', 'GRCm39', 'TAIR10'] },
+            {
+              name: 'genome',
+              label: 'Reference Genome',
+              type: 'select',
+              required: true,
+              options: [
+                'GRCh38',      // Human
+                'GRCh37',      // Human (legacy)
+                'GRCm39',      // Mouse
+                'GRCm38',      // Mouse (legacy)
+                'R64-1-1',     // Yeast (S. cerevisiae)
+                'WBcel235',    // C. elegans
+                'BDGP6',       // Drosophila
+                'TAIR10',      // Arabidopsis
+                'GRCz11',      // Zebrafish
+                'Rnor_6.0',    // Rat
+                'CanFam3.1',   // Dog
+                'Sscrofa11.1', // Pig
+                'UMD3.1',      // Bovine
+              ]
+            },
             { name: 'aligner', label: 'Aligner', type: 'select', required: true, default: 'star_salmon', options: ['star_salmon', 'star_rsem', 'hisat2'] },
           ],
         },
@@ -268,7 +292,13 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
           description: 'Single-cell RNA-seq analysis',
           version: '2.7.1',
           parameters: [
-            { name: 'genome', label: 'Reference Genome', type: 'select', required: true, options: ['GRCh38', 'GRCm39'] },
+            {
+              name: 'genome',
+              label: 'Reference Genome',
+              type: 'select',
+              required: true,
+              options: ['GRCh38', 'GRCh37', 'GRCm39', 'GRCm38']
+            },
             { name: 'protocol', label: 'Protocol', type: 'select', required: true, options: ['10x', 'smartseq2', 'dropseq'] },
           ],
         },
@@ -283,7 +313,7 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
         },
       ];
       setAvailablePipelines(fallback);
-      setSelectedPipeline(fallback[0].name);
+      setSelectedTemplate(fallback[0]);
       initializeParameters(fallback[0]);
     }
   };
@@ -299,9 +329,9 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
   };
 
   const handlePipelineChange = (pipelineName: string) => {
-    setSelectedPipeline(pipelineName);
     const pipeline = availablePipelines.find((p) => p.name === pipelineName);
     if (pipeline) {
+      setSelectedTemplate(pipeline);
       initializeParameters(pipeline);
     }
   };
@@ -328,7 +358,12 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
       if (exists) {
         return prev.filter((p) => p.experiment.id !== experiment.id);
       } else {
-        return [...prev, { experiment, group: 'treatment' }];
+        return [...prev, {
+          experiment,
+          group: 'treatment',
+          sampleName: experiment.name, // Default to experiment name
+          replicate: '1'
+        }];
       }
     });
   };
@@ -341,8 +376,24 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
     );
   };
 
+  const handleUpdateSampleName = (experimentId: string, sampleName: string) => {
+    setSelectedExperiments((prev) =>
+      prev.map((item) =>
+        item.experiment.id === experimentId ? { ...item, sampleName } : item
+      )
+    );
+  };
+
+  const handleUpdateReplicate = (experimentId: string, replicate: string) => {
+    setSelectedExperiments((prev) =>
+      prev.map((item) =>
+        item.experiment.id === experimentId ? { ...item, replicate } : item
+      )
+    );
+  };
+
   const handleLaunchPipeline = async () => {
-    if (selectedExperiments.length === 0 || !selectedPipeline) return;
+    if (selectedExperiments.length === 0 || !selectedTemplate) return;
 
     setIsLaunching(true);
     setError(null);
@@ -355,14 +406,16 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
       const experimentInputs = selectedExperiments.map((item) => ({
         experiment_id: item.experiment.id,
         experiment_name: item.experiment.name,
+        sample_name: item.sampleName,
         group: item.group,
+        replicate: item.replicate,
         files: experimentFiles[item.experiment.id] || [],
       }));
 
       await invoke('start_pipeline', {
         request: {
           experiment_id: primaryExperiment.id,
-          pipeline_type: selectedPipeline,
+          pipeline_type: selectedTemplate.name,
           genome: parameters.genome || null,
           custom_params: {
             ...parameters,
@@ -372,12 +425,30 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
       });
 
       onSuccess();
-      onClose();
-    } catch (err) {
-      console.error('Failed to start pipeline:', err);
-      setError(`Failed to start pipeline: ${err}`);
+      setStep('pipeline');
+    } catch (err: any) {
+      const msg = typeof err === 'string' ? err : err?.message || 'Failed to launch pipeline';
+      if (msg.includes('DOCKER_REQUIRED') || msg.toLowerCase().includes('docker')) {
+        setShowDockerModal(true);
+      } else {
+        setError(msg);
+      }
     } finally {
       setIsLaunching(false);
+    }
+  };
+
+  const handleRecheckDocker = async () => {
+    setIsCheckingDocker(true);
+    try {
+      const available = await invoke<boolean>('check_docker_installed');
+      if (available) {
+        setShowDockerModal(false);
+      }
+    } catch (err) {
+      console.error('Failed to recheck Docker:', err);
+    } finally {
+      setIsCheckingDocker(false);
     }
   };
 
@@ -386,8 +457,6 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
     (e) => !e.folderId &&
       (searchQuery === '' || e.name.toLowerCase().includes(searchQuery.toLowerCase()))
   );
-
-  const selectedTemplate = availablePipelines.find((p) => p.name === selectedPipeline);
 
 
 
@@ -531,6 +600,17 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
                           </div>
 
                           <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs text-white/40 w-16">Sample:</span>
+                            <input
+                              type="text"
+                              value={item.sampleName}
+                              onChange={(e) => handleUpdateSampleName(item.experiment.id, e.target.value)}
+                              placeholder="Sample Name"
+                              className="bg-black/40 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-brand-primary/50 w-full"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2 mb-2">
                             <span className="text-xs text-white/40">Group:</span>
                             <input
                               type="text"
@@ -538,6 +618,13 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
                               onChange={(e) => handleUpdateGroup(item.experiment.id, e.target.value)}
                               placeholder="e.g. treatment"
                               className="bg-black/40 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-brand-primary/50 w-24"
+                            />
+                            <span className="text-xs text-white/40 ml-2">Rep:</span>
+                            <input
+                              type="text"
+                              value={item.replicate}
+                              onChange={(e) => handleUpdateReplicate(item.experiment.id, e.target.value)}
+                              className="bg-black/40 border border-white/10 rounded px-1.5 py-1 text-xs text-white focus:outline-none focus:border-brand-primary/50 w-8 text-center"
                             />
                           </div>
 
@@ -563,17 +650,62 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
               {/* Selected Experiment Summary */}
               {/* Selected Experiment Summary */}
               <div className="p-4 bg-brand-primary/5 border border-brand-primary/20 rounded-xl">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 mb-4">
                   <FlaskConical size={18} className="text-brand-primary" />
                   <div>
                     <div className="font-medium text-white">
-                      {selectedExperiments.length} experiments selected
+                      Selected Experiments ({selectedExperiments.length})
                     </div>
                     <div className="text-sm text-white/40">
-                      {selectedExperiments.map(e => e.experiment.name).slice(0, 3).join(', ')}
-                      {selectedExperiments.length > 3 && ` +${selectedExperiments.length - 3} more`}
+                      Configure sample names and groups for analysis
                     </div>
                   </div>
+                </div>
+
+                <div className="overflow-hidden rounded-lg border border-white/10">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-white/5 border-b border-white/10">
+                      <tr>
+                        <th className="px-4 py-2 text-white/60 font-medium">Experiment</th>
+                        <th className="px-4 py-2 text-white/60 font-medium">Sample Name</th>
+                        <th className="px-4 py-2 text-white/60 font-medium">Group</th>
+                        <th className="px-4 py-2 text-white/60 font-medium">Rep</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {selectedExperiments.map((item) => (
+                        <tr key={item.experiment.id} className="bg-black/20">
+                          <td className="px-4 py-2 text-white">{item.experiment.name}</td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="text"
+                              value={item.sampleName}
+                              onChange={(e) => handleUpdateSampleName(item.experiment.id, e.target.value)}
+                              placeholder="Sample Name"
+                              className="bg-black/40 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-brand-primary/50 w-full"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="text"
+                              value={item.group}
+                              onChange={(e) => handleUpdateGroup(item.experiment.id, e.target.value)}
+                              placeholder="Group"
+                              className="bg-black/40 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-brand-primary/50 w-24"
+                            />
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <input
+                              type="text"
+                              value={item.replicate}
+                              onChange={(e) => handleUpdateReplicate(item.experiment.id, e.target.value)}
+                              className="bg-black/40 border border-white/10 rounded px-1.5 py-1 text-xs text-white focus:outline-none focus:border-brand-primary/50 w-10 text-center mx-auto"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
@@ -590,7 +722,7 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
                   </button>
                 </div>
                 <CustomSelect
-                  value={selectedPipeline}
+                  value={selectedTemplate?.name || ''}
                   onChange={handlePipelineChange}
                   options={pipelineOptions}
                   placeholder="Select a pipeline"
@@ -717,8 +849,8 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
             ) : (
               <button
                 onClick={handleLaunchPipeline}
-                disabled={!selectedPipeline || isLaunching}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!selectedTemplate || isLaunching}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLaunching ? (
                   <>
@@ -745,6 +877,15 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
             setAvailablePipelines((prev) => [...prev, { ...pipeline, isCustom: true }]);
             setShowAddPipeline(false);
           }}
+        />
+      )}
+
+      {/* Docker Requirement Modal */}
+      {showDockerModal && (
+        <DockerRequirementModal
+          onClose={() => setShowDockerModal(false)}
+          onRecheck={handleRecheckDocker}
+          isChecking={isCheckingDocker}
         />
       )}
     </div>

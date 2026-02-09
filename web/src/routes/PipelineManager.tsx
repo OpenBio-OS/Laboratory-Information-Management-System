@@ -1,10 +1,10 @@
 // Pipeline Management - List and manage multiple pipeline runs
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { PipelineSetupWizard } from '../components/PipelineSetupWizard';
 import { NewPipelineRunDialog } from '../components/NewPipelineRunDialog';
-import { Plus } from 'lucide-react';
+import { Plus, X, Terminal } from 'lucide-react';
 
 interface PipelineRun {
   id: string;
@@ -25,6 +25,7 @@ export function PipelineManager() {
   // null = still checking, true = needs setup, false = ready
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const [showNewRunDialog, setShowNewRunDialog] = useState(false);
+  const [selectedRunForLogs, setSelectedRunForLogs] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,8 +84,7 @@ export function PipelineManager() {
   };
 
   const viewLogs = (runId: string) => {
-    // TODO: Navigate to logs view when implemented
-    console.log('View logs for', runId);
+    setSelectedRunForLogs(runId);
   };
 
   const viewResults = (runId: string) => {
@@ -222,7 +222,9 @@ export function PipelineManager() {
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        {new Date(run.startedAt).toLocaleString()}
+                        {run.startedAt && !isNaN(new Date(run.startedAt).getTime())
+                          ? new Date(run.startedAt).toLocaleString()
+                          : 'Pending'}
                       </span>
                     </div>
                   </div>
@@ -292,6 +294,100 @@ export function PipelineManager() {
           }}
         />
       )}
+
+      {/* Pipeline Logs Modal */}
+      {selectedRunForLogs && (
+        <PipelineLogsModal
+          runId={selectedRunForLogs}
+          onClose={() => setSelectedRunForLogs(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Pipeline Logs Modal Component
+function PipelineLogsModal({ runId, onClose }: { runId: string; onClose: () => void }) {
+  const [logs, setLogs] = useState<string>('Loading logs...');
+  const [isLive] = useState(true);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const fetchLogs = async () => {
+      try {
+        const logText = await invoke<string>('get_pipeline_logs', { runId });
+        setLogs(logText || 'No logs available yet...');
+      } catch (err) {
+        console.error('Failed to fetch logs:', err);
+        setLogs(`Error fetching logs: ${err}`);
+      }
+    };
+
+    fetchLogs();
+    if (isLive) {
+      interval = setInterval(fetchLogs, 500);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [runId, isLive]);
+
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs]);
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl w-[90vw] h-[80vh] max-w-5xl flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Terminal size={20} className="text-brand-primary" />
+            <h3 className="text-lg font-bold text-white">Pipeline Logs</h3>
+            <span className="text-xs text-white/40 font-mono">{runId.slice(0, 8)}...</span>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isLive}
+                onChange={(e) => setIsLive(e.target.checked)}
+                className="rounded border-white/20"
+              />
+              Live Updates
+            </label> */}
+            <button
+              onClick={onClose}
+              className="text-white/40 hover:text-white transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* Logs Content */}
+        <div className="flex-1 overflow-auto p-4 bg-black/50">
+          <pre className="font-mono text-xs text-white/80 whitespace-pre-wrap">
+            {logs}
+            <div ref={logsEndRef} />
+          </pre>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-white/10 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm border border-white/10 text-white/80 rounded-lg hover:bg-white/5 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

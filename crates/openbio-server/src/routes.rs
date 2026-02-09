@@ -55,6 +55,10 @@ fn pipeline_routes() -> Router<AppState> {
         .route("/runs", get(list_pipeline_runs))
         .route("/runs/{id}", get(get_pipeline_run_status))
         .route(
+            "/runs/{id}/status",
+            axum::routing::patch(update_pipeline_status),
+        )
+        .route(
             "/runs/{id}/cancel",
             axum::routing::post(cancel_pipeline_run),
         )
@@ -85,6 +89,27 @@ async fn get_pipeline_run_status(
 ) -> impl IntoResponse {
     match state.pipeline_manager.get_status(&id).await {
         Ok(status) => (StatusCode::OK, Json(status)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct StatusUpdateRequest {
+    status: String,
+    error_message: Option<String>,
+}
+
+async fn update_pipeline_status(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<StatusUpdateRequest>,
+) -> impl IntoResponse {
+    match state
+        .pipeline_manager
+        .update_run_status(&id, &payload.status, payload.error_message)
+        .await
+    {
+        Ok(_) => StatusCode::OK.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -922,6 +947,11 @@ async fn upload_experiment_file(
     Path(experiment_id): Path<String>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    println!(
+        "Upload: Starting processing for experiment {}...",
+        experiment_id
+    );
+
     // Create uploads directory if it doesn't exist
     let uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
 
@@ -933,15 +963,17 @@ async fn upload_experiment_file(
     let mut uploaded_files = vec![];
     use crate::db::prisma::digital_asset;
 
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|_| StatusCode::BAD_REQUEST)?
-    {
-        let filename = field
-            .file_name()
-            .ok_or(StatusCode::BAD_REQUEST)?
-            .to_string();
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        println!("Upload: Error getting next field: {}", e);
+        StatusCode::BAD_REQUEST
+    })? {
+        println!("Upload: Processing field: {:?}", field.name());
+        let filename = field.file_name().map(|f| f.to_string()).ok_or_else(|| {
+            println!("Upload: Field missing filename");
+            StatusCode::BAD_REQUEST
+        })?;
+
+        println!("Upload: Found file: {}", filename);
 
         // Simple content type guessing
         let content_type = field
@@ -949,8 +981,12 @@ async fn upload_experiment_file(
             .map(|s| s.to_string())
             .unwrap_or("application/octet-stream".to_string());
 
-        let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
+        let data = field.bytes().await.map_err(|e| {
+            println!("Upload: Error reading bytes for {}: {}", filename, e);
+            StatusCode::BAD_REQUEST
+        })?;
         let size = data.len();
+        println!("Upload: Read {} bytes", size);
 
         let file_path = uploads_dir.join(&filename);
         let mut file =

@@ -1972,10 +1972,14 @@ export function ExperimentsPage() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    console.log('[ExperimentsPage] handleFileUpload triggered', { files, selectedExperimentId: selectedExperiment?.id });
     if (files.length > 0 && selectedExperiment) {
+      console.log('[ExperimentsPage] Mutating uploadFileMutation');
       uploadFileMutation.mutate({ experimentId: selectedExperiment.id, files });
       // Reset input so same files can be uploaded again if needed
       e.target.value = '';
+    } else {
+      console.warn('[ExperimentsPage] Upload skipped: No files or no selected experiment', { filesLength: files.length, hasExperiment: !!selectedExperiment });
     }
   };
 
@@ -2074,6 +2078,7 @@ export function ExperimentsPage() {
                 ref={fileInputRef}
                 type="file"
                 multiple
+                accept=".fastq,.fastq.gz,.fq,.fq.gz"
                 className="hidden"
                 onChange={handleFileUpload}
               />

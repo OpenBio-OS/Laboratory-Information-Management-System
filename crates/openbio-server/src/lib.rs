@@ -9,10 +9,10 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 pub mod db;
+pub mod error;
+pub mod pipeline;
 pub mod routes;
 pub mod state;
-pub mod pipeline;
-pub mod error;
 
 pub use state::AppState;
 
@@ -27,11 +27,14 @@ pub async fn run_server(addr: SocketAddr, state: AppState) -> anyhow::Result<()>
         .route("/health", get(routes::health))
         .nest("/api", routes::api_routes())
         .layer(cors)
+        .layer(axum::extract::DefaultBodyLimit::max(
+            100 * 1024 * 1024 * 1024,
+        )) // 100GB limit
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
     tracing::info!("Starting OpenBio server on {}", addr);
-    
+
     // Log if API key validation is enabled
     if std::env::var("OPENBIO_API_KEY").is_ok() {
         tracing::info!("API key authentication is ENABLED");
@@ -47,10 +50,15 @@ pub async fn run_server(addr: SocketAddr, state: AppState) -> anyhow::Result<()>
 
 /// Start the API server in a new tokio runtime on a background thread
 /// Returns immediately, server runs until process exits
-/// 
+///
 /// apply_migrations: Set to true for local/hub mode (SQLite with migrations),
 ///                   false for spoke/enterprise mode (remote database)
-pub fn spawn_embedded_server(port: u16, database_url: String, storage_path: std::path::PathBuf, apply_migrations: bool) {
+pub fn spawn_embedded_server(
+    port: u16,
+    database_url: String,
+    storage_path: std::path::PathBuf,
+    apply_migrations: bool,
+) {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
 

@@ -3,6 +3,8 @@
 // Uses a ref to prevent duplicate setup calls on React remounts.
 
 import { useState, useEffect, useRef } from 'react';
+import { AlertTriangle, ExternalLink, RefreshCw } from 'lucide-react';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -18,6 +20,7 @@ interface PipelineSetupWizardProps {
 
 export function PipelineSetupWizard({ onComplete }: PipelineSetupWizardProps) {
   const [stage, setStage] = useState<'installing' | 'docker-check' | 'complete' | 'error'>('installing');
+  const [isCheckingDocker, setIsCheckingDocker] = useState(false);
   const [progress, setProgress] = useState<SetupProgress>({
     stage: 'init',
     message: 'Preparing pipeline environment...',
@@ -90,6 +93,7 @@ export function PipelineSetupWizard({ onComplete }: PipelineSetupWizardProps) {
   };
 
   const checkDocker = async () => {
+    setIsCheckingDocker(true);
     try {
       const available = await invoke<boolean>('check_docker_installed');
       setStage(available ? 'complete' : 'docker-check');
@@ -99,6 +103,8 @@ export function PipelineSetupWizard({ onComplete }: PipelineSetupWizardProps) {
       }
     } catch {
       setStage('docker-check');
+    } finally {
+      setIsCheckingDocker(false);
     }
   };
 
@@ -159,40 +165,59 @@ export function PipelineSetupWizard({ onComplete }: PipelineSetupWizardProps) {
   if (stage === 'docker-check') {
     return (
       <div className="flex items-center justify-center h-full bg-main">
-        <div className="bg-neutral-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-8 max-w-md w-full">
-          <div className="text-center mb-6">
-            <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-500/20">
-              <svg className="w-8 h-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-              </svg>
+        <div className="bg-neutral-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-8 max-w-md w-full -mt-12">
+          <div className="pt-5 pb-4 flex flex-col items-center text-center">
+            <div className="relative mb-6 group">
+              <div className="absolute inset-0 bg-blue-500/20 blur-2xl rounded-full group-hover:bg-blue-500/30 transition-all duration-500" />
+              <img
+                src="/docker-branding/docker-logo-blue.svg"
+                alt="Docker Logo"
+                className="relative w-32 h-auto drop-shadow-2xl"
+              />
             </div>
-            <h2 className="text-2xl font-bold text-white mb-2">Docker Recommended</h2>
-            <p className="text-white/60 text-sm mb-6">
-              Pipelines use Docker to run analysis tools in isolated containers.
+
+            <h2 className="text-2xl font-bold text-white mb-2">Docker Required</h2>
+            <p className="text-white/60 text-sm leading-relaxed">
+              To run analysis pipelines, OpenBio requires Docker to be installed and <span className='font-semibold'>running</span> on your system.
             </p>
           </div>
 
-          <div className="space-y-3">
+          <div className="p-4 mb-2 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-start gap-3">
+            <AlertTriangle className="text-blue-400 shrink-0 mt-0.5" size={18} />
+            <div className="text-xs text-white/70 leading-relaxed">
+              Docker allows us to run bioinformatics tools in clean environments – think of it like a laminar flow hood for your software.
+            </div>
+          </div>
+
+          <div className="space-y-3 pt-2">
             <button
-              onClick={() => window.open('https://www.docker.com/products/docker-desktop/', '_blank')}
-              className="w-full px-4 py-3 bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-all active:scale-95"
+              onClick={() => openUrl('https://www.docker.com/products/docker-desktop/')}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white text-black font-semibold rounded-xl hover:bg-neutral-200 transition-all active:scale-[0.98]"
             >
-              Download Docker Desktop (Free)
+              <ExternalLink size={18} />
+              Get Docker Desktop
             </button>
-            <button
-              onClick={checkDocker}
-              className="w-full px-4 py-2 border border-white/10 text-white/80 rounded-lg hover:bg-white/5 transition-all text-sm"
-            >
-              I've Installed Docker — Recheck
-            </button>
-            <button
-              onClick={onComplete}
-              className="w-full px-4 py-2 text-white/40 hover:text-white/70 transition-all text-sm"
-            >
-              Skip for Now
-            </button>
+
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                onClick={checkDocker}
+                disabled={isCheckingDocker}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 text-white font-medium rounded-xl hover:bg-white/10 transition-all disabled:opacity-50 active:scale-[0.98]"
+              >
+                <RefreshCw size={16} className={isCheckingDocker ? 'animate-spin' : ''} />
+                {isCheckingDocker ? 'Checking...' : "I've Installed Docker — Recheck"}
+              </button>
+
+              <button
+                onClick={onComplete}
+                className="flex items-center justify-center px-4 py-2 text-white/30 hover:text-white/50 transition-all text-sm"
+              >
+                Skip for Now
+              </button>
+            </div>
           </div>
         </div>
+
       </div>
     );
   }

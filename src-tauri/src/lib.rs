@@ -2,8 +2,8 @@
 //!
 //! Handles app lifecycle, config management, and embedded server spawning.
 
-mod licensing;
 mod commands;
+mod licensing;
 mod pipeline_env;
 
 use serde::{Deserialize, Serialize};
@@ -12,9 +12,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
 
 /// Deployment mode
@@ -116,7 +116,11 @@ fn write_agent_log(equipment_id: &str, msg: &str) {
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
     let line = format!("[{}] {}\n", timestamp, msg);
     use std::io::Write;
-    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+    if let Ok(mut f) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
         let _ = f.write_all(line.as_bytes());
     }
 }
@@ -129,12 +133,18 @@ fn get_config(state: State<AppState>) -> AppConfig {
 
 /// Save config to disk and update state
 #[tauri::command]
-fn save_config(mut config: AppConfig, state: State<AppState>, app: AppHandle) -> Result<(), String> {
+fn save_config(
+    mut config: AppConfig,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
     // Set default auto_start for Hub and Agent modes if not explicitly set
-    if !config.auto_start && (config.mode == DeploymentMode::Hub || config.mode == DeploymentMode::Agent) {
+    if !config.auto_start
+        && (config.mode == DeploymentMode::Hub || config.mode == DeploymentMode::Agent)
+    {
         config.auto_start = true;
     }
-    
+
     // Validate SERVER license for Hub and Enterprise modes
     if licensing::requires_license(&config.mode) {
         if let Some(license_key) = &config.license_key {
@@ -147,7 +157,7 @@ fn save_config(mut config: AppConfig, state: State<AppState>, app: AppHandle) ->
             return Err("License key is required for Hub and Enterprise modes".to_string());
         }
     }
-    
+
     // Create config directory if needed
     let dir = config_dir();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -172,7 +182,7 @@ fn save_config(mut config: AppConfig, state: State<AppState>, app: AppHandle) ->
                 if let Some(lab_name) = &config.lab_name {
                     start_mdns_broadcast(lab_name.clone(), config.server_port);
                 }
-                
+
                 // License is already validated above
                 tracing::info!("Hub instance running with valid license");
             }
@@ -221,7 +231,7 @@ fn spawn_local_agent(
     write_agent_log(&equipment_id, &format!("watch_folder: {}", watch_folder));
 
     let config = state.config.lock().unwrap();
-    
+
     // Get API URL based on current mode
     let api_url = match config.mode {
         DeploymentMode::Local | DeploymentMode::Hub => {
@@ -234,25 +244,31 @@ fn spawn_local_agent(
         }
     };
     let server_port = config.server_port;
-    write_agent_log(&equipment_id, &format!("server_port: {}, api_url: {}", server_port, api_url));
+    write_agent_log(
+        &equipment_id,
+        &format!("server_port: {}, api_url: {}", server_port, api_url),
+    );
     drop(config);
 
     // Get path to the openbio-agent binary
     let current_exe = std::env::current_exe();
     write_agent_log(&equipment_id, &format!("current_exe: {:?}", current_exe));
-    
+
     let agent_exe = current_exe
         .ok()
         .and_then(|exe| exe.parent().map(|p| p.join("openbio-agent")))
         .ok_or_else(|| "Could not determine agent executable path".to_string())?;
-    
+
     write_agent_log(&equipment_id, &format!("agent_exe path: {:?}", agent_exe));
-    write_agent_log(&equipment_id, &format!("agent_exe exists: {}", agent_exe.exists()));
+    write_agent_log(
+        &equipment_id,
+        &format!("agent_exe exists: {}", agent_exe.exists()),
+    );
 
     if !agent_exe.exists() {
         #[cfg(target_os = "windows")]
         let agent_exe = agent_exe.with_extension("exe");
-        
+
         #[cfg(not(target_os = "windows"))]
         if !agent_exe.exists() {
             let msg = format!("Agent executable not found at {:?}", agent_exe);
@@ -263,10 +279,19 @@ fn spawn_local_agent(
 
     // Check watch folder exists
     let watch_path = std::path::Path::new(&watch_folder);
-    write_agent_log(&equipment_id, &format!("watch_folder exists: {}", watch_path.exists()));
-    write_agent_log(&equipment_id, &format!("watch_folder is_dir: {}", watch_path.is_dir()));
+    write_agent_log(
+        &equipment_id,
+        &format!("watch_folder exists: {}", watch_path.exists()),
+    );
+    write_agent_log(
+        &equipment_id,
+        &format!("watch_folder is_dir: {}", watch_path.is_dir()),
+    );
     if !watch_path.is_dir() {
-        let msg = format!("Watch folder does not exist or is not a directory: {}", watch_folder);
+        let msg = format!(
+            "Watch folder does not exist or is not a directory: {}",
+            watch_folder
+        );
         write_agent_log(&equipment_id, &format!("ERROR: {}", msg));
         return Err(msg);
     }
@@ -279,14 +304,20 @@ fn spawn_local_agent(
     let agent_stdout_path = logs_dir().join(format!("agent-{}-stdout.log", equipment_id));
     let agent_stderr_path = logs_dir().join(format!("agent-{}-stderr.log", equipment_id));
     let _ = fs::create_dir_all(logs_dir());
-    
+
     let stdout_file = fs::File::create(&agent_stdout_path)
         .map_err(|e| format!("Failed to create stdout log: {}", e))?;
     let stderr_file = fs::File::create(&agent_stderr_path)
         .map_err(|e| format!("Failed to create stderr log: {}", e))?;
-    
-    write_agent_log(&equipment_id, &format!("stdout log: {:?}", agent_stdout_path));
-    write_agent_log(&equipment_id, &format!("stderr log: {:?}", agent_stderr_path));
+
+    write_agent_log(
+        &equipment_id,
+        &format!("stdout log: {:?}", agent_stdout_path),
+    );
+    write_agent_log(
+        &equipment_id,
+        &format!("stderr log: {:?}", agent_stderr_path),
+    );
 
     // Spawn the agent process with stdout/stderr redirected to log files
     write_agent_log(&equipment_id, "Spawning agent process...");
@@ -304,7 +335,10 @@ fn spawn_local_agent(
             msg
         })?;
 
-    write_agent_log(&equipment_id, &format!("Agent process spawned, pid: {}", child.id()));
+    write_agent_log(
+        &equipment_id,
+        &format!("Agent process spawned, pid: {}", child.id()),
+    );
 
     // Store the child process
     let mut agents = state.local_agents.lock().unwrap();
@@ -314,34 +348,40 @@ fn spawn_local_agent(
     }
     agents.insert(equipment_id.clone(), child);
     drop(agents);
-    
+
     // Configure the agent in a background thread
     let equip_id = equipment_id.clone();
     let watch_folder_clone = watch_folder.clone();
     std::thread::spawn(move || {
-        write_agent_log(&equip_id, "Background thread: waiting 2s for agent to start...");
+        write_agent_log(
+            &equip_id,
+            "Background thread: waiting 2s for agent to start...",
+        );
         std::thread::sleep(std::time::Duration::from_secs(2));
-        
+
         let agent_api = format!("http://localhost:{}", agent_port);
         write_agent_log(&equip_id, &format!("Agent API: {}", agent_api));
-        
+
         // First, check if agent is alive
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
             .build()
             .unwrap();
-        
+
         match client.get(&agent_api).send() {
             Ok(resp) => {
                 let body = resp.text().unwrap_or_default();
                 write_agent_log(&equip_id, &format!("Agent health check OK: {}", body));
             }
             Err(e) => {
-                write_agent_log(&equip_id, &format!("ERROR: Agent not reachable at {}: {}", agent_api, e));
+                write_agent_log(
+                    &equip_id,
+                    &format!("ERROR: Agent not reachable at {}: {}", agent_api, e),
+                );
                 return;
             }
         }
-        
+
         // Configure the agent
         let config_payload = serde_json::json!({
             "equipment_id": equip_id,
@@ -350,29 +390,31 @@ fn spawn_local_agent(
             "upload_api_url": format!("http://localhost:{}", server_port),
             "api_key": null,
         });
-        
+
         write_agent_log(&equip_id, &format!("Sending config: {}", config_payload));
-        
-        match client.post(format!("{}/config", agent_api))
+
+        match client
+            .post(format!("{}/config", agent_api))
             .json(&config_payload)
             .send()
         {
             Ok(resp) => {
                 let status = resp.status();
                 let body = resp.text().unwrap_or_default();
-                write_agent_log(&equip_id, &format!("Config response: {} - {}", status, body));
+                write_agent_log(
+                    &equip_id,
+                    &format!("Config response: {} - {}", status, body),
+                );
             }
             Err(e) => {
                 write_agent_log(&equip_id, &format!("ERROR: Failed to set config: {}", e));
                 return;
             }
         }
-        
+
         // Start watching
         write_agent_log(&equip_id, "Sending /start...");
-        match client.post(format!("{}/start", agent_api))
-            .send()
-        {
+        match client.post(format!("{}/start", agent_api)).send() {
             Ok(resp) => {
                 let status = resp.status();
                 let body = resp.text().unwrap_or_default();
@@ -382,12 +424,15 @@ fn spawn_local_agent(
                 write_agent_log(&equip_id, &format!("ERROR: Failed to start watcher: {}", e));
             }
         }
-        
+
         write_agent_log(&equip_id, "========== AGENT SETUP COMPLETE ==========");
     });
 
     let log_location = logs_dir().join(format!("agent-{}.log", equipment_id));
-    write_agent_log(&equipment_id, &format!("Setup initiated. Full log at: {:?}", log_location));
+    write_agent_log(
+        &equipment_id,
+        &format!("Setup initiated. Full log at: {:?}", log_location),
+    );
     Ok(())
 }
 
@@ -395,9 +440,11 @@ fn spawn_local_agent(
 #[tauri::command]
 fn stop_local_agent(equipment_id: String, state: State<AppState>) -> Result<(), String> {
     let mut agents = state.local_agents.lock().unwrap();
-    
+
     if let Some(mut child) = agents.remove(&equipment_id) {
-        child.kill().map_err(|e| format!("Failed to kill agent: {}", e))?;
+        child
+            .kill()
+            .map_err(|e| format!("Failed to kill agent: {}", e))?;
         tracing::info!("Stopped local agent for equipment {}", equipment_id);
         Ok(())
     } else {
@@ -408,19 +455,17 @@ fn stop_local_agent(equipment_id: String, state: State<AppState>) -> Result<(), 
 /// Check if a local agent is running for equipment
 #[tauri::command]
 fn is_local_agent_running(equipment_id: String, state: State<AppState>) -> bool {
-    state.local_agents.lock().unwrap().contains_key(&equipment_id)
+    state
+        .local_agents
+        .lock()
+        .unwrap()
+        .contains_key(&equipment_id)
 }
 
 /// Get list of running local agent equipment IDs
 #[tauri::command]
 fn list_local_agents(state: State<AppState>) -> Vec<String> {
-    state
-        .local_agents
-        .lock()
-        .unwrap()
-        .keys()
-        .cloned()
-        .collect()
+    state.local_agents.lock().unwrap().keys().cloned().collect()
 }
 
 /// Update auto-start setting
@@ -428,11 +473,11 @@ fn list_local_agents(state: State<AppState>) -> Vec<String> {
 fn update_auto_start(enabled: bool, state: State<AppState>, app: AppHandle) -> Result<(), String> {
     let mut config = state.config.lock().unwrap();
     config.auto_start = enabled;
-    
+
     // Save to disk
     let content = toml::to_string_pretty(&*config).map_err(|e| e.to_string())?;
     fs::write(config_path(), content).map_err(|e| e.to_string())?;
-    
+
     // Apply auto-start setting immediately
     #[cfg(not(debug_assertions))]
     {
@@ -445,7 +490,7 @@ fn update_auto_start(enabled: bool, state: State<AppState>, app: AppHandle) -> R
             tracing::info!("Auto-start disabled");
         }
     }
-    
+
     Ok(())
 }
 
@@ -454,11 +499,11 @@ fn update_auto_start(enabled: bool, state: State<AppState>, app: AppHandle) -> R
 fn update_minimize_to_tray(enabled: bool, state: State<AppState>) -> Result<(), String> {
     let mut config = state.config.lock().unwrap();
     config.minimize_to_tray = enabled;
-    
+
     // Save to disk
     let content = toml::to_string_pretty(&*config).map_err(|e| e.to_string())?;
     fs::write(config_path(), content).map_err(|e| e.to_string())?;
-    
+
     tracing::info!("Minimize to tray: {}", enabled);
     Ok(())
 }
@@ -467,20 +512,20 @@ fn update_minimize_to_tray(enabled: bool, state: State<AppState>) -> Result<(), 
 #[tauri::command]
 fn update_lab_name(lab_name: String, state: State<AppState>) -> Result<(), String> {
     let mut config = state.config.lock().unwrap();
-    
+
     // Only allow for Hub mode
     if config.mode != DeploymentMode::Hub {
         return Err("Lab name can only be set in Hub mode".to_string());
     }
-    
+
     config.lab_name = Some(lab_name.clone());
-    
+
     // Save to disk
     let content = toml::to_string_pretty(&*config).map_err(|e| e.to_string())?;
     fs::write(config_path(), content).map_err(|e| e.to_string())?;
-    
+
     tracing::info!("Lab name updated to: {}", lab_name);
-    
+
     // Note: mDNS broadcast needs app restart to take effect
     // The mDNS service is registered in a background thread and can't be easily restarted
     Ok(())
@@ -490,20 +535,20 @@ fn update_lab_name(lab_name: String, state: State<AppState>) -> Result<(), Strin
 #[tauri::command]
 fn update_agent_name(agent_name: String, state: State<AppState>) -> Result<(), String> {
     let mut config = state.config.lock().unwrap();
-    
+
     // Only allow for Agent mode
     if config.mode != DeploymentMode::Agent {
         return Err("Agent name can only be set in Agent mode".to_string());
     }
-    
+
     config.agent_name = Some(agent_name.clone());
-    
+
     // Save to disk
     let content = toml::to_string_pretty(&*config).map_err(|e| e.to_string())?;
     fs::write(config_path(), content).map_err(|e| e.to_string())?;
-    
+
     tracing::info!("Agent name updated to: {}", agent_name);
-    
+
     // Note: mDNS broadcast needs app restart to take effect
     Ok(())
 }
@@ -514,28 +559,31 @@ fn reset_database_and_storage(state: State<AppState>) -> Result<(), String> {
     // Stop all running local agents first
     let mut agents = state.local_agents.lock().unwrap();
     let agent_ids: Vec<String> = agents.keys().cloned().collect();
-    
+
     for equipment_id in agent_ids {
         if let Some(mut child) = agents.remove(&equipment_id) {
             let _ = child.kill();
-            tracing::info!("Stopped local agent for equipment {} during reset", equipment_id);
+            tracing::info!(
+                "Stopped local agent for equipment {} during reset",
+                equipment_id
+            );
         }
     }
     drop(agents); // Release lock
-    
+
     let db_path = database_path();
     let storage_dir = storage_path();
-    
+
     // Delete database file
     if db_path.exists() {
         fs::remove_file(&db_path).map_err(|e| format!("Failed to delete database: {}", e))?;
     }
-    
+
     // Delete storage directory
     if storage_dir.exists() {
         fs::remove_dir_all(&storage_dir).map_err(|e| format!("Failed to delete storage: {}", e))?;
     }
-    
+
     Ok(())
 }
 
@@ -547,16 +595,17 @@ fn reinitialize(app: AppHandle) -> Result<(), String> {
     if path.exists() {
         fs::remove_file(&path).map_err(|e| format!("Failed to delete config: {}", e))?;
     }
-    
+
     // Show the window if it was hidden (agent mode)
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
     }
-    
+
     // Emit event to frontend to reload/show setup
-    app.emit("openbio:reinitialize", ()).map_err(|e| e.to_string())?;
-    
+    app.emit("openbio:reinitialize", ())
+        .map_err(|e| e.to_string())?;
+
     tracing::info!("Application re-initialized, config reset");
     Ok(())
 }
@@ -564,32 +613,31 @@ fn reinitialize(app: AppHandle) -> Result<(), String> {
 /// Build system tray for agent mode
 fn build_system_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
-    let reconfigure_item = MenuItem::with_id(app, "reconfigure", "Re-configure...", true, None::<&str>)?;
+    let reconfigure_item =
+        MenuItem::with_id(app, "reconfigure", "Re-configure...", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    
+
     let menu = Menu::with_items(app, &[&show_item, &reconfigure_item, &quit_item])?;
-    
+
     let _tray = TrayIconBuilder::new()
         .menu(&menu)
         .icon(app.default_window_icon().unwrap().clone())
-        .on_menu_event(move |app: &AppHandle, event| {
-            match event.id.as_ref() {
-                "show" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+        .on_menu_event(move |app: &AppHandle, event| match event.id.as_ref() {
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
                 }
-                "reconfigure" => {
-                    if let Err(e) = reinitialize(app.clone()) {
-                        tracing::error!("Failed to re-initialize: {}", e);
-                    }
-                }
-                "quit" => {
-                    app.exit(0);
-                }
-                _ => {}
             }
+            "reconfigure" => {
+                if let Err(e) = reinitialize(app.clone()) {
+                    tracing::error!("Failed to re-initialize: {}", e);
+                }
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            _ => {}
         })
         .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
             if let TrayIconEvent::Click {
@@ -605,7 +653,7 @@ fn build_system_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
             }
         })
         .build(app)?;
-    
+
     Ok(())
 }
 
@@ -750,28 +798,30 @@ fn load_config_from_disk() -> AppConfig {
 #[allow(dead_code)]
 async fn check_for_updates(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let updater = app.updater_builder().build()?;
-    
+
     if let Some(update) = updater.check().await? {
         tracing::info!("Update available: {}", update.version);
-        
+
         // Download and install the update
         // The dialog option in tauri.conf.json will show a prompt to the user
         let mut downloaded = 0;
-        update.download_and_install(
-            |chunk_length, content_length| {
-                downloaded += chunk_length;
-                tracing::debug!("Downloaded {} of {:?} bytes", downloaded, content_length);
-            },
-            || {
-                tracing::info!("Download complete, installing...");
-            }
-        ).await?;
-        
+        update
+            .download_and_install(
+                |chunk_length, content_length| {
+                    downloaded += chunk_length;
+                    tracing::debug!("Downloaded {} of {:?} bytes", downloaded, content_length);
+                },
+                || {
+                    tracing::info!("Download complete, installing...");
+                },
+            )
+            .await?;
+
         tracing::info!("Update installed successfully");
     } else {
         tracing::info!("App is up to date");
     }
-    
+
     Ok(())
 }
 
@@ -852,6 +902,7 @@ pub fn run() {
             // Pipeline commands
             commands::start_pipeline,
             commands::get_pipeline_status,
+            commands::get_pipeline_logs,
             commands::cancel_pipeline,
             commands::list_pipelines,
             commands::list_pipeline_runs,
@@ -879,11 +930,11 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }
-                
+
                 if let Err(e) = build_system_tray(app.handle()) {
                     tracing::error!("Failed to create system tray: {}", e);
                 }
-                
+
                 // Run embedded agent server
                 let port = config.server_port;
                 let agent_name = config.agent_name.clone();
@@ -892,7 +943,7 @@ pub fn run() {
                         tracing::error!("Agent server failed: {}", e);
                     }
                 });
-                
+
                 // Enable auto-start on boot based on config setting
                 if config.auto_start {
                     #[cfg(not(debug_assertions))]
@@ -905,22 +956,22 @@ pub fn run() {
                         }
                     }
                 }
-                
+
                 tracing::info!("Running in Agent mode (headless)");
             } else {
                 // Normal client mode - show UI (or minimize to tray if configured)
-                
+
                 // Minimize to tray on startup for Hub mode if configured
                 if config.mode == DeploymentMode::Hub && config.minimize_to_tray {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.hide();
                     }
-                    
+
                     if let Err(e) = build_system_tray(app.handle()) {
                         tracing::error!("Failed to create system tray: {}", e);
                     }
                 }
-                
+
                 // Enable auto-start on boot if configured
                 if config.auto_start {
                     #[cfg(not(debug_assertions))]
@@ -929,13 +980,14 @@ pub fn run() {
                         if let Err(e) = app.autolaunch().enable() {
                             tracing::error!("Failed to enable auto-start: {}", e);
                         } else {
-                            tracing::info!("Auto-start on boot enabled for {} mode", 
+                            tracing::info!(
+                                "Auto-start on boot enabled for {} mode",
                                 match config.mode {
                                     DeploymentMode::Hub => "Hub",
                                     DeploymentMode::Local => "Solo",
                                     DeploymentMode::Spoke => "Spoke",
                                     DeploymentMode::Enterprise => "Enterprise",
-                                    _ => "Unknown"
+                                    _ => "Unknown",
                                 }
                             );
                         }
@@ -948,7 +1000,7 @@ pub fn run() {
                         let _ = app.autolaunch().disable();
                     }
                 }
-                
+
                 // Check for updates on startup (non-blocking) - only in release builds
                 #[cfg(not(debug_assertions))]
                 {
