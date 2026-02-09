@@ -42,6 +42,7 @@ import {
   Lightbulb,
   Folder,
   Atom,
+  FileText,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, NodeViewWrapper, NodeViewProps, ReactNodeViewRenderer } from '@tiptap/react';
@@ -637,6 +638,16 @@ const MentionList = React.forwardRef<MentionListRef, MentionListProps>(
 // Notebook Editor with @Mentions
 // ==========================================
 
+interface ExperimentFile {
+  id: string;
+  filename: string;
+  path: string;
+  size: number;
+  mimeType?: string;
+  assetType: string;
+  createdAt: string;
+}
+
 interface NotebookEditorProps {
   experiment: Experiment;
   onSave: (content: string) => void;
@@ -644,10 +655,11 @@ interface NotebookEditorProps {
   onUploadFile: () => void;
   onAttachEquipment: () => void;
   lockedEquipmentCount: number;
-  uploadedFileCount: number;
+  files: ExperimentFile[];
+  onDeleteFile: (assetId: string) => void;
 }
 
-function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEquipment, lockedEquipmentCount, uploadedFileCount }: NotebookEditorProps) {
+function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEquipment, lockedEquipmentCount, files, onDeleteFile }: NotebookEditorProps) {
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -841,20 +853,66 @@ function NotebookEditor({ experiment, onSave, entities, onUploadFile, onAttachEq
           </button>
           <button
             onClick={onUploadFile}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${uploadedFileCount > 0
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${files.length > 0
               ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25'
               : 'bg-white/5 hover:bg-white/10 border border-white/10 text-white/80'
               }`}
           >
             <Paperclip size={16} />
-            {uploadedFileCount > 0 ? 'Replace Data' : 'Upload Data File'}
+            Add Data File
           </button>
         </div>
       </div>
 
-      {/* Editor Content - clean bordered container */}
       <div className="flex-1 p-4 bg-black/20 border border-white/10 rounded-xl min-h-[300px]">
         <EditorContent editor={editor} />
+      </div>
+
+      {/* Attached Files List - Moved below editor */}
+      <div className="border border-white/10 rounded-xl overflow-hidden">
+        <div className="bg-white/5 px-4 py-3 border-b border-white/5 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white/80 flex items-center gap-2">
+            <Paperclip size={16} />
+            Attached Files
+          </h3>
+          <span className="text-xs text-white/40">{files.length} files</span>
+        </div>
+
+        {files.length === 0 ? (
+          <div className="p-8 text-center text-white/30 text-sm">
+            No files attached. Upload data files using the button above.
+          </div>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {files.map((file) => (
+              <div
+                key={file.id}
+                className="flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors group"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded bg-blue-500/10 flex items-center justify-center text-blue-400">
+                    <FileText size={16} />
+                  </div>
+                  <div>
+                    <div className="text-sm text-white font-medium truncate" title={file.filename}>
+                      {file.filename}
+                    </div>
+                    <div className="text-xs text-white/40">
+                      {(file.size / 1024).toFixed(1)} KB • {new Date(file.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => onDeleteFile(file.id)}
+                  className="p-2 text-white/20 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors opacity-0 group-hover:opacity-100"
+                  title="Delete file"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -879,12 +937,25 @@ function FolderSelect({ value, onChange, folders }: FolderSelectProps) {
 
   // Calculate position synchronously for rendering
   const getPosition = () => {
-    if (!buttonRef.current) return { top: 0, left: 0, width: 0 };
+    if (!buttonRef.current) return { top: 0, left: 0, width: 0, maxHeight: 256 };
     const rect = buttonRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const spacing = 8;
+    const maxDropdownHeight = 256;
+
+    // Calculate available space below and above
+    const spaceBelow = viewportHeight - rect.bottom - spacing;
+    const spaceAbove = rect.top - spacing;
+
+    // Decide direction and calculate position
+    const openUpward = spaceBelow < 100 && spaceAbove > spaceBelow;
+    const maxHeight = Math.min(maxDropdownHeight, openUpward ? spaceAbove : spaceBelow);
+
     return {
-      top: rect.bottom + 4,
+      top: openUpward ? rect.top - maxHeight - 4 : rect.bottom + 4,
       left: rect.left,
       width: rect.width,
+      maxHeight,
     };
   };
 
@@ -920,7 +991,7 @@ function FolderSelect({ value, onChange, folders }: FolderSelectProps) {
   };
 
   // Get position inline for rendering - this calculates on every render when open
-  const position = isOpen ? getPosition() : { top: 0, left: 0, width: 0 };
+  const position = isOpen ? getPosition() : { top: 0, left: 0, width: 0, maxHeight: 256 };
 
   return (
     <>
@@ -954,11 +1025,12 @@ function FolderSelect({ value, onChange, folders }: FolderSelectProps) {
         createPortal(
           <div
             ref={dropdownRef}
-            className="fixed z-[9999] py-1 bg-neutral-900 border border-white/20 rounded-lg shadow-2xl max-h-64 overflow-auto"
+            className="fixed z-[9999] py-1 bg-neutral-900 border border-white/20 rounded-lg shadow-2xl overflow-auto"
             style={{
               top: position.top,
               left: position.left,
               width: position.width,
+              maxHeight: position.maxHeight,
             }}
           >
             {folders.map((folder) => (
@@ -1112,8 +1184,8 @@ function CreateFolderModal({ onClose, onCreate, parentId }: CreateFolderModalPro
 
 interface CreateExperimentModalProps {
   onClose: () => void;
-  onCreate: (data: { name: string; description?: string; folderId?: string }) => void;
-  folders: Array<{ id: string; name: string; color?: string }>;
+  onCreate: (data: { name: string; description?: string; folderId: string }) => void;
+  folders: Array<{ id: string; name: string }>;
   defaultFolderId: string | null;
 }
 
@@ -1141,14 +1213,8 @@ function CreateExperimentModal({ onClose, onCreate, folders, defaultFolderId }: 
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
-      onClick={onClose}
-    >
-      <div
-        className="bg-neutral-900 border border-white/10 rounded-xl w-full max-w-sm"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-neutral-900 border border-white/10 rounded-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/5">
           <h2 className="text-lg font-semibold text-white">New Experiment</h2>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
@@ -1159,20 +1225,13 @@ function CreateExperimentModal({ onClose, onCreate, folders, defaultFolderId }: 
         <div className="p-6 space-y-4">
           <div>
             <label className="block text-xs font-medium text-white/60 uppercase tracking-wide mb-2">
-              Folder *
-            </label>
-            <FolderSelect value={folderId} onChange={setFolderId} folders={folders} />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-white/60 uppercase tracking-wide mb-2">
               Name *
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Experiment 001 - CRISPR Screen"
+              placeholder="e.g., PCR Validations"
               className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50"
               autoFocus
             />
@@ -1180,14 +1239,25 @@ function CreateExperimentModal({ onClose, onCreate, folders, defaultFolderId }: 
 
           <div>
             <label className="block text-xs font-medium text-white/60 uppercase tracking-wide mb-2">
+              Folder *
+            </label>
+            <FolderSelect
+              value={folderId}
+              onChange={setFolderId}
+              folders={folders}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-white/60 uppercase tracking-wide mb-2">
               Description
             </label>
-            <textarea
+            <input
+              type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Brief description..."
-              rows={3}
-              className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50 resize-none"
+              placeholder="Optional description"
+              className="w-full px-4 py-2 bg-black/20 border border-white/10 rounded-lg text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50"
             />
           </div>
         </div>
@@ -1201,10 +1271,69 @@ function CreateExperimentModal({ onClose, onCreate, folders, defaultFolderId }: 
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!name.trim()}
+            disabled={!name.trim() || !folderId}
             className="px-4 py-2 bg-brand-primary text-black text-sm font-bold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Create
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// Delete File Modal
+// ==========================================
+
+interface DeleteFileModalProps {
+  onClose: () => void;
+  onConfirm: () => void;
+  fileName: string;
+}
+
+function DeleteFileModal({ onClose, onConfirm, fileName }: DeleteFileModalProps) {
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-neutral-900 border border-red-500/20 rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={20} className="text-red-400" />
+            <h3 className="text-lg font-semibold text-white">Delete File</h3>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-6">
+          <p className="text-white/80 text-sm">
+            Are you sure you want to delete <span className="font-semibold text-white">{fileName}</span>?
+            <br />
+            This action cannot be undone.
+          </p>
+        </div>
+
+        <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors"
+          >
+            Delete
           </button>
         </div>
       </div>
@@ -1465,7 +1594,7 @@ interface EquipmentPickerModalProps {
 
 function EquipmentPickerModal({ equipment, locations, experimentId, onLock, onUnlock, onClose }: EquipmentPickerModalProps) {
   // Start with all locations expanded
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set(locations.map((l) => l.id)));
+  const [expandedNodes, setExpandedNodes] = useState(() => new Set<string>(locations.map((l) => l.id)));
   const [equipSearch, setEquipSearch] = useState('');
 
   // Expand all nodes when locations load
@@ -1699,6 +1828,8 @@ export function ExperimentsPage() {
   const [showDeleteExperimentModal, setShowDeleteExperimentModal] = useState(false);
   const [showDeleteFolderModal, setShowDeleteFolderModal] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [showDeleteFileModal, setShowDeleteFileModal] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<{ id: string; name: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showEquipmentPicker, setShowEquipmentPicker] = useState(false);
 
@@ -1776,10 +1907,18 @@ export function ExperimentsPage() {
   });
 
   const uploadFileMutation = useMutation({
-    mutationFn: ({ experimentId, file }: { experimentId: string; file: File }) =>
-      experimentsApi.uploadFile(experimentId, file),
+    mutationFn: ({ experimentId, files }: { experimentId: string; files: File[] }) =>
+      experimentsApi.uploadFiles(experimentId, files),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['experiments'] });
+      queryClient.invalidateQueries({ queryKey: ['experiment-files'] });
+    },
+  });
+
+  const deleteFileMutation = useMutation({
+    mutationFn: ({ experimentId, assetId }: { experimentId: string; assetId: string }) =>
+      experimentsApi.deleteFile(experimentId, assetId),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['experiment-files'] });
     },
   });
@@ -1793,7 +1932,7 @@ export function ExperimentsPage() {
     refetchInterval: hasLockedEquipment ? 3000 : false,
   });
 
-  const uploadedFileCount = experimentFiles?.files?.length ?? 0;
+  const experimentFilesList = experimentFiles?.files ?? [];
 
   // Keep selectedExperiment in sync with latest data from the experiments query.
   // This ensures the editor picks up server-side content changes (auto-import text).
@@ -1832,9 +1971,11 @@ export function ExperimentsPage() {
   });
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && selectedExperiment) {
-      uploadFileMutation.mutate({ experimentId: selectedExperiment.id, file });
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0 && selectedExperiment) {
+      uploadFileMutation.mutate({ experimentId: selectedExperiment.id, files });
+      // Reset input so same files can be uploaded again if needed
+      e.target.value = '';
     }
   };
 
@@ -1932,6 +2073,7 @@ export function ExperimentsPage() {
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 className="hidden"
                 onChange={handleFileUpload}
               />
@@ -2106,7 +2248,14 @@ export function ExperimentsPage() {
                 onUploadFile={() => fileInputRef.current?.click()}
                 onAttachEquipment={() => setShowEquipmentPicker(true)}
                 lockedEquipmentCount={allEquipment.filter((e) => e.lockedByExperimentId === selectedExperiment.id).length}
-                uploadedFileCount={uploadedFileCount}
+                files={experimentFilesList}
+                onDeleteFile={(assetId) => {
+                  const file = experimentFilesList.find((f) => f.id === assetId);
+                  if (file) {
+                    setFileToDelete({ id: file.id, name: file.filename });
+                    setShowDeleteFileModal(true);
+                  }
+                }}
               />
             </div>
             <div className="px-8 pb-8 pt-4">
@@ -2165,6 +2314,21 @@ export function ExperimentsPage() {
           }}
           folderName={folderToDelete.name}
           experimentCount={experiments.filter((e) => e.folderId === folderToDelete.id).length}
+        />
+      )}
+
+      {showDeleteFileModal && fileToDelete && selectedExperiment && (
+        <DeleteFileModal
+          onClose={() => {
+            setShowDeleteFileModal(false);
+            setFileToDelete(null);
+          }}
+          onConfirm={() => {
+            deleteFileMutation.mutate({ experimentId: selectedExperiment.id, assetId: fileToDelete.id });
+            setShowDeleteFileModal(false);
+            setFileToDelete(null);
+          }}
+          fileName={fileToDelete.name}
         />
       )}
 

@@ -27,12 +27,25 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
 
   // Calculate position synchronously for rendering
   const getPosition = () => {
-    if (!buttonRef.current) return { top: 0, left: 0, width: 0 };
+    if (!buttonRef.current) return { top: 0, left: 0, width: 0, maxHeight: 256 };
     const rect = buttonRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const spacing = 8;
+    const maxDropdownHeight = 256;
+
+    // Calculate available space below and above
+    const spaceBelow = viewportHeight - rect.bottom - spacing;
+    const spaceAbove = rect.top - spacing;
+
+    // Decide direction and calculate position
+    const openUpward = spaceBelow < 100 && spaceAbove > spaceBelow;
+    const maxHeight = Math.min(maxDropdownHeight, openUpward ? spaceAbove : spaceBelow);
+
     return {
-      top: rect.bottom + 4,
+      top: openUpward ? rect.top - maxHeight - 4 : rect.bottom + 4,
       left: rect.left,
       width: rect.width,
+      maxHeight,
     };
   };
 
@@ -68,7 +81,7 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
   };
 
   // Get position inline for rendering - this calculates on every render when open
-  const position = isOpen ? getPosition() : { top: 0, left: 0, width: 0 };
+  const position = isOpen ? getPosition() : { top: 0, left: 0, width: 0, maxHeight: 256 };
 
   return (
     <>
@@ -95,11 +108,12 @@ function CollectionSelect({ value, onChange, collections }: CollectionSelectProp
         createPortal(
           <div
             ref={dropdownRef}
-            className="fixed z-[9999] py-1 bg-neutral-900 border border-white/20 rounded-lg shadow-2xl max-h-64 overflow-auto"
+            className="fixed z-[9999] py-1 bg-neutral-900 border border-white/20 rounded-lg shadow-2xl overflow-auto"
             style={{
               top: position.top,
               left: position.left,
               width: position.width,
+              maxHeight: position.maxHeight,
             }}
           >
             {collections.map((collection) => (

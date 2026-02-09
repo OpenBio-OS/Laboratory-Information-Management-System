@@ -187,12 +187,12 @@ export function PipelineManager() {
                 : `No ${filter} pipeline runs`
               }
             </p>
-            <button
+            {/* <button
               onClick={() => setShowNewRunDialog(true)}
               className="px-4 py-2 bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-all"
             >
               Start New Pipeline
-            </button>
+            </button> */}
           </div>
         ) : (
           <div className="space-y-4">

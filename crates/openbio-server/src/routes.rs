@@ -1,7 +1,7 @@
 //! API route handlers
 use crate::db::prisma::{
-    self, container, digital_asset, equipment, equipment_location, experiment, experiment_entry, experiment_folder, experiment_mention, library,
-    paper, sample,
+    self, container, digital_asset, equipment, equipment_location, experiment, experiment_entry,
+    experiment_folder, experiment_mention, library, paper, sample,
 };
 use crate::AppState;
 use axum::{
@@ -45,6 +45,58 @@ pub fn api_routes() -> Router<AppState> {
         .nest("/library", library_routes())
         // Equipment routes
         .nest("/equipment", equipment_routes())
+        // Pipeline routes
+        .nest("/pipelines", pipeline_routes())
+}
+
+fn pipeline_routes() -> Router<AppState> {
+    Router::new()
+        .route("/run", axum::routing::post(start_pipeline_run))
+        .route("/runs", get(list_pipeline_runs))
+        .route("/runs/{id}", get(get_pipeline_run_status))
+        .route(
+            "/runs/{id}/cancel",
+            axum::routing::post(cancel_pipeline_run),
+        )
+}
+
+// Pipeline Handlers
+
+async fn start_pipeline_run(
+    State(state): State<AppState>,
+    Json(request): Json<crate::pipeline::PipelineRequest>,
+) -> impl IntoResponse {
+    match state.pipeline_manager.start_pipeline(request).await {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn list_pipeline_runs(State(state): State<AppState>) -> impl IntoResponse {
+    match state.pipeline_manager.list_runs().await {
+        Ok(runs) => (StatusCode::OK, Json(runs)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn get_pipeline_run_status(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.pipeline_manager.get_status(&id).await {
+        Ok(status) => (StatusCode::OK, Json(status)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn cancel_pipeline_run(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.pipeline_manager.cancel_pipeline(&id).await {
+        Ok(_) => StatusCode::OK.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
 }
 
 fn inventory_routes() -> Router<AppState> {
@@ -77,9 +129,19 @@ fn experiment_routes() -> Router<AppState> {
         )
         .route("/{id}/upload", axum::routing::post(upload_experiment_file))
         .route("/{id}/files", get(list_experiment_files))
+        .route(
+            "/{id}/files/{asset_id}",
+            axum::routing::delete(delete_experiment_file),
+        )
         .route("/search-entities", get(search_entities))
-        .route("/folders", get(list_experiment_folders).post(create_experiment_folder))
-        .route("/folders/{id}", axum::routing::delete(delete_experiment_folder))
+        .route(
+            "/folders",
+            get(list_experiment_folders).post(create_experiment_folder),
+        )
+        .route(
+            "/folders/{id}",
+            axum::routing::delete(delete_experiment_folder),
+        )
 }
 
 fn collection_routes() -> Router<AppState> {
@@ -116,8 +178,14 @@ fn equipment_routes() -> Router<AppState> {
         .route("/{id}/lock", axum::routing::post(lock_equipment))
         .route("/{id}/unlock", axum::routing::post(unlock_equipment))
         .route("/{id}/ingest", axum::routing::post(ingest_equipment_file))
-        .route("/locations", get(list_equipment_locations).post(create_equipment_location))
-        .route("/locations/{id}", axum::routing::delete(delete_equipment_location))
+        .route(
+            "/locations",
+            get(list_equipment_locations).post(create_equipment_location),
+        )
+        .route(
+            "/locations/{id}",
+            axum::routing::delete(delete_equipment_location),
+        )
 }
 
 // ==========================================
@@ -556,9 +624,9 @@ pub struct SearchResult {
     pub entity_type: String,
     pub id: String,
     pub name: String,
-    pub category: String,      // Top-level category: "Freezer", "Library", "Equipment"
-    pub subcategory: String,   // Second level: container name, library name, equipment type
-    pub path: Vec<String>,     // Full path for navigation
+    pub category: String, // Top-level category: "Freezer", "Library", "Equipment"
+    pub subcategory: String, // Second level: container name, library name, equipment type
+    pub path: Vec<String>, // Full path for navigation
     pub notes: Option<String>, // Sample metadata/notes or paper notes at time of mention
 }
 
@@ -574,17 +642,20 @@ async fn search_entities(State(state): State<AppState>) -> Json<Vec<SearchResult
         .exec()
         .await
         .unwrap_or_default();
-    
+
     for sample in samples {
         // Only include samples that have a container assigned
         if let Some(Some(container)) = sample.container.as_ref() {
             // Get full container path by traversing up
             let container_path = get_container_path(&state.db, &container.id).await;
-            let subcategory = container_path.first().cloned().unwrap_or_else(|| container.name.clone());
-            
+            let subcategory = container_path
+                .first()
+                .cloned()
+                .unwrap_or_else(|| container.name.clone());
+
             let mut full_path = container_path.clone();
             full_path.push(sample.name.clone());
-            
+
             results.push(SearchResult {
                 entity_type: "sample".to_string(),
                 id: sample.id,
@@ -612,11 +683,14 @@ async fn search_entities(State(state): State<AppState>) -> Json<Vec<SearchResult
         if let Some(Some(location)) = equip.location.as_ref() {
             // Get full location path by traversing up
             let location_path = get_equipment_location_path(&state.db, &location.id).await;
-            let subcategory = location_path.first().cloned().unwrap_or_else(|| location.name.clone());
-            
+            let subcategory = location_path
+                .first()
+                .cloned()
+                .unwrap_or_else(|| location.name.clone());
+
             let mut full_path = location_path.clone();
             full_path.push(equip.name.clone());
-            
+
             results.push(SearchResult {
                 entity_type: "equipment".to_string(),
                 id: equip.id,
@@ -673,10 +747,13 @@ fn format_equipment_type(t: &str) -> String {
 }
 
 // Helper to get full container path
-async fn get_container_path(db: &std::sync::Arc<prisma::PrismaClient>, container_id: &str) -> Vec<String> {
+async fn get_container_path(
+    db: &std::sync::Arc<prisma::PrismaClient>,
+    container_id: &str,
+) -> Vec<String> {
     let mut path = vec![];
     let mut current_id = Some(container_id.to_string());
-    
+
     while let Some(id) = current_id {
         if let Ok(Some(container)) = db
             .container()
@@ -690,19 +767,22 @@ async fn get_container_path(db: &std::sync::Arc<prisma::PrismaClient>, container
             break;
         }
     }
-    
+
     if path.is_empty() {
         path.push("Unknown".to_string());
     }
-    
+
     path
 }
 
 // Helper to get full equipment location path
-async fn get_equipment_location_path(db: &std::sync::Arc<prisma::PrismaClient>, location_id: &str) -> Vec<String> {
+async fn get_equipment_location_path(
+    db: &std::sync::Arc<prisma::PrismaClient>,
+    location_id: &str,
+) -> Vec<String> {
     let mut path = vec![];
     let mut current_id = Some(location_id.to_string());
-    
+
     while let Some(id) = current_id {
         if let Ok(Some(location)) = db
             .equipment_location()
@@ -716,11 +796,11 @@ async fn get_equipment_location_path(db: &std::sync::Arc<prisma::PrismaClient>, 
             break;
         }
     }
-    
+
     if path.is_empty() {
         path.push("Unknown".to_string());
     }
-    
+
     path
 }
 
@@ -836,6 +916,7 @@ fn delete_experiment_folder_cascade<'a>(
 }
 
 // File upload for experiments
+// File upload for experiments
 async fn upload_experiment_file(
     State(state): State<AppState>,
     Path(experiment_id): Path<String>,
@@ -843,15 +924,14 @@ async fn upload_experiment_file(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     // Create uploads directory if it doesn't exist
     let uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
-    
-    // Delete existing files (replace mode)
-    if uploads_dir.exists() {
-        fs::remove_dir_all(&uploads_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Ensure directory exists (do NOT wipe it)
+    if !uploads_dir.exists() {
+        fs::create_dir_all(&uploads_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     }
-    
-    fs::create_dir_all(&uploads_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let mut uploaded_files = vec![];
+    use crate::db::prisma::digital_asset;
 
     while let Some(field) = multipart
         .next_field()
@@ -862,52 +942,180 @@ async fn upload_experiment_file(
             .file_name()
             .ok_or(StatusCode::BAD_REQUEST)?
             .to_string();
+
+        // Simple content type guessing
+        let content_type = field
+            .content_type()
+            .map(|s| s.to_string())
+            .unwrap_or("application/octet-stream".to_string());
+
         let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
+        let size = data.len();
 
         let file_path = uploads_dir.join(&filename);
-        let mut file = fs::File::create(&file_path).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let mut file =
+            fs::File::create(&file_path).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         file.write_all(&data)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+        // Create DigitalAsset record in DB
+        // We assume 'filename' and 'storage_key' are required based on prisma.rs inspection
+        // We set other fields via params
+        let asset = state
+            .db
+            .digital_asset()
+            .create(
+                filename.clone(),
+                file_path.to_string_lossy().to_string(), // storage_key
+                vec![
+                    digital_asset::size_bytes::set(Some(size as i32)),
+                    digital_asset::mime_type::set(Some(content_type)),
+                    digital_asset::asset_type::set("FILE".to_string()),
+                    digital_asset::experiment::connect(crate::db::prisma::experiment::id::equals(
+                        experiment_id.clone(),
+                    )),
+                ],
+            )
+            .exec()
+            .await
+            .map_err(|e| {
+                println!("Database error creating asset: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
         uploaded_files.push(serde_json::json!({
+            "id": asset.id,
             "filename": filename,
             "path": file_path.to_string_lossy().to_string(),
-            "size": data.len(),
+            "size": size,
         }));
     }
+
+    // Update experiment content with log entry
+    let log_entry = format!(
+        "<p>📎 <strong>{}</strong> uploaded at {}</p>",
+        uploaded_files
+            .iter()
+            .map(|f| f["filename"].as_str().unwrap_or("unknown"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        chrono::Local::now().format("%d/%m/%Y %H:%M:%S")
+    );
+
+    let experiment = state
+        .db
+        .experiment()
+        .find_unique(crate::db::prisma::experiment::id::equals(
+            experiment_id.clone(),
+        ))
+        .exec()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let new_content = format!("{}{}", experiment.content, log_entry);
+
+    state
+        .db
+        .experiment()
+        .update(
+            crate::db::prisma::experiment::id::equals(experiment_id),
+            vec![crate::db::prisma::experiment::content::set(new_content)],
+        )
+        .exec()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(serde_json::json!({
         "files": uploaded_files
     })))
 }
 
-// List uploaded files for an experiment
+// List uploaded files for an experiment (returns database DigitalAsset records)
 async fn list_experiment_files(
     State(state): State<AppState>,
     Path(experiment_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
+    // Fetch assets from database
+    let assets = state
+        .db
+        .digital_asset()
+        .find_many(vec![digital_asset::experiment_id::equals(Some(
+            experiment_id.clone(),
+        ))])
+        .exec()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let mut files = vec![];
-
-    if uploads_dir.exists() {
-        let entries = fs::read_dir(&uploads_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        for entry in entries {
-            let entry = entry.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            let metadata = entry.metadata().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            if metadata.is_file() {
-                files.push(serde_json::json!({
-                    "filename": entry.file_name().to_string_lossy().to_string(),
-                    "path": entry.path().to_string_lossy().to_string(),
-                    "size": metadata.len(),
-                }));
-            }
-        }
-    }
+    let files: Vec<serde_json::Value> = assets
+        .into_iter()
+        .map(|asset| {
+            serde_json::json!({
+                "id": asset.id,
+                "filename": asset.filename,
+                "path": asset.storage_key,
+                "size": asset.size_bytes,
+                "mimeType": asset.mime_type,
+                "assetType": asset.asset_type,
+                "createdAt": asset.created_at.to_rfc3339(),
+            })
+        })
+        .collect();
 
     Ok(Json(serde_json::json!({
         "files": files
     })))
+}
+
+// Delete a specific file from an experiment
+async fn delete_experiment_file(
+    State(state): State<AppState>,
+    Path((experiment_id, asset_id)): Path<(String, String)>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    // Find the asset to get its storage path
+    let asset = state
+        .db
+        .digital_asset()
+        .find_unique(digital_asset::id::equals(asset_id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Asset not found".to_string()))?;
+
+    // Verify asset belongs to this experiment
+    if asset.experiment_id != Some(experiment_id.clone()) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Asset does not belong to this experiment".to_string(),
+        ));
+    }
+
+    // Delete the file from disk
+    let file_path = std::path::Path::new(&asset.storage_key);
+    if file_path.exists() {
+        fs::remove_file(file_path).ok(); // Ignore errors if file doesn't exist
+    }
+
+    // Also remove from experiment's upload folder if it exists there
+    let experiment_file_path = state
+        .storage_path
+        .join("uploads")
+        .join(&experiment_id)
+        .join(&asset.filename);
+    if experiment_file_path.exists() {
+        fs::remove_file(&experiment_file_path).ok();
+    }
+
+    // Delete from database
+    state
+        .db
+        .digital_asset()
+        .delete(digital_asset::id::equals(asset_id))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(()))
 }
 
 // ==========================================
@@ -1384,7 +1592,7 @@ async fn upload_paper_pdf(
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
     {
         let name = field.name().unwrap_or("").to_string();
-        
+
         if name == "file" {
             let file_name = field.file_name().unwrap_or("paper.pdf").to_string();
             let data = field
@@ -1394,17 +1602,29 @@ async fn upload_paper_pdf(
 
             // 3. Define storage path using app data directory
             let storage_dir = state.storage_path.join("papers");
-            fs::create_dir_all(&storage_dir)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create storage dir: {}", e)))?;
+            fs::create_dir_all(&storage_dir).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to create storage dir: {}", e),
+                )
+            })?;
 
             let target_filename = format!("{}_{}", id, file_name);
             let target_path = storage_dir.join(&target_filename);
 
             // 4. Save file
-            let mut file = fs::File::create(&target_path)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create file: {}", e)))?;
-            file.write_all(&data)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write file: {}", e)))?;
+            let mut file = fs::File::create(&target_path).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to create file: {}", e),
+                )
+            })?;
+            file.write_all(&data).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to write file: {}", e),
+                )
+            })?;
 
             // 5. Update DB with path
             let stored_path = target_path.to_string_lossy().to_string();
@@ -1424,7 +1644,10 @@ async fn upload_paper_pdf(
         }
     }
 
-    Err((StatusCode::BAD_REQUEST, "No file field found in multipart request".to_string()))
+    Err((
+        StatusCode::BAD_REQUEST,
+        "No file field found in multipart request".to_string(),
+    ))
 }
 
 async fn get_paper_pdf(
@@ -1440,24 +1663,41 @@ async fn get_paper_pdf(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "Paper not found".to_string()))?;
 
-    let pdf_path_str = paper.pdf_path.ok_or((StatusCode::NOT_FOUND, "No PDF uploaded for this paper".to_string()))?;
+    let pdf_path_str = paper.pdf_path.ok_or((
+        StatusCode::NOT_FOUND,
+        "No PDF uploaded for this paper".to_string(),
+    ))?;
     let path = PathBuf::from(pdf_path_str);
 
     if !path.exists() {
-        return Err((StatusCode::NOT_FOUND, "PDF file not found on server".to_string()));
+        return Err((
+            StatusCode::NOT_FOUND,
+            "PDF file not found on server".to_string(),
+        ));
     }
 
     // Read file
-    let file_bytes = fs::read(&path)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read file: {}", e)))?;
+    let file_bytes = fs::read(&path).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to read file: {}", e),
+        )
+    })?;
 
-    let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-    
+    let filename = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
     // Serve file
     let body = Body::from(file_bytes);
     let headers = [
         (header::CONTENT_TYPE, "application/pdf".to_string()),
-        (header::CONTENT_DISPOSITION, format!("inline; filename=\"{}\"", filename)),
+        (
+            header::CONTENT_DISPOSITION,
+            format!("inline; filename=\"{}\"", filename),
+        ),
     ];
 
     Ok((headers, body))
@@ -1522,7 +1762,9 @@ async fn create_equipment(
         params.push(equipment::serial_number::set(Some(serial)));
     }
     if let Some(loc_id) = payload.location_id {
-        params.push(equipment::location::connect(equipment_location::id::equals(loc_id)));
+        params.push(equipment::location::connect(
+            equipment_location::id::equals(loc_id),
+        ));
     }
     if let Some(mc) = payload.maintenance_cycle {
         params.push(equipment::maintenance_cycle::set(Some(mc)));
@@ -1586,7 +1828,9 @@ async fn update_equipment(
         params.push(equipment::serial_number::set(Some(serial)));
     }
     if let Some(loc_id) = payload.location_id {
-        params.push(equipment::location::connect(equipment_location::id::equals(loc_id)));
+        params.push(equipment::location::connect(
+            equipment_location::id::equals(loc_id),
+        ));
     }
     if let Some(mc) = payload.maintenance_cycle {
         params.push(equipment::maintenance_cycle::set(Some(mc)));
@@ -1652,7 +1896,10 @@ async fn lock_equipment(
         .ok_or((StatusCode::NOT_FOUND, "Equipment not found".to_string()))?;
 
     if equip.locked_by_experiment_id.is_some() {
-        return Err((StatusCode::CONFLICT, "Equipment is already locked by another experiment".to_string()));
+        return Err((
+            StatusCode::CONFLICT,
+            "Equipment is already locked by another experiment".to_string(),
+        ));
     }
 
     let updated = state
@@ -1661,7 +1908,9 @@ async fn lock_equipment(
         .update(
             equipment::id::equals(id),
             vec![
-                equipment::locked_by_experiment::connect(experiment::id::equals(payload.experiment_id)),
+                equipment::locked_by_experiment::connect(experiment::id::equals(
+                    payload.experiment_id,
+                )),
                 equipment::locked_at::set(Some(prisma_client_rust::chrono::Utc::now().into())),
             ],
         )
@@ -1709,8 +1958,11 @@ async fn ingest_equipment_file(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "Equipment not found".to_string()))?;
 
-    let experiment_id = equip.locked_by_experiment_id.clone()
-        .ok_or((StatusCode::BAD_REQUEST, "Equipment is not locked to any experiment. Attach equipment to an experiment first.".to_string()))?;
+    let experiment_id = equip.locked_by_experiment_id.clone().ok_or((
+        StatusCode::BAD_REQUEST,
+        "Equipment is not locked to any experiment. Attach equipment to an experiment first."
+            .to_string(),
+    ))?;
 
     // Process the uploaded file
     let field = multipart
@@ -1724,9 +1976,7 @@ async fn ingest_equipment_file(
         .ok_or((StatusCode::BAD_REQUEST, "No filename".to_string()))?
         .to_string();
 
-    let content_type = field
-        .content_type()
-        .map(|ct| ct.to_string());
+    let content_type = field.content_type().map(|ct| ct.to_string());
 
     let data = field
         .bytes()
@@ -1739,59 +1989,72 @@ async fn ingest_equipment_file(
     let _checksum = sha2_hash(&data);
 
     // Save file to storage: storage/equipment/{equipment_id}/{filename}
-    let equip_storage_dir = state.storage_path
-        .join("equipment")
-        .join(&equipment_id);
-    
-    fs::create_dir_all(&equip_storage_dir)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create storage dir: {}", e)))?;
+    let equip_storage_dir = state.storage_path.join("equipment").join(&equipment_id);
+
+    fs::create_dir_all(&equip_storage_dir).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create storage dir: {}", e),
+        )
+    })?;
 
     let storage_key = format!("equipment/{}/{}", equipment_id, filename);
     let file_path = state.storage_path.join(&storage_key);
-    
-    let mut file = fs::File::create(&file_path)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create file: {}", e)))?;
-    file.write_all(&data)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write file: {}", e)))?;
+
+    let mut file = fs::File::create(&file_path).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create file: {}", e),
+        )
+    })?;
+    file.write_all(&data).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to write file: {}", e),
+        )
+    })?;
 
     // Replace existing files in experiment uploads dir (1 file per experiment)
     let experiment_uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
     if experiment_uploads_dir.exists() {
-        fs::remove_dir_all(&experiment_uploads_dir)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to clean experiment uploads dir: {}", e)))?;
+        fs::remove_dir_all(&experiment_uploads_dir).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to clean experiment uploads dir: {}", e),
+            )
+        })?;
     }
-    fs::create_dir_all(&experiment_uploads_dir)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create experiment uploads dir: {}", e)))?;
+    fs::create_dir_all(&experiment_uploads_dir).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create experiment uploads dir: {}", e),
+        )
+    })?;
     let experiment_file_path = experiment_uploads_dir.join(&filename);
-    fs::copy(&file_path, &experiment_file_path)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to copy to experiment dir: {}", e)))?;
+    fs::copy(&file_path, &experiment_file_path).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to copy to experiment dir: {}", e),
+        )
+    })?;
 
-    // Delete old DigitalAsset records for this experiment (only 1 data file per experiment)
-    let _ = state
-        .db
-        .digital_asset()
-        .delete_many(vec![digital_asset::experiment_id::equals(Some(experiment_id.clone()))])
-        .exec()
-        .await;
+    // NOTE: We no longer delete old assets - experiments can have multiple files
 
     // Create DigitalAsset record
-    let mut asset_params: Vec<digital_asset::SetParam> = vec![
-        digital_asset::machine_id::set(Some(equipment_id.clone())),
-    ];
+    let mut asset_params: Vec<digital_asset::SetParam> =
+        vec![digital_asset::machine_id::set(Some(equipment_id.clone()))];
     if let Some(mime) = &content_type {
         asset_params.push(digital_asset::mime_type::set(Some(mime.clone())));
     }
     asset_params.push(digital_asset::size_bytes::set(Some(file_size)));
-    asset_params.push(digital_asset::experiment::connect(experiment::id::equals(experiment_id.clone())));
+    asset_params.push(digital_asset::experiment::connect(experiment::id::equals(
+        experiment_id.clone(),
+    )));
 
     let asset = state
         .db
         .digital_asset()
-        .create(
-            filename.clone(),
-            storage_key.clone(),
-            asset_params,
-        )
+        .create(filename.clone(), storage_key.clone(), asset_params)
         .exec()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -1855,7 +2118,9 @@ async fn ingest_equipment_file(
         .equipment()
         .update(
             equipment::id::equals(equipment_id.clone()),
-            vec![equipment::last_sync_at::set(Some(prisma_client_rust::chrono::Utc::now().into()))],
+            vec![equipment::last_sync_at::set(Some(
+                prisma_client_rust::chrono::Utc::now().into(),
+            ))],
         )
         .exec()
         .await;
@@ -1895,7 +2160,9 @@ pub struct CreateEquipmentLocationRequest {
     pub parent_id: Option<String>,
 }
 
-async fn list_equipment_locations(State(state): State<AppState>) -> Json<Vec<equipment_location::Data>> {
+async fn list_equipment_locations(
+    State(state): State<AppState>,
+) -> Json<Vec<equipment_location::Data>> {
     let locations = state
         .db
         .equipment_location()
@@ -1920,7 +2187,9 @@ async fn create_equipment_location(
         params.push(equipment_location::color::set(Some(color)));
     }
     if let Some(pid) = payload.parent_id {
-        params.push(equipment_location::parent::connect(equipment_location::id::equals(pid)));
+        params.push(equipment_location::parent::connect(
+            equipment_location::id::equals(pid),
+        ));
     }
 
     let location = state
@@ -1933,7 +2202,10 @@ async fn create_equipment_location(
     Json(location)
 }
 
-async fn delete_equipment_location(State(state): State<AppState>, Path(id): Path<String>) -> Json<()> {
+async fn delete_equipment_location(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<()> {
     state
         .db
         .equipment_location()

@@ -2,9 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use chrono::Utc;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StartPipelineRequest {
     pub experiment_id: String,
     pub pipeline_type: String,
@@ -12,19 +11,41 @@ pub struct StartPipelineRequest {
     pub custom_params: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PipelineResponse {
     pub run_id: String,
     pub status: String,
     pub message: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PipelineStatus {
     pub run_id: String,
     pub status: String,
     pub progress: Option<f32>,
     pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PipelineInfo {
+    pub name: String,
+    pub description: String,
+    pub version: String,
+}
+
+/// Helper to get API base URL
+fn get_api_base_url(state: &State<'_, crate::AppState>) -> String {
+    let config = state.config.lock().unwrap();
+    if config.mode == crate::DeploymentMode::Local || config.mode == crate::DeploymentMode::Hub {
+        format!("http://localhost:{}/api/pipelines", config.server_port)
+    } else {
+        // For spoke/enterprise, use configured API URL
+        let base = config
+            .api_url
+            .clone()
+            .unwrap_or_else(|| "http://localhost:3000".to_string());
+        format!("{}/pipelines", base.trim_end_matches('/'))
+    }
 }
 
 /// Start a new pipeline run
@@ -33,14 +54,24 @@ pub async fn start_pipeline(
     request: StartPipelineRequest,
     state: State<'_, crate::AppState>,
 ) -> Result<PipelineResponse, String> {
-    // TODO: Use openbio-server's PipelineManager
-    // For now, return a mock response
-    
-    Ok(PipelineResponse {
-        run_id: "run-123".to_string(),
-        status: "RUNNING".to_string(),
-        message: format!("Started {} pipeline", request.pipeline_type),
-    })
+    let url = format!("{}/run", get_api_base_url(&state));
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Server error: {}", response.status()));
+    }
+
+    response
+        .json::<PipelineResponse>()
+        .await
+        .map_err(|e| format!("Invalid response: {}", e))
 }
 
 /// Get status of a pipeline run
@@ -49,14 +80,47 @@ pub async fn get_pipeline_status(
     run_id: String,
     state: State<'_, crate::AppState>,
 ) -> Result<PipelineStatus, String> {
-    // TODO: Query PipelineManager
-    
-    Ok(PipelineStatus {
-        run_id,
-        status: "RUNNING".to_string(),
-        progress: Some(0.5),
-        message: Some("Processing samples...".to_string()),
-    })
+    let url = format!("{}/runs/{}", get_api_base_url(&state), run_id);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Server error: {}", response.status()));
+    }
+
+    response
+        .json::<PipelineStatus>()
+        .await
+        .map_err(|e| format!("Invalid response: {}", e))
+}
+
+/// List all pipeline runs
+#[tauri::command]
+pub async fn list_pipeline_runs(
+    state: State<'_, crate::AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let url = format!("{}/runs", get_api_base_url(&state));
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Server error: {}", response.status()));
+    }
+
+    response
+        .json::<Vec<serde_json::Value>>()
+        .await
+        .map_err(|e| format!("Invalid response: {}", e))
 }
 
 /// Cancel a running pipeline
@@ -65,7 +129,19 @@ pub async fn cancel_pipeline(
     run_id: String,
     state: State<'_, crate::AppState>,
 ) -> Result<(), String> {
-    // TODO: Call PipelineManager.cancel_pipeline
+    let url = format!("{}/runs/{}/cancel", get_api_base_url(&state), run_id);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Server error: {}", response.status()));
+    }
+
     Ok(())
 }
 
@@ -89,60 +165,4 @@ pub async fn list_pipelines() -> Result<Vec<PipelineInfo>, String> {
             version: "2.5.1".to_string(),
         },
     ])
-}
-
-/// List all pipeline runs
-#[tauri::command]
-pub async fn list_pipeline_runs(
-    state: State<'_, crate::AppState>,
-) -> Result<Vec<PipelineRun>, String> {
-    // TODO: Query database for all pipeline runs
-    // For now, return mock data
-    Ok(vec![
-        PipelineRun {
-            id: "run-1".to_string(),
-            experiment_id: "exp-1".to_string(),
-            experiment_name: "Sample Batch A - scRNA-seq".to_string(),
-            pipeline_type: "nf-core/scrnaseq".to_string(),
-            status: "RUNNING".to_string(),
-            progress: Some(0.45),
-            started_at: chrono::Utc::now().to_rfc3339(),
-            completed_at: None,
-            error: None,
-        },
-        PipelineRun {
-            id: "run-2".to_string(),
-            experiment_id: "exp-2".to_string(),
-            experiment_name: "PBMC Analysis".to_string(),
-            pipeline_type: "nf-core/rnaseq".to_string(),
-            status: "COMPLETED".to_string(),
-            progress: Some(1.0),
-            started_at: chrono::Utc::now()
-                .checked_sub_signed(chrono::Duration::hours(2))
-                .unwrap()
-                .to_rfc3339(),
-            completed_at: Some(chrono::Utc::now().to_rfc3339()),
-            error: None,
-        },
-    ])
-}
-
-#[derive(Debug, Serialize)]
-pub struct PipelineRun {
-    pub id: String,
-    pub experiment_id: String,
-    pub experiment_name: String,
-    pub pipeline_type: String,
-    pub status: String,
-    pub progress: Option<f32>,
-    pub started_at: String,
-    pub completed_at: Option<String>,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PipelineInfo {
-    pub name: String,
-    pub description: String,
-    pub version: String,
 }

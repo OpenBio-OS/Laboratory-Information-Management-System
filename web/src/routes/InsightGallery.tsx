@@ -44,7 +44,7 @@ export function InsightGallery() {
 
   const deleteInsight = async (id: string) => {
     if (!confirm('Are you sure you want to delete this analysis?')) return;
-    
+
     try {
       await invoke('delete_insight_instance', { id });
       await loadInsightInstances();
@@ -76,7 +76,7 @@ export function InsightGallery() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <p className="text-sm text-white/60 my-auto">
-              Interactive single-cell data visualizations
+              Interactive data visualizations
             </p>
           </div>
           <button
@@ -92,41 +92,37 @@ export function InsightGallery() {
         <div className="flex gap-2">
           <button
             onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              filter === 'all'
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'all'
                 ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
                 : 'text-white/60 hover:bg-white/5 border border-transparent'
-            }`}
+              }`}
           >
             All ({instances.length})
           </button>
           <button
             onClick={() => setFilter('scRNA-seq')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              filter === 'scRNA-seq'
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'scRNA-seq'
                 ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
                 : 'text-white/60 hover:bg-white/5 border border-transparent'
-            }`}
+              }`}
           >
             scRNA-seq
           </button>
           <button
             onClick={() => setFilter('ATAC-seq')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              filter === 'ATAC-seq'
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'ATAC-seq'
                 ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
                 : 'text-white/60 hover:bg-white/5 border border-transparent'
-            }`}
+              }`}
           >
             ATAC-seq
           </button>
           <button
             onClick={() => setFilter('Spatial')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              filter === 'Spatial'
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'Spatial'
                 ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
                 : 'text-white/60 hover:bg-white/5 border border-transparent'
-            }`}
+              }`}
           >
             Spatial
           </button>

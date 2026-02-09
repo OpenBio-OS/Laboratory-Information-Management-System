@@ -3872,6 +3872,7 @@ version = "0.1.24"
 dependencies = [
  "anyhow",
  "axum",
+ "chrono",
  "mdns-sd",
  "memmap2",
  "openbio-core",

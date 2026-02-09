@@ -238,9 +238,9 @@ export const experimentsApi = {
         }),
 
     // File uploads
-    uploadFile: (experimentId: string, file: File) => {
+    uploadFiles: (experimentId: string, files: File[]) => {
         const formData = new FormData();
-        formData.append('file', file);
+        files.forEach(file => formData.append('file', file));
         return apiRequest<{ files: Array<{ filename: string; path: string; size: number }> }>(
             `/api/experiments/${experimentId}/upload`,
             {
@@ -250,9 +250,13 @@ export const experimentsApi = {
         );
     },
     listFiles: (experimentId: string) =>
-        apiRequest<{ files: Array<{ filename: string; path: string; size: number }> }>(
+        apiRequest<{ files: Array<{ id: string; filename: string; path: string; size: number; mimeType?: string; assetType: string; createdAt: string }> }>(
             `/api/experiments/${experimentId}/files`
         ),
+    deleteFile: (experimentId: string, assetId: string) =>
+        apiRequest<void>(`/api/experiments/${experimentId}/files/${assetId}`, {
+            method: 'DELETE',
+        }),
 
     // Entries (for equipment data import)
     listEntries: (experimentId: string) =>
@@ -492,7 +496,7 @@ export const equipmentApi = {
         apiRequest<void>(`/api/equipment/${id}`, {
             method: 'DELETE',
         }),
-    
+
     // Equipment Locations
     listLocations: () => apiRequest<EquipmentLocation[]>('/api/equipment/locations'),
     createLocation: (data: Partial<EquipmentLocation>) =>
