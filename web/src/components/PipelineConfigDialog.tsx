@@ -118,7 +118,7 @@ export function PipelineConfigDialog({ experimentId, onClose, onSubmit }: Pipeli
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const config: PipelineConfig = {
       pipelineType: selectedPipeline,
       parameters,
@@ -187,7 +187,7 @@ export function PipelineConfigDialog({ experimentId, onClose, onSubmit }: Pipeli
                   <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">
                     Pipeline Parameters
                   </h3>
-                  
+
                   {selectedTemplate.parameters.map((param) => (
                     <div key={param.name}>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -196,7 +196,7 @@ export function PipelineConfigDialog({ experimentId, onClose, onSubmit }: Pipeli
                       {param.description && (
                         <p className="text-xs text-gray-500 mb-2">{param.description}</p>
                       )}
-                      
+
                       {param.type === 'select' && (
                         <select
                           value={parameters[param.name] || ''}
@@ -252,11 +252,11 @@ export function PipelineConfigDialog({ experimentId, onClose, onSubmit }: Pipeli
               )}
 
               {/* Actions */}
-              <div className="flex justify-end gap-3 pt-4 border-t">
+              <div className="flex gap-3 pt-4 border-t">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                  className="px-4 flex-1 py-1.5 text-sm text-white/80 rounded-lg hover:bg-white/5 transition-colors"
                 >
                   Cancel
                 </button>

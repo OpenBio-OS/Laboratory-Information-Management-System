@@ -97,9 +97,9 @@ export function NewVisualizationDialog({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-neutral-900 border border-white/10 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div className="bg-neutral-900 border border-white/10 rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5">
           <div>
             <h2 className="text-xl font-bold text-white">New Visualization</h2>
             <p className="text-xs text-white/40 font-medium tracking-wide">Register or create a data visualization</p>
@@ -277,10 +277,10 @@ export function NewVisualizationDialog({ onClose }: Props) {
         )}
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-black/20 border-t border-white/10 flex justify-between items-center mt-auto">
+        <div className="px-6 py-4 bg-white/5 border-t border-white/10 flex justify-between items-center mt-auto">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-bold text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
+            className="px-4 py-1.5 text-sm text-white/80 rounded-lg hover:bg-white/5 transition-colors"
           >
             Cancel
           </button>

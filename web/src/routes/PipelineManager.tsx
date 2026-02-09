@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { PipelineSetupWizard } from '../components/PipelineSetupWizard';
 import { NewPipelineRunDialog } from '../components/NewPipelineRunDialog';
-import { useNavigation } from '../App';
+// import { useNavigation } from '../App';
 import { Plus, X, Terminal, Trash2, HeartPulse } from 'lucide-react';
 import { DeleteConfirmDialog } from '../components/DeleteConfirmDialog';
 import { ReportViewer } from '../components/ReportViewer';
@@ -22,7 +22,7 @@ interface PipelineRun {
 }
 
 export function PipelineManager() {
-  const { navigateTo } = useNavigation();
+  // const { navigateTo } = useNavigation();
   const [runs, setRuns] = useState<PipelineRun[]>([]);
   const [filter, setFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
@@ -392,9 +392,9 @@ function PipelineLogsModal({ runId, onClose }: { runId: string; onClose: () => v
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl w-[90vw] h-[80vh] max-w-5xl flex flex-col">
+      <div className="bg-neutral-900 border border-white/10 rounded-xl shadow-2xl w-[90vw] h-[80vh] max-w-5xl flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5">
           <div className="flex items-center gap-3">
             <Terminal size={20} className="text-brand-primary" />
             <h3 className="text-lg font-bold text-white">Pipeline Logs</h3>

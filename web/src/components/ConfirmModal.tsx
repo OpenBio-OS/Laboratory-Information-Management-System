@@ -35,7 +35,7 @@ export function ConfirmModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className={`w-full max-w-md bg-neutral-900 border rounded-2xl shadow-xl overflow-hidden ${isDanger ? 'border-red-500/20' : 'border-yellow-500/20'
+      <div className={`w-full max-w-md bg-neutral-900 border rounded-xl shadow-xl overflow-hidden ${isDanger ? 'border-red-500/20' : 'border-yellow-500/20'
         }`}>
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5">

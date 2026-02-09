@@ -9,10 +9,10 @@ interface DeleteConfirmDialogProps {
   confirmWord?: string;
 }
 
-export function DeleteConfirmDialog({ 
-  onClose, 
-  onConfirm, 
-  title, 
+export function DeleteConfirmDialog({
+  onClose,
+  onConfirm,
+  title,
   message,
   confirmWord = 'DELETE'
 }: DeleteConfirmDialogProps) {
@@ -32,7 +32,7 @@ export function DeleteConfirmDialog({
         onClose();
       }
     };
-    
+
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [onClose]);
@@ -75,6 +75,7 @@ export function DeleteConfirmDialog({
         </div>
 
         {/* Footer */}
+
         <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}

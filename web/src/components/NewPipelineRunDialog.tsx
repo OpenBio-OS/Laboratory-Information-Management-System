@@ -476,9 +476,9 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-neutral-900 border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div className="bg-neutral-900 border border-white/10 rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="border-b border-white/10">
+        <div className="border-b border-white/10 bg-white/5">
           <div className="px-6 pt-4 pb-3 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <h2 className="text-xl font-bold text-white">New Pipeline Run</h2>
@@ -795,27 +795,28 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between">
+        <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between bg-white/5">
           <div>
+            <button
+              onClick={onClose}
+              className="px-4 py-1.5 text-sm text-white/80 rounded-lg hover:bg-white/5 transition-colors"
+            >
+              Cancel
+            </button>
+
+          </div>
+
+          <div className="flex items-center gap-3">
+
             {step === 'pipeline' && (
               <button
                 onClick={() => setStep('experiment')}
-                className="flex items-center gap-2 px-4 py-2 text-white/60 hover:text-white transition-colors"
+                className="flex items-center text-sm gap-2 px-4 py-2 text-white/60 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
               >
                 <ChevronLeft size={16} />
                 Back
               </button>
             )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-1.5 text-sm border border-white/10 text-white/80 rounded-lg hover:bg-white/5 transition-colors"
-            >
-              Cancel
-            </button>
-
             {step === 'experiment' ? (
               <button
                 onClick={() => setStep('pipeline')}
@@ -922,11 +923,11 @@ function AddPipelineModal({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
       <div
-        className="bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col"
+        className="bg-neutral-900 border border-white/10 rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5">
           <h3 className="text-lg font-bold text-white">Add Custom Pipeline</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={18} />
@@ -1137,10 +1138,10 @@ function AddPipelineModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-white/10 flex justify-end gap-3">
+        <div className="px-6 py-4 justify-between border-t border-white/10 flex gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-white/10 text-white/80 rounded-lg hover:bg-white/5 transition-colors"
+            className="px-4 py-1.5 text-sm text-white/80 rounded-lg hover:bg-white/5 transition-colors"
           >
             Cancel
           </button>

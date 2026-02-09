@@ -6,7 +6,7 @@ import { queryClient } from "./lib/queryClient";
 import { ApiProvider, useApi } from "./lib/ApiContext";
 import { SetupWizard, SetupConfig } from "./features/setup";
 import { ChartScatter, Database, FlaskConical, LayoutDashboard, Microscope, Refrigerator, Settings, SquareLibrary, SquareFunction } from "lucide-react";
-import { ConfirmDialog } from "./components/ConfirmDialog";
+import { ConfirmModal as ConfirmDialog } from "./components/ConfirmModal";
 import { DeleteConfirmDialog } from "./components/DeleteConfirmDialog";
 import "./App.css";
 
