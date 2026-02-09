@@ -412,6 +412,21 @@ async fn run_nextflow_pipeline(
                     "[pipeline] Nextflow completed successfully for run {}",
                     run_id
                 );
+
+                // Polymorphic Output Detection
+                println!(
+                    "[pipeline] Detecting outputs for pipeline type: {}",
+                    request.pipeline_type
+                );
+                if let Err(e) =
+                    detect_and_upload_outputs(&api_base, &run_id, &out_dir, &request.pipeline_type)
+                        .await
+                {
+                    eprintln!("[pipeline] [WARN] Output detection failed: {}", e);
+                } else {
+                    println!("[pipeline] Output detection and upload completed");
+                }
+
                 update_run_status(&api_base, &run_id, "COMPLETED", None).await;
             } else {
                 let msg = format!("Nextflow exited with code: {:?}", status.code());
@@ -498,6 +513,28 @@ pub async fn cancel_pipeline(
     Ok(())
 }
 
+/// Delete a pipeline run
+#[tauri::command]
+pub async fn delete_pipeline_run(
+    run_id: String,
+    state: State<'_, crate::AppState>,
+) -> Result<(), String> {
+    let url = format!("{}/runs/{}", get_api_base_url(&state), run_id);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .delete(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Server error: {}", response.status()));
+    }
+
+    Ok(())
+}
+
 /// List available pipeline types
 #[tauri::command]
 pub async fn list_pipelines() -> Result<Vec<PipelineInfo>, String> {
@@ -558,15 +595,21 @@ fn generate_samplesheet(inputs_json: &str, pipeline_type: &str) -> Result<String
     let experiments: Vec<ExperimentInput> = serde_json::from_str(inputs_json)
         .map_err(|e| format!("Failed to parse experiment inputs JSON: {}", e))?;
 
-    let is_rnaseq = pipeline_type.to_lowercase().contains("rnaseq");
+    let pipeline_type = pipeline_type.to_lowercase();
+    let is_rnaseq = pipeline_type.contains("rnaseq") && !pipeline_type.contains("scrnaseq");
+    let is_scrnaseq = pipeline_type.contains("scrnaseq");
+
     println!(
-        "[pipeline] Generating samplesheet (is_rnaseq: {})",
-        is_rnaseq
+        "[pipeline] Generating samplesheet (type: {}, is_rnaseq: {}, is_scrnaseq: {})",
+        pipeline_type, is_rnaseq, is_scrnaseq
     );
 
-    let mut csv = if is_rnaseq {
+    let mut csv = if is_scrnaseq {
+        String::from("sample,fastq_1,fastq_2\n")
+    } else if is_rnaseq {
         String::from("sample,fastq_1,fastq_2,strandedness\n")
     } else {
+        // Fallback for other pipelines
         String::from("sample,fastq_1,fastq_2,strandedness,group,replicate\n")
     };
 
@@ -629,7 +672,12 @@ fn generate_samplesheet(inputs_json: &str, pipeline_type: &str) -> Result<String
                 } else {
                     ""
                 };
-                if csv.contains("group") {
+
+                if is_scrnaseq {
+                    csv.push_str(&format!("{},{},{}\n", sample_name, f1.path, f2_path));
+                } else if is_rnaseq {
+                    csv.push_str(&format!("{},{},{},auto\n", sample_name, f1.path, f2_path));
+                } else if csv.contains("group") {
                     csv.push_str(&format!(
                         "{},{},{},auto,{},{}\n",
                         sample_name, f1.path, f2_path, exp.group, exp.replicate
@@ -642,4 +690,123 @@ fn generate_samplesheet(inputs_json: &str, pipeline_type: &str) -> Result<String
     }
 
     Ok(csv)
+}
+
+async fn detect_and_upload_outputs(
+    api_base: &str,
+    run_id: &str,
+    out_dir: &std::path::Path,
+    pipeline_type: &str,
+) -> Result<(), String> {
+    let pipeline_type = pipeline_type.to_lowercase();
+    let is_scrnaseq = pipeline_type.contains("scrnaseq");
+    let is_rnaseq = pipeline_type.contains("rnaseq") && !is_scrnaseq;
+
+    // 1. Universal: MultiQC Report
+    let report_paths = vec![
+        out_dir.join("multiqc").join("multiqc_report.html"),
+        out_dir.join("multiqc_report.html"),
+    ];
+    for path in report_paths {
+        if path.exists() {
+            println!(
+                "[pipeline] Found MultiQC report at {:?}, uploading...",
+                path
+            );
+            let _ = upload_asset(api_base, run_id, &path, "REPORT").await;
+            break;
+        }
+    }
+
+    // 2. Scenario A: Single-Cell (Matrix Market)
+    if is_scrnaseq {
+        // Recursive search for matrix.mtx might be needed, but let's try standard paths first
+        // cellranger/outs/filtered_feature_bc_matrix/
+        // star/outs/ ...
+        // nf-core/scrnaseq output structure varies, but we look for the key files anywhere in out_dir
+
+        // Simple heuristic: walk the dir to find matrix.mtx
+        let walker = walkdir::WalkDir::new(out_dir).into_iter();
+        for entry in walker.filter_map(|e| e.ok()) {
+            let fname = entry.file_name().to_string_lossy();
+            if fname == "matrix.mtx" || fname == "matrix.mtx.gz" {
+                println!(
+                    "[pipeline] Found SC Matrix at {:?}, uploading...",
+                    entry.path()
+                );
+                let _ = upload_asset(api_base, run_id, entry.path(), "MATRIX").await;
+            } else if fname == "barcodes.tsv" || fname == "barcodes.tsv.gz" {
+                let _ = upload_asset(api_base, run_id, entry.path(), "BARCODES").await;
+            } else if fname == "features.tsv" || fname == "features.tsv.gz" || fname == "genes.tsv"
+            {
+                let _ = upload_asset(api_base, run_id, entry.path(), "FEATURES").await;
+            }
+        }
+    }
+
+    // 3. Scenario B: Bulk RNA (Counts Table)
+    if is_rnaseq {
+        // Look for salmon.merged.gene_counts.tsv
+        let walker = walkdir::WalkDir::new(out_dir).into_iter();
+        for entry in walker.filter_map(|e| e.ok()) {
+            let fname = entry.file_name().to_string_lossy();
+            if fname.contains("salmon.merged.gene_counts.tsv") || fname.contains("gene_counts.tsv")
+            {
+                println!(
+                    "[pipeline] Found Counts Table at {:?}, uploading...",
+                    entry.path()
+                );
+                let _ = upload_asset(api_base, run_id, entry.path(), "COUNTS").await;
+                break; // Only need one main counts file usually
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn upload_asset(
+    api_base: &str,
+    run_id: &str,
+    file_path: &std::path::Path,
+    asset_type: &str, // Added asset_type parameter
+) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/runs/{}/assets", api_base, run_id);
+
+    if !file_path.exists() {
+        return Err(format!("File not found: {:?}", file_path));
+    }
+
+    let filename = file_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    // Read file bytes
+    let data = std::fs::read(file_path).map_err(|e| e.to_string())?;
+
+    // Create multipart form
+    // Note: requires "multipart" feature in reqwest
+    let part = reqwest::multipart::Part::bytes(data).file_name(filename.clone());
+    let mut form = reqwest::multipart::Form::new().part("file", part);
+
+    // Add asset type field
+    form = form.text("asset_type", asset_type.to_string());
+
+    let response = client
+        .post(&url)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Upload request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("Server returned error: {}", text));
+    }
+
+    println!("[pipeline] Uploaded {} as {}", filename, asset_type);
+    Ok(())
 }

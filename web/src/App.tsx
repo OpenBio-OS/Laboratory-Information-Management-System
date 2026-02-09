@@ -19,6 +19,7 @@ export type TabId = 'dashboard' | 'freezer' | 'library' | 'experiments' | 'pipel
 interface NavigationTarget {
   tab: TabId;
   itemId?: string;  // Optional item to select/highlight after navigation
+  view?: string;    // Optional sub-view (e.g., 'report')
 }
 
 interface NavigationContextValue {
@@ -26,6 +27,7 @@ interface NavigationContextValue {
   setActiveTab: (tab: TabId) => void;
   navigateTo: (target: NavigationTarget) => void;
   pendingItemId: string | null;
+  pendingView: string | null;
   clearPendingItem: () => void;
 }
 
@@ -65,6 +67,7 @@ const navItems = [
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
+  const [pendingView, setPendingView] = useState<string | null>(null);
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const { isConnected, isLoading, setApiUrl, apiUrl } = useApi();
 
@@ -99,14 +102,14 @@ function AppContent() {
   }, [isConnected, apiUrl]);
 
   const navigateTo = useCallback((target: NavigationTarget) => {
-    if (target.itemId) {
-      setPendingItemId(target.itemId);
-    }
+    setPendingItemId(target.itemId || null);
+    setPendingView(target.view || null);
     setActiveTab(target.tab);
   }, []);
 
   const clearPendingItem = useCallback(() => {
     setPendingItemId(null);
+    setPendingView(null);
   }, []);
 
   useEffect(() => {
@@ -131,13 +134,13 @@ function AppContent() {
         const hasConfig = localStorage.getItem('openbio_config');
         setNeedsSetup(!hasConfig);
       });
-    
+
     // Listen for reinitialize event from system tray
     const unlisten = listen('openbio:reinitialize', () => {
       console.log('Reinitialize event received - resetting to setup wizard');
       setNeedsSetup(true);
     });
-    
+
     return () => {
       unlisten.then(fn => fn());
     };
@@ -187,7 +190,7 @@ function AppContent() {
   }
 
   return (
-    <NavigationContext.Provider value={{ activeTab, setActiveTab, navigateTo, pendingItemId, clearPendingItem }}>
+    <NavigationContext.Provider value={{ activeTab, setActiveTab, navigateTo, pendingItemId, pendingView, clearPendingItem }}>
       <div className="flex h-screen bg-main text-white overflow-hidden font-sans selection:bg-brand-primary/30">
         {/* Sidebar */}
         <aside className="w-64 bg-surface/50 backdrop-blur-md border-r border-white/5 flex flex-col transition-all duration-300">
@@ -205,7 +208,10 @@ function AppContent() {
                     ? "bg-brand-primary/10 text-brand-primary shadow-[0_0_20px_rgba(23,185,120,0.1)]"
                     : "text-white/60 hover:bg-white/5 hover:text-white"
                     }`}
-                  onClick={() => setActiveTab(item.id as TabId)}
+                  onClick={() => {
+                    setActiveTab(item.id as TabId);
+                    clearPendingItem();
+                  }}
                 >
                   <item.icon size={20} className={activeTab === item.id ? "text-brand-primary" : "text-white/40 group-hover:text-white transition-colors"} />
                   <span className="font-medium">{item.label}</span>
@@ -240,7 +246,7 @@ function AppContent() {
               {activeTab === "equipment" && <EquipmentPage />}
               {activeTab === "experiments" && <ExperimentsView />}
               {activeTab === "pipelines" && <div className="h-full overflow-hidden"><PipelineManager /></div>}
-              {activeTab === "insight" && <div className="h-full overflow-hidden"><InsightGallery /></div>}
+              {activeTab === "insight" && <div className="h-full overflow-hidden"><InsightContainer /></div>}
               {activeTab === "settings" && <div className="overflow-y-auto h-full pb-8 scrollbar-hide"><div className="max-w-7xl mx-auto w-full animate-fade-in"><SettingsView onResetSetup={() => setNeedsSetup(true)} /></div></div>}
             </div>
           </div>
@@ -276,7 +282,7 @@ import { LibraryPage } from "./features/library/LibraryPage";
 import { ExperimentsPage } from "./features/experiments/ExperimentsPage";
 import { EquipmentPage } from "./features/equipment/EquipmentPage";
 import { PipelineManager } from "./routes/PipelineManager";
-import { InsightGallery } from "./routes/InsightGallery";
+import { InsightContainer } from "./routes/InsightContainer";
 
 // Views
 function DashboardView() {
@@ -494,21 +500,19 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
             <div>
               <h4 className="font-medium text-white mb-1">Start on system boot</h4>
               <p className="text-sm text-white/40">
-                {isHub || isAgent 
-                  ? "Automatically start OpenBio when your computer boots (recommended for server modes)" 
+                {isHub || isAgent
+                  ? "Automatically start OpenBio when your computer boots (recommended for server modes)"
                   : "Launch OpenBio automatically when you log in"}
               </p>
             </div>
             <button
               onClick={handleAutoStartToggle}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                autoStart ? 'bg-brand-primary' : 'bg-white/10'
-              }`}
+              className={`relative w-12 h-6 rounded-full transition-colors ${autoStart ? 'bg-brand-primary' : 'bg-white/10'
+                }`}
             >
               <div
-                className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                  autoStart ? 'translate-x-6' : 'translate-x-0'
-                }`}
+                className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${autoStart ? 'translate-x-6' : 'translate-x-0'
+                  }`}
               />
             </button>
           </div>
@@ -524,14 +528,12 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
               </div>
               <button
                 onClick={handleMinimizeToTrayToggle}
-                className={`relative w-12 h-6 rounded-full transition-colors ${
-                  minimizeToTray ? 'bg-brand-primary' : 'bg-white/10'
-                }`}
+                className={`relative w-12 h-6 rounded-full transition-colors ${minimizeToTray ? 'bg-brand-primary' : 'bg-white/10'
+                  }`}
               >
                 <div
-                  className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                    minimizeToTray ? 'translate-x-6' : 'translate-x-0'
-                  }`}
+                  className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${minimizeToTray ? 'translate-x-6' : 'translate-x-0'
+                    }`}
                 />
               </button>
             </div>
@@ -557,7 +559,7 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
               </Button>
             </div>
           )}
-          
+
           <div className="flex items-center justify-between p-4 rounded-xl bg-red-500/5 border border-red-500/10">
             <div>
               <h4 className="font-medium text-white mb-1">Reset Application</h4>
@@ -569,7 +571,7 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
           </div>
         </div>
       </Card>
-      
+
       {showResetSetupDialog && (
         <ConfirmDialog
           title="Reset Application"
@@ -580,7 +582,7 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
           variant="warning"
         />
       )}
-      
+
       {showResetDatabaseDialog && (
         <DeleteConfirmDialog
           title="Delete All Data"

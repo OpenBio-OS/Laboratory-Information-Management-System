@@ -9,7 +9,7 @@ use axum::{
     extract::{Multipart, Path, Query, State},
     http::{header, StatusCode},
     response::IntoResponse,
-    routing::get,
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,7 @@ use serde_json;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use tokio_util::io::ReaderStream;
 /// Health check response
 #[derive(Serialize)]
 pub struct HealthResponse {
@@ -47,21 +48,27 @@ pub fn api_routes() -> Router<AppState> {
         .nest("/equipment", equipment_routes())
         // Pipeline routes
         .nest("/pipelines", pipeline_routes())
+        // Visualization routes
+        .nest("/visualizations", visualization_routes())
+        // File serving route
+        .route("/files/{id}/view", get(serve_file))
 }
 
 fn pipeline_routes() -> Router<AppState> {
     Router::new()
-        .route("/run", axum::routing::post(start_pipeline_run))
+        .route("/run", post(start_pipeline_run))
         .route("/runs", get(list_pipeline_runs))
         .route("/runs/{id}", get(get_pipeline_run_status))
-        .route(
-            "/runs/{id}/status",
-            axum::routing::patch(update_pipeline_status),
-        )
-        .route(
-            "/runs/{id}/cancel",
-            axum::routing::post(cancel_pipeline_run),
-        )
+        .route("/runs/{id}/status", patch(update_pipeline_status))
+        .route("/runs/{id}", delete(delete_pipeline_run))
+        .route("/runs/{id}/cancel", post(cancel_pipeline_run))
+        .route("/runs/{id}/assets", post(upload_pipeline_asset))
+}
+
+fn visualization_routes() -> Router<AppState> {
+    Router::new()
+        .route("/", post(register_visualization))
+        .route("/{id}", delete(delete_visualization))
 }
 
 // Pipeline Handlers
@@ -122,6 +129,351 @@ async fn cancel_pipeline_run(
         Ok(_) => StatusCode::OK.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
+}
+
+async fn delete_pipeline_run(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state
+        .pipeline_manager
+        .delete_run(&id, &state.storage_path)
+        .await
+    {
+        Ok(_) => StatusCode::OK.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub struct PipelineAssetResponse {
+    pub asset_id: String,
+    pub filename: String,
+}
+
+// Visualization management
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterVisualizationRequest {
+    pub name: String,
+    pub visualization_type: String,
+    pub experiment_id: Option<String>,
+    pub config_json: Option<String>,
+    pub data_path: Option<String>,
+}
+
+async fn register_visualization(
+    State(state): State<AppState>,
+    Json(payload): Json<RegisterVisualizationRequest>,
+) -> Result<Json<crate::db::prisma::visualization::Data>, (StatusCode, String)> {
+    let mut params = vec![];
+
+    if let Some(config) = payload.config_json.as_ref() {
+        params.push(crate::db::prisma::visualization::config_json::set(Some(
+            config.clone(),
+        )));
+    }
+
+    if let Some(exp_id) = payload.experiment_id.as_ref() {
+        params.push(crate::db::prisma::visualization::experiment::connect(
+            crate::db::prisma::experiment::id::equals(exp_id.clone()),
+        ));
+    }
+
+    // Create visualization
+    let visualization = state
+        .db
+        .visualization()
+        .create(
+            payload.name.clone(),
+            payload.visualization_type.clone(),
+            params,
+        )
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // If data_path provided, register all files as DigitalAssets and link
+    if let Some(path_str) = payload.data_path.as_ref() {
+        let path = std::path::Path::new(&path_str);
+        if path.exists() {
+            let mut files_to_process = vec![];
+
+            if path.is_dir() {
+                // Recursively find all files
+                get_files_recursive(path, &mut files_to_process);
+            } else {
+                files_to_process.push(path.to_path_buf());
+            }
+
+            for file_path in files_to_process {
+                let rel_path = if path.is_dir() {
+                    file_path
+                        .strip_prefix(path)
+                        .unwrap_or(&file_path)
+                        .to_path_buf()
+                } else {
+                    file_path
+                        .file_name()
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or(file_path.clone())
+                };
+
+                let filename = file_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unnamed_data")
+                    .to_string();
+
+                // Create storage key and copy to storage
+                let storage_key =
+                    format!("visualizations/{}/{}", visualization.id, rel_path.display());
+                let target_path = state.storage_path.join(&storage_key);
+
+                if let Some(parent) = target_path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+
+                if let Err(e) = fs::copy(&file_path, &target_path) {
+                    tracing::error!("Failed to copy file {}: {}", file_path.display(), e);
+                    continue;
+                }
+
+                let file_size = fs::metadata(&target_path)
+                    .map(|m| m.len() as i32)
+                    .unwrap_or(0);
+
+                // Create and link DigitalAsset
+                let mut asset_params = vec![
+                    crate::db::prisma::digital_asset::visualization::connect(
+                        crate::db::prisma::visualization::id::equals(visualization.id.clone()),
+                    ),
+                    crate::db::prisma::digital_asset::size_bytes::set(Some(file_size)),
+                    crate::db::prisma::digital_asset::asset_type::set("DATA".to_string()),
+                ];
+
+                // Also link to experiment if provided
+                if let Some(exp_id) = payload.experiment_id.as_ref() {
+                    asset_params.push(crate::db::prisma::digital_asset::experiment::connect(
+                        crate::db::prisma::experiment::id::equals(exp_id.clone()),
+                    ));
+                }
+
+                let _ = state
+                    .db
+                    .digital_asset()
+                    .create(filename, storage_key, asset_params)
+                    .exec()
+                    .await;
+            }
+        }
+    }
+
+    Ok(Json(visualization))
+}
+
+fn get_files_recursive(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                get_files_recursive(&path, files);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+}
+async fn delete_visualization(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    // 1. Find the visualization and its assets
+    let viz = match state
+        .db
+        .visualization()
+        .find_unique(crate::db::prisma::visualization::id::equals(id.clone()))
+        .with(crate::db::prisma::visualization::assets::fetch(vec![]))
+        .exec()
+        .await
+    {
+        Ok(Some(v)) => v,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    // 2. Process assets with Smart Deletion logic
+    if let Ok(assets) = viz.assets() {
+        for asset in assets {
+            // Simplified Smart Deletion:
+            // 1. Detach from this visualization (Prisma delete will handle this if we delete the visualization)
+            // 2. Check if the asset record itself still has other parents
+
+            let asset_record = state
+                .db
+                .digital_asset()
+                .find_unique(crate::db::prisma::digital_asset::id::equals(
+                    asset.id.clone(),
+                ))
+                .exec()
+                .await;
+
+            if let Ok(Some(a)) = asset_record {
+                let has_experiment = a.experiment_id.is_some();
+                let has_pipeline = a.pipeline_run_id.is_some();
+
+                // Count other visualizations for this asset
+                let other_viz_count = state
+                    .db
+                    .visualization()
+                    .count(vec![
+                        crate::db::prisma::visualization::assets::some(vec![
+                            crate::db::prisma::digital_asset::id::equals(a.id.clone()),
+                        ]),
+                        crate::db::prisma::visualization::id::not(id.clone()),
+                    ])
+                    .exec()
+                    .await
+                    .unwrap_or(0);
+
+                if !has_experiment && !has_pipeline && other_viz_count == 0 {
+                    // Truly orphaned - delete file and record
+                    let path = state.storage_path.join(&a.storage_key);
+                    if path.exists() {
+                        let _ = fs::remove_file(path);
+                    }
+                    let _ = state
+                        .db
+                        .digital_asset()
+                        .delete(crate::db::prisma::digital_asset::id::equals(a.id))
+                        .exec()
+                        .await;
+                }
+            }
+        }
+    }
+
+    // 3. Delete visualization record
+    match state
+        .db
+        .visualization()
+        .delete(crate::db::prisma::visualization::id::equals(id))
+        .exec()
+        .await
+    {
+        Ok(_) => StatusCode::OK.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+// Upload pipeline asset (e.g. multiqc_report.html)
+async fn upload_pipeline_asset(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // 1. Verify pipeline run exists
+    let _run = state
+        .db
+        .pipeline_run()
+        .find_unique(crate::db::prisma::pipeline_run::id::equals(id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Pipeline run not found".to_string()))?;
+
+    // 2. Process multipart - robustly handle field order
+    let mut asset_type = "REPORT".to_string(); // Default
+    let mut file_processed = false;
+    let mut saved_filename = String::new();
+    let mut saved_size = 0;
+    let mut saved_content_type = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+    {
+        let name = field.name().unwrap_or("").to_string();
+
+        if name == "asset_type" {
+            if let Ok(val) = field.text().await {
+                asset_type = val;
+            }
+        } else if name == "file" {
+            let filename = field.file_name().unwrap_or("unknown").to_string();
+            let content_type = field.content_type().map(|s| s.to_string());
+
+            // Stream to disk immediately
+            let run_dir = state.storage_path.join("pipelines").join(&id);
+            fs::create_dir_all(&run_dir).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to create storage dir: {}", e),
+                )
+            })?;
+
+            let target_path = run_dir.join(&filename);
+            let mut file = fs::File::create(&target_path).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to create file: {}", e),
+                )
+            })?;
+
+            // Read bytes (for now load into memory, ideally stream if very large but Axum Multipart isn't easily streamable to File without buffer)
+            // Actually field.bytes() reads full into memory. For large files we should use streaming,
+            // but for now this is fine for typical 50-100MB files.
+            let data = field
+                .bytes()
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+            saved_size = data.len() as i32;
+            saved_content_type = content_type;
+            saved_filename = filename;
+
+            file.write_all(&data).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to write file: {}", e),
+                )
+            })?;
+
+            file_processed = true;
+        }
+    }
+
+    if file_processed {
+        // 3. Create DigitalAsset
+        let storage_key = format!("pipelines/{}/{}", id, saved_filename);
+        let asset = state
+            .db
+            .digital_asset()
+            .create(
+                saved_filename.clone(),
+                storage_key,
+                vec![
+                    digital_asset::pipeline_run::connect(
+                        crate::db::prisma::pipeline_run::id::equals(id.clone()),
+                    ),
+                    digital_asset::size_bytes::set(Some(saved_size)),
+                    digital_asset::mime_type::set(saved_content_type),
+                    digital_asset::asset_type::set(asset_type.clone()),
+                ],
+            )
+            .exec()
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        return Ok(Json(serde_json::json!({
+            "status": "ok",
+            "asset_id": asset.id,
+            "filename": saved_filename,
+            "asset_type": asset_type
+        })));
+    }
+
+    Err((StatusCode::BAD_REQUEST, "No file field found".to_string()))
 }
 
 fn inventory_routes() -> Router<AppState> {
@@ -481,6 +833,7 @@ async fn get_experiment(
         .with(experiment::mentions::fetch(vec![]))
         .with(experiment::entries::fetch(vec![]))
         .with(experiment::samples::fetch(vec![]))
+        .with(experiment::pipeline_runs::fetch(vec![]))
         .exec()
         .await
         .ok()
@@ -756,19 +1109,6 @@ async fn search_entities(State(state): State<AppState>) -> Json<Vec<SearchResult
     }
 
     Json(results)
-}
-
-// Helper to format equipment type for display
-fn format_equipment_type(t: &str) -> String {
-    match t {
-        "sequencer" => "Sequencers".to_string(),
-        "microscope" => "Microscopes".to_string(),
-        "centrifuge" => "Centrifuges".to_string(),
-        "pcr_machine" => "PCR Machines".to_string(),
-        "incubator" => "Incubators".to_string(),
-        "freezer" => "Freezers".to_string(),
-        _ => t.replace('_', " ").to_string(),
-    }
 }
 
 // Helper to get full container path
@@ -1073,7 +1413,8 @@ async fn list_experiment_files(
     Path(experiment_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     // Fetch assets from database
-    let assets = state
+    // 1. Fetch assets directly linked to experiment
+    let mut assets = state
         .db
         .digital_asset()
         .find_many(vec![digital_asset::experiment_id::equals(Some(
@@ -1082,6 +1423,19 @@ async fn list_experiment_files(
         .exec()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // 2. Fetch assets linked via pipeline runs
+    let pipeline_assets = state
+        .db
+        .digital_asset()
+        .find_many(vec![digital_asset::pipeline_run::is(vec![
+            crate::db::prisma::pipeline_run::experiment_id::equals(experiment_id.clone()),
+        ])])
+        .exec()
+        .await
+        .unwrap_or_default();
+
+    assets.extend(pipeline_assets);
 
     let files: Vec<serde_json::Value> = assets
         .into_iter()
@@ -1152,6 +1506,39 @@ async fn delete_experiment_file(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(()))
+}
+
+// Serve a file for viewing (e.g., in an iframe)
+async fn serve_file(
+    State(state): State<AppState>,
+    Path(asset_id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let asset = state
+        .db
+        .digital_asset()
+        .find_unique(digital_asset::id::equals(asset_id))
+        .exec()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let path = std::path::Path::new(&asset.storage_key);
+    if !path.exists() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let file = tokio::fs::File::open(path)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let content_type = asset
+        .mime_type
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+
+    Ok((
+        [(header::CONTENT_TYPE, content_type)],
+        Body::from_stream(ReaderStream::new(file)),
+    ))
 }
 
 // ==========================================

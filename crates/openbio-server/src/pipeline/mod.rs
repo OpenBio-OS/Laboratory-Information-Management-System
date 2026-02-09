@@ -142,6 +142,77 @@ impl PipelineManager {
         self.update_run_status(run_id, "CANCELLED", None).await
     }
 
+    /// Delete a pipeline run and all associated assets from disk and DB (Smart Deletion)
+    pub async fn delete_run(
+        &self,
+        run_id: &str,
+        storage_path: &std::path::Path,
+    ) -> Result<(), ServerError> {
+        use crate::db::prisma::{digital_asset, pipeline_run};
+
+        // 1. Fetch assets associated with this run to apply Smart Deletion
+        let assets = self
+            .db
+            .digital_asset()
+            .find_many(vec![digital_asset::pipeline_run_id::equals(Some(
+                run_id.to_string(),
+            ))])
+            .exec()
+            .await
+            .map_err(|e| ServerError::Database(e.to_string()))?;
+
+        for asset in assets {
+            // Smart Deletion Logic: Only delete from disk/DB if no other parents exist
+            let has_experiment = asset.experiment_id.is_some();
+            let has_visualization = asset.visualization_id.is_some();
+
+            // Note: We are about to delete THIS pipeline run, so we don't need to check other pipeline runs
+            // unless the schema allows many-to-many, but currently it's one pipelineRunId per asset.
+
+            if !has_experiment && !has_visualization {
+                // Truly orphan - delete file and record
+                let path = storage_path.join(&asset.storage_key);
+                if path.exists() {
+                    let _ = std::fs::remove_file(path);
+                }
+                let _ = self
+                    .db
+                    .digital_asset()
+                    .delete(digital_asset::id::equals(asset.id))
+                    .exec()
+                    .await;
+            } else {
+                // Shared asset - just detach it from this run
+                let _ = self
+                    .db
+                    .digital_asset()
+                    .update(
+                        digital_asset::id::equals(asset.id),
+                        vec![digital_asset::pipeline_run_id::set(None)],
+                    )
+                    .exec()
+                    .await;
+            }
+        }
+
+        // 2. Delete the specific run folder on disk if it exists
+        // (This folder should contain temporary run files, not the actual assets which are moved to storage)
+        let run_dir = storage_path.join("pipelines").join(run_id);
+        if run_dir.exists() {
+            let _ = std::fs::remove_dir_all(&run_dir);
+        }
+
+        // 3. Delete the run record itself
+        self.db
+            .pipeline_run()
+            .delete(pipeline_run::id::equals(run_id.to_string()))
+            .exec()
+            .await
+            .map_err(|e| ServerError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Get status of a pipeline run
     pub async fn get_status(&self, run_id: &str) -> Result<PipelineStatus, ServerError> {
         use crate::db::prisma::pipeline_run;

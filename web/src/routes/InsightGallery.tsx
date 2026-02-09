@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useNavigation } from '../App';
 import { Plus } from 'lucide-react';
+import { NewVisualizationDialog } from '../components/NewVisualizationDialog';
 
 interface InsightInstance {
   id: string;
@@ -22,9 +23,15 @@ export function InsightGallery() {
   const [instances, setInstances] = useState<InsightInstance[]>([]);
   const [filter, setFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [showNewDialog, setShowNewDialog] = useState(false);
 
   useEffect(() => {
     loadInsightInstances();
+
+    // Listen for refresh events
+    const handleRefresh = () => loadInsightInstances();
+    window.addEventListener('refresh-insights', handleRefresh);
+    return () => window.removeEventListener('refresh-insights', handleRefresh);
   }, []);
 
   const loadInsightInstances = async () => {
@@ -38,8 +45,11 @@ export function InsightGallery() {
     }
   };
 
-  const openInsight = (experimentId: string) => {
-    navigateTo({ tab: 'insight', itemId: experimentId });
+  const openInsight = (instance: InsightInstance) => {
+    // For permanent visualizations, we use their own ID if they aren't linked to an experiment
+    // For pipeline refs, we use the experimentId
+    const itemId = instance.id.startsWith('insight-') ? instance.experimentId : instance.id;
+    navigateTo({ tab: 'insight', itemId });
   };
 
   const deleteInsight = async (id: string) => {
@@ -80,7 +90,7 @@ export function InsightGallery() {
             </p>
           </div>
           <button
-            onClick={() => navigateTo({ tab: 'experiments' })}
+            onClick={() => setShowNewDialog(true)}
             className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
           >
             <Plus size={16} />
@@ -93,8 +103,8 @@ export function InsightGallery() {
           <button
             onClick={() => setFilter('all')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'all'
-                ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
-                : 'text-white/60 hover:bg-white/5 border border-transparent'
+              ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
+              : 'text-white/60 hover:bg-white/5 border border-transparent'
               }`}
           >
             All ({instances.length})
@@ -102,8 +112,8 @@ export function InsightGallery() {
           <button
             onClick={() => setFilter('scRNA-seq')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'scRNA-seq'
-                ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
-                : 'text-white/60 hover:bg-white/5 border border-transparent'
+              ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
+              : 'text-white/60 hover:bg-white/5 border border-transparent'
               }`}
           >
             scRNA-seq
@@ -111,8 +121,8 @@ export function InsightGallery() {
           <button
             onClick={() => setFilter('ATAC-seq')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'ATAC-seq'
-                ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
-                : 'text-white/60 hover:bg-white/5 border border-transparent'
+              ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
+              : 'text-white/60 hover:bg-white/5 border border-transparent'
               }`}
           >
             ATAC-seq
@@ -120,8 +130,8 @@ export function InsightGallery() {
           <button
             onClick={() => setFilter('Spatial')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'Spatial'
-                ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
-                : 'text-white/60 hover:bg-white/5 border border-transparent'
+              ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
+              : 'text-white/60 hover:bg-white/5 border border-transparent'
               }`}
           >
             Spatial
@@ -144,12 +154,6 @@ export function InsightGallery() {
             <p className="text-white/50 mb-4">
               Create your first single-cell visualization from a completed pipeline run
             </p>
-            <button
-              onClick={() => navigateTo({ tab: 'pipelines' })}
-              className="px-4 py-2 bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-all"
-            >
-              View Pipeline Runs
-            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -157,7 +161,7 @@ export function InsightGallery() {
               <div
                 key={instance.id}
                 className="bg-neutral-800/30 backdrop-blur-sm border border-white/5 rounded-2xl overflow-hidden hover:border-white/10 transition-all cursor-pointer group"
-                onClick={() => openInsight(instance.experimentId)}
+                onClick={() => openInsight(instance)}
               >
                 {/* Thumbnail */}
                 <div className="h-48 bg-gradient-to-br from-brand-primary/10 to-purple-500/10 flex items-center justify-center relative">
@@ -215,7 +219,7 @@ export function InsightGallery() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        openInsight(instance.experimentId);
+                        openInsight(instance);
                       }}
                       className="flex-1 px-3 py-1.5 bg-brand-primary text-black font-medium rounded-lg text-sm hover:bg-brand-secondary transition-all"
                     >
@@ -239,6 +243,10 @@ export function InsightGallery() {
           </div>
         )}
       </div>
+
+      {showNewDialog && (
+        <NewVisualizationDialog onClose={() => setShowNewDialog(false)} />
+      )}
     </div>
   );
 }

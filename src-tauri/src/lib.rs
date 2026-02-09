@@ -921,7 +921,8 @@ pub fn run() {
             commands::get_experiment_metadata,
             commands::list_insight_instances,
             commands::delete_insight_instance,
-            commands::create_insight_instance,
+            commands::register_visualization,
+            commands::get_experiment_report_url,
         ])
         .setup(move |app| {
             // Check if running in Agent mode

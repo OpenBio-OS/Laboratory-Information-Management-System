@@ -4,7 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { PipelineSetupWizard } from '../components/PipelineSetupWizard';
 import { NewPipelineRunDialog } from '../components/NewPipelineRunDialog';
-import { Plus, X, Terminal } from 'lucide-react';
+import { useNavigation } from '../App';
+import { Plus, X, Terminal, Trash2, HeartPulse } from 'lucide-react';
+import { DeleteConfirmDialog } from '../components/DeleteConfirmDialog';
+import { ReportViewer } from '../components/ReportViewer';
 
 interface PipelineRun {
   id: string;
@@ -19,6 +22,7 @@ interface PipelineRun {
 }
 
 export function PipelineManager() {
+  const { navigateTo } = useNavigation();
   const [runs, setRuns] = useState<PipelineRun[]>([]);
   const [filter, setFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
@@ -26,6 +30,8 @@ export function PipelineManager() {
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
   const [showNewRunDialog, setShowNewRunDialog] = useState(false);
   const [selectedRunForLogs, setSelectedRunForLogs] = useState<string | null>(null);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+  const [showReportForExperimentId, setShowReportForExperimentId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,9 +93,19 @@ export function PipelineManager() {
     setSelectedRunForLogs(runId);
   };
 
-  const viewResults = (runId: string) => {
-    // TODO: Navigate to results view when implemented
-    console.log('View results for', runId);
+  const viewResults = (experimentId: string) => {
+    setShowReportForExperimentId(experimentId);
+  };
+
+  const handleDeleteRun = async (id: string) => {
+    try {
+      await invoke('delete_pipeline_run', { runId: id });
+      setRuns(runs.filter(r => r.id !== id));
+      setDeletingRunId(null);
+    } catch (err) {
+      console.error('Failed to delete run:', err);
+      alert('Failed to delete pipeline run: ' + err);
+    }
   };
 
   const filteredRuns = runs.filter(run => {
@@ -201,7 +217,7 @@ export function PipelineManager() {
                 key={run.id}
                 className="bg-neutral-800/30 backdrop-blur-sm border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-all"
               >
-                <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-lg font-semibold text-white">
@@ -234,25 +250,38 @@ export function PipelineManager() {
                     {run.status === 'RUNNING' && (
                       <button
                         onClick={() => cancelRun(run.id)}
-                        className="px-3 py-1.5 text-sm border border-red-500/20 text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
+                        className="px-3 py-1.5 text-sm border border-red-500/20 text-red-400 rounded-lg hover:bg-red-500/10 transition-all font-medium"
                       >
                         Cancel
                       </button>
                     )}
-                    <button
-                      onClick={() => viewLogs(run.id)}
-                      className="px-3 py-1.5 text-sm border border-white/10 text-white/80 rounded-lg hover:bg-white/5 transition-all"
-                    >
-                      View Logs
-                    </button>
+
                     {run.status === 'COMPLETED' && (
                       <button
-                        onClick={() => viewResults(run.id)}
-                        className="px-3 py-1.5 text-sm bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-all"
+                        onClick={() => viewResults(run.experimentId)}
+                        className="px-3 py-1.5 text-sm bg-brand-primary/10 text-brand-primary border border-brand-primary/20 rounded-lg hover:bg-brand-primary/20 transition-all font-semibold flex items-center gap-2"
                       >
-                        View Results
+                        <HeartPulse size={16} />
+                        View Health
                       </button>
                     )}
+
+                    <div className="flex items-center gap-1 border-l border-white/5 pl-2 ml-1">
+                      <button
+                        onClick={() => viewLogs(run.id)}
+                        className="p-1.5 text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                        title="View Logs"
+                      >
+                        <Terminal size={18} />
+                      </button>
+                      <button
+                        onClick={() => setDeletingRunId(run.id)}
+                        className="p-1.5 text-white/20 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                        title="Delete Run"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -301,6 +330,26 @@ export function PipelineManager() {
           runId={selectedRunForLogs}
           onClose={() => setSelectedRunForLogs(null)}
         />
+      )}
+
+      {deletingRunId && (
+        <DeleteConfirmDialog
+          title="Delete Pipeline Run"
+          message="Are you sure you want to delete this pipeline run? This will permanently remove the record and all output data from disk."
+          onConfirm={() => handleDeleteRun(deletingRunId)}
+          onClose={() => setDeletingRunId(null)}
+        />
+      )}
+
+      {showReportForExperimentId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-8 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-neutral-900 w-full max-w-6xl h-full max-h-[90vh] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col relative scale-[1.02] animate-in zoom-in-95 duration-200">
+            <ReportViewer
+              experimentId={showReportForExperimentId}
+              onClose={() => setShowReportForExperimentId(null)}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

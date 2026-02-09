@@ -99,7 +99,7 @@ export function CreateContainerModal({ onClose, parentId, parentName }: CreateCo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden">
+      <div className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-xl shadow-xl overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
           <h3 className="text-lg font-semibold text-white">

@@ -221,12 +221,13 @@ model Experiment {
   createdBy String?
 
   // Relations
-  samples      ExperimentSample[]
-  mentions     ExperimentMention[]
-  entries      ExperimentEntry[]
-  assets       DigitalAsset[]
-  pipelineRuns PipelineRun[]
-  lockedEquipment Equipment[] @relation("LockedEquipment")
+  samples         ExperimentSample[]
+  mentions        ExperimentMention[]
+  entries         ExperimentEntry[]
+  assets          DigitalAsset[]
+  pipelineRuns    PipelineRun[]
+  visualizations  Visualization[]
+  lockedEquipment Equipment[]         @relation("LockedEquipment")
 }
 
 /// Many-to-many: Experiment <-> Sample
@@ -301,6 +302,9 @@ model DigitalAsset {
   pipelineRunId String?
   pipelineRun   PipelineRun? @relation(fields: [pipelineRunId], references: [id])
 
+  visualizationId String?
+  visualization   Visualization? @relation(fields: [visualizationId], references: [id])
+
   // Type classification
   assetType String @default("RAW") // Values: RAW, PROCESSED, ANALYSIS, REPORT
 
@@ -332,4 +336,22 @@ model PipelineRun {
   outputs DigitalAsset[]
 
   createdAt DateTime @default(now())
+}
+
+/// Visualization record (linked to experiment or manual data)
+model Visualization {
+  id         String  @id @default(cuid())
+  name       String
+  type       String // Values: REPORT, SCANVAS, BULK_DASHBOARD
+  configJson String? // JSON for filters, settings, etc.
+
+  // Relations
+  experimentId String?
+  experiment   Experiment? @relation(fields: [experimentId], references: [id])
+
+  // Link to specific assets if needed (e.g. manual upload)
+  assets DigitalAsset[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

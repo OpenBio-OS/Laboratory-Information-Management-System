@@ -212,6 +212,17 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
     });
   }, [selectedExperiments]);
 
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const loadExperimentsAndFolders = async () => {
     setIsLoadingExperiments(true);
     try {
@@ -452,11 +463,7 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
     }
   };
 
-  // Filter experiments that don't belong to any folder (unfiled)
-  const unfiledExperiments = experiments.filter(
-    (e) => !e.folderId &&
-      (searchQuery === '' || e.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+
 
 
 
@@ -469,7 +476,7 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div className="bg-neutral-900 border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="border-b border-white/10">
           <div className="px-6 pt-4 pb-3 flex items-center justify-between">
@@ -540,35 +547,7 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
                       />
                     ))}
 
-                    {/* Unfiled Experiments */}
-                    {unfiledExperiments.length > 0 && (
-                      <div className="pt-2 border-t border-white/10 mt-2">
-                        <div className="text-xs text-white/40 px-3 py-1">Unfiled</div>
-                        {unfiledExperiments.map((exp) => (
-                          <button
-                            key={exp.id}
-                            onClick={() => handleToggleExperiment(exp)}
-                            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all ${selectedExperiments.some(s => s.experiment.id === exp.id)
-                              ? 'bg-brand-primary/15 border border-brand-primary/30'
-                              : 'hover:bg-white/5 border border-transparent'
-                              }`}
-                          >
-                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedExperiments.some(s => s.experiment.id === exp.id)
-                              ? 'bg-brand-primary border-brand-primary'
-                              : 'border-white/20'
-                              }`}>
-                              {selectedExperiments.some(s => s.experiment.id === exp.id) && <Check size={10} className="text-black" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm text-white truncate">{exp.name}</div>
-                              <div className="text-xs text-white/40">
-                                {new Date(exp.createdAt).toLocaleDateString()}
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+
                   </div>
                 )}
               </div>
