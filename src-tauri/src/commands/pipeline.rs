@@ -231,6 +231,45 @@ async fn run_nextflow_pipeline(
     println!("[pipeline]   NXF_HOME: {:?}", nxf_home);
     println!("[pipeline]   JAVA_HOME: {:?}", env.java_home);
 
+    // Smart Resource Sensing
+    // Detect system memory and CPUs to avoid OOM on local machines
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_memory();
+    sys.refresh_cpu_usage();
+
+    let total_mem_gb = sys.total_memory() / 1024 / 1024 / 1024;
+    let cpu_count = sys.cpus().len();
+
+    // Heuristics:
+    // - Leave 4GB or 20% for the OS/UI
+    // - Use all but 1 CPU core
+    let max_mem = if total_mem_gb > 8 {
+        total_mem_gb - 4
+    } else {
+        (total_mem_gb as f64 * 0.75) as u64
+    };
+    let max_cpus = if cpu_count > 1 { cpu_count - 1 } else { 1 };
+
+    println!(
+        "[pipeline] System detected: {}GB RAM, {} Cores",
+        total_mem_gb, cpu_count
+    );
+    println!(
+        "[pipeline] Resource limits: {}GB RAM, {} CPUs",
+        max_mem, max_cpus
+    );
+
+    // Create a local nextflow.config to ensure resources are respected
+    // Use process.resourceLimits (Nextflow 24.10+) AND global process overrides
+    let config_path = work_dir.join("nextflow.config");
+    let config_content = format!(
+        "process {{\n    resourceLimits = [\n        cpus: {},\n        memory: '{}GB'\n    ]\n    withName: '.*' {{\n        cpus = {}\n        memory = '{}GB'\n    }}\n}}\ndocker.pull_policy = 'always'\n",
+        max_cpus, max_mem, max_cpus, max_mem
+    );
+    if let Err(e) = std::fs::write(&config_path, &config_content) {
+        eprintln!("[pipeline] [WARN] Failed to write nextflow.config: {}", e);
+    }
+
     cmd.current_dir(&work_dir)
         .env("MAMBA_ROOT_PREFIX", root_prefix)
         .env("NXF_HOME", &nxf_home)
@@ -243,6 +282,8 @@ async fn run_nextflow_pipeline(
         .arg(&request.pipeline_type)
         .arg("-profile")
         .arg("docker")
+        .arg("-c")
+        .arg("nextflow.config")
         .arg("--outdir")
         .arg(&out_dir);
 
@@ -265,6 +306,10 @@ async fn run_nextflow_pipeline(
                     continue;
                 }
 
+                if key == "max_memory" || key == "max_cpus" {
+                    continue;
+                }
+
                 if let Some(v) = value.as_str() {
                     cmd.arg(format!("--{}", key)).arg(v);
                 } else if let Some(v) = value.as_bool() {
@@ -280,7 +325,7 @@ async fn run_nextflow_pipeline(
 
     // Generate samplesheet if inputs provided
     if let Some(json) = experiment_inputs_json {
-        match generate_samplesheet(&json) {
+        match generate_samplesheet(&json, &request.pipeline_type) {
             Ok(csv_content) => {
                 let csv_path = work_dir.join("samplesheet.csv");
                 if let Err(e) = std::fs::write(&csv_path, csv_content) {
@@ -509,11 +554,21 @@ pub async fn get_pipeline_logs(
     ))
 }
 
-fn generate_samplesheet(inputs_json: &str) -> Result<String, String> {
+fn generate_samplesheet(inputs_json: &str, pipeline_type: &str) -> Result<String, String> {
     let experiments: Vec<ExperimentInput> = serde_json::from_str(inputs_json)
         .map_err(|e| format!("Failed to parse experiment inputs JSON: {}", e))?;
 
-    let mut csv = String::from("sample,fastq_1,fastq_2,strandedness,group,replicate\n");
+    let is_rnaseq = pipeline_type.to_lowercase().contains("rnaseq");
+    println!(
+        "[pipeline] Generating samplesheet (is_rnaseq: {})",
+        is_rnaseq
+    );
+
+    let mut csv = if is_rnaseq {
+        String::from("sample,fastq_1,fastq_2,strandedness\n")
+    } else {
+        String::from("sample,fastq_1,fastq_2,strandedness,group,replicate\n")
+    };
 
     for exp in experiments {
         // Sanitize sample name for Nextflow (no spaces, no special chars except _ and -)
@@ -557,10 +612,14 @@ fn generate_samplesheet(inputs_json: &str) -> Result<String, String> {
         if r2_files.is_empty() {
             // Single end
             for f in r1_files {
-                csv.push_str(&format!(
-                    "{},{},,auto,{},{}\n",
-                    sample_name, f.path, exp.group, exp.replicate
-                ));
+                if csv.contains("group") {
+                    csv.push_str(&format!(
+                        "{},{},,auto,{},{}\n",
+                        sample_name, f.path, exp.group, exp.replicate
+                    ));
+                } else {
+                    csv.push_str(&format!("{},{},,auto\n", sample_name, f.path));
+                }
             }
         } else {
             // Paired end
@@ -570,10 +629,14 @@ fn generate_samplesheet(inputs_json: &str) -> Result<String, String> {
                 } else {
                     ""
                 };
-                csv.push_str(&format!(
-                    "{},{},{},auto,{},{}\n",
-                    sample_name, f1.path, f2_path, exp.group, exp.replicate
-                ));
+                if csv.contains("group") {
+                    csv.push_str(&format!(
+                        "{},{},{},auto,{},{}\n",
+                        sample_name, f1.path, f2_path, exp.group, exp.replicate
+                    ));
+                } else {
+                    csv.push_str(&format!("{},{},{},auto\n", sample_name, f1.path, f2_path));
+                }
             }
         }
     }
