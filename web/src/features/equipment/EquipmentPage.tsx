@@ -89,11 +89,11 @@ const SequencerIcon = ({ size = 14, className = '' }: { size?: number; className
 
 const FlowCytometerIcon = ({ size = 14, className = '' }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 512 512" fill="currentColor" className={className}>
-	<g>
-		<path d="M171.501,464.698v-237.9l-166.3-192.6c-8.9-10.9-7.9-33.3,15.1-33.3h443.6c21.6,0,26.6,19.8,15.1,33.3l-162.3,187.5v147.2
+    <g>
+      <path d="M171.501,464.698v-237.9l-166.3-192.6c-8.9-10.9-7.9-33.3,15.1-33.3h443.6c21.6,0,26.6,19.8,15.1,33.3l-162.3,187.5v147.2
 			c0,6-2,11.1-7.1,15.1l-103.8,95.8C193.801,488.698,171.501,483.898,171.501,464.698z M64.701,41.298l142.2,164.3c3,4,5,8.1,5,13.1
 			v200.6l64.5-58.5v-146.1c0-5,2-9.1,5-13.1l138.1-160.3L64.701,41.298L64.701,41.298z"/>
-	</g>
+    </g>
   </svg>
 );
 
@@ -481,10 +481,48 @@ interface TreeNodeProps {
 
 function TreeNode({ location, allLocations, equipment, level, selectedEquipmentId, onSelectEquipment, onCreateLocation, onCreateEquipment, onDeleteLocation, onDeleteEquipment }: TreeNodeProps) {
   const [isExpanded, setIsExpanded] = useState(true);
+
   const [deleteItem, setDeleteItem] = useState<EquipmentLocation | null>(null);
   const childLocations = allLocations.filter(l => l.parentId === location.id);
   const isRoom = !!location.parentId; // rooms have a parent (facility)
   const roomEquipment = isRoom ? equipment.filter(e => e.locationId === location.id) : [];
+
+  // 1. Expand if children added
+  const prevChildrenCount = useRef(childLocations.length + roomEquipment.length);
+  useEffect(() => {
+    const currentCount = childLocations.length + roomEquipment.length;
+    if (currentCount > prevChildrenCount.current) {
+      setIsExpanded(true);
+    }
+    prevChildrenCount.current = currentCount;
+  }, [childLocations.length, roomEquipment.length]);
+
+  // 2. Expand if an item inside this subtree is selected
+  useEffect(() => {
+    if (!selectedEquipmentId) return;
+
+    // Check if directly in this room
+    if (roomEquipment.some(e => e.id === selectedEquipmentId)) {
+      setIsExpanded(true);
+      return;
+    }
+
+    // Check if in any descendant location
+    const selectedEquip = equipment.find(e => e.id === selectedEquipmentId);
+    if (selectedEquip && selectedEquip.locationId) {
+      let currLocId: string | undefined = selectedEquip.locationId;
+      while (currLocId) {
+        const loc = allLocations.find(l => l.id === currLocId);
+        if (!loc) break;
+        if (loc.parentId === location.id) {
+          setIsExpanded(true);
+          break;
+        }
+        currLocId = loc.parentId || undefined;
+      }
+    }
+  }, [selectedEquipmentId, location.id, allLocations, equipment, roomEquipment]);
+
   const hasChildren = childLocations.length > 0 || roomEquipment.length > 0;
 
   // Check if any equipment in this subtree has maintenance issues
@@ -935,7 +973,7 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
 
   const handleAgentConnect = async (mode: 'local' | 'mdns' | 'enterprise', ipAddress?: string) => {
     setIsDiscovering(true);
-    
+
     try {
       if (mode === 'local') {
         // For local mode, spawn a local agent process for this equipment
@@ -948,30 +986,30 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
           equipmentId: equipment.id,
           watchFolder: equipment.watchFolder,
         });
-        
+
         // Update equipment status to ONLINE
         const updated = await equipmentApi.update(equipment.id, {
           agentStatus: 'ONLINE'
         });
         onUpdate(updated);
         queryClient.invalidateQueries({ queryKey: ['equipment'] });
-        
+
       } else if (mode === 'mdns') {
         // TODO: Implement mDNS discovery
         throw new Error('mDNS discovery will be implemented. This would use multicast DNS to discover agents on the local network.');
-        
+
       } else if (mode === 'enterprise') {
         // Connect via IP address
         if (!ipAddress) {
           throw new Error('IP address is required for enterprise mode');
         }
         const agentUrl = `http://${ipAddress}:3001`;
-        
+
         const response = await fetch(`${agentUrl}/health`, {
           method: 'GET',
           signal: AbortSignal.timeout(5000)
         });
-        
+
         if (!response.ok) {
           throw new Error(`Agent at ${ipAddress} is not responding`);
         }
@@ -1366,7 +1404,7 @@ export const EquipmentPage: React.FC = () => {
           console.log('No local agent to stop or already stopped');
         }
       }
-      
+
       // Delete the equipment
       return equipmentApi.delete(equipmentId);
     },

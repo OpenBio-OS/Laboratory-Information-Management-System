@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronDown, Plus, Box, Trash2, Building2, Warehouse, Thermometer, Layers, AlertTriangle } from 'lucide-react';
 import { Container } from '../../../lib/api';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -6,11 +6,11 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 // Helper: Check if maintenance is overdue
 function isMaintenanceOverdue(container: Container): boolean {
   if (!container.maintenanceCycle || !container.lastMaintenance) return false;
-  
+
   const lastDate = new Date(container.lastMaintenance);
   const nextDate = new Date(lastDate);
   nextDate.setDate(nextDate.getDate() + container.maintenanceCycle);
-  
+
   return nextDate < new Date();
 }
 
@@ -36,7 +36,43 @@ interface TreeNodeProps {
 function TreeNode({ container, allContainers, level, selectedId, onSelect, onCreateConfirm, onDelete }: TreeNodeProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [deleteItem, setDeleteItem] = useState<Container | null>(null);
+
+  // Auto-expand when kids are added or something inside is selected
   const children = allContainers.filter(c => c.parentId === container.id);
+
+  // 1. Expand if children added
+  const prevChildrenCount = useRef(children.length);
+  useEffect(() => {
+    if (children.length > prevChildrenCount.current) {
+      setIsExpanded(true);
+    }
+    prevChildrenCount.current = children.length;
+  }, [children.length]);
+
+  // 2. Expand if an item inside this subtree is selected
+  useEffect(() => {
+    if (!selectedId || selectedId === container.id) return;
+
+    // Check if selected container is a descendant of this container
+    let isSelectedInSubtree = false;
+    const selectedContainer = allContainers.find(c => c.id === selectedId);
+
+    if (selectedContainer) {
+      let currParentId: string | undefined = selectedContainer.parentId || undefined;
+      while (currParentId) {
+        if (currParentId === container.id) {
+          isSelectedInSubtree = true;
+          break;
+        }
+        const parent = allContainers.find(c => c.id === currParentId);
+        currParentId = parent?.parentId || undefined;
+      }
+    }
+
+    if (isSelectedInSubtree) {
+      setIsExpanded(true);
+    }
+  }, [selectedId, container.id, allContainers]);
   const hasChildren = children.length > 0;
   const isSelected = selectedId === container.id;
   const maintenanceOverdue = isMaintenanceOverdue(container);
@@ -89,7 +125,7 @@ function TreeNode({ container, allContainers, level, selectedId, onSelect, onCre
         <span className={`text-sm truncate flex-1 ${maintenanceOverdue ? 'text-red-400' : ''}`}>
           {container.name}
         </span>
-        
+
         {maintenanceOverdue && (
           <div title="Maintenance overdue">
             <AlertTriangle size={12} className="text-red-400" />
@@ -156,9 +192,8 @@ export function HierarchyTree({ containers, isLoading, selectedId, onSelect, onC
         <h3 className="text-xs font-semibold text-white/40 uppercase tracking-wider">Storage</h3>
         <button
           onClick={() => onCreateConfirm(null)}
-          className={`w-6 h-6 flex items-center justify-center hover:text-brand-primary hover:bg-brand-primary/10 rounded transition-all  ${
-            showInitialAnimation ? 'text-green-400 animate-pulse' : 'text-white/40'
-          }`}
+          className={`w-6 h-6 flex items-center justify-center hover:text-brand-primary hover:bg-brand-primary/10 rounded transition-all  ${showInitialAnimation ? 'text-green-400 animate-pulse' : 'text-white/40'
+            }`}
           title="Add Facility"
         >
           <Plus size={14} />
@@ -182,19 +217,19 @@ export function HierarchyTree({ containers, isLoading, selectedId, onSelect, onC
         </div>
       ) : (
         <div className='px-2.5'>
-                  {rootContainers.map(container => (
-          <TreeNode
-            key={container.id}
-            container={container}
-            allContainers={containers}
-            selectedId={selectedId}
-            onSelect={onSelect}
-            level={0}
-            onCreateConfirm={onCreateConfirm}
-            onDelete={onDelete}
-          />
-        ))}
-          </div>
+          {rootContainers.map(container => (
+            <TreeNode
+              key={container.id}
+              container={container}
+              allContainers={containers}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              level={0}
+              onCreateConfirm={onCreateConfirm}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
       )}
     </div>
   );

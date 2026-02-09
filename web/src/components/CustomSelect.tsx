@@ -36,7 +36,6 @@ export function CustomSelect({
     const buttonRef = useRef<HTMLButtonElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
-    const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
 
     const selectedOption = options.find((o) => o.value === value);
 
@@ -47,20 +46,31 @@ export function CustomSelect({
         )
         : options;
 
-    // Calculate position when opening
-    useEffect(() => {
-        if (isOpen && buttonRef.current) {
-            const rect = buttonRef.current.getBoundingClientRect();
-            const spaceBelow = window.innerHeight - rect.bottom;
-            const dropdownHeight = Math.min(filteredOptions.length * 44 + (searchable ? 48 : 0), 300);
+    // Calculate position synchronously for rendering
+    const getPosition = () => {
+        if (!buttonRef.current) return { top: 0, left: 0, width: 0, maxHeight: 300 };
+        const rect = buttonRef.current.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+        const spacing = 4;
+        const maxDropdownHeight = 300;
 
-            setPosition({
-                top: spaceBelow > dropdownHeight ? rect.bottom + 4 : rect.top - dropdownHeight - 4,
-                left: rect.left,
-                width: rect.width,
-            });
-        }
-    }, [isOpen, filteredOptions.length, searchable]);
+        // Calculate available space below and above
+        const spaceBelow = viewportHeight - rect.bottom - spacing;
+        const spaceAbove = rect.top - spacing;
+
+        // Decide direction and calculate position
+        const openUpward = spaceBelow < 150 && spaceAbove > spaceBelow;
+        const maxHeight = Math.min(maxDropdownHeight, openUpward ? spaceAbove : spaceBelow);
+
+        return {
+            top: openUpward ? rect.top - maxHeight - spacing : rect.bottom + spacing,
+            left: rect.left,
+            width: rect.width,
+            maxHeight,
+        };
+    };
+
+    const position = isOpen ? getPosition() : { top: 0, left: 0, width: 0, maxHeight: 300 };
 
     // Focus search input when opening
     useEffect(() => {
@@ -165,7 +175,7 @@ export function CustomSelect({
                             top: position.top,
                             left: position.left,
                             width: position.width,
-                            maxHeight: 300,
+                            maxHeight: position.maxHeight,
                         }}
                     >
                         {/* Search Input */}
@@ -203,8 +213,8 @@ export function CustomSelect({
                                         key={option.value}
                                         onClick={() => handleSelect(option.value)}
                                         className={`w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors ${index === highlightedIndex
-                                                ? 'bg-brand-primary/20 text-brand-primary'
-                                                : 'text-white/80 hover:bg-white/5'
+                                            ? 'bg-brand-primary/20 text-brand-primary'
+                                            : 'text-white/80 hover:bg-white/5'
                                             }`}
                                     >
                                         <div className="flex items-center gap-2 min-w-0">
