@@ -89,7 +89,7 @@ Common use cases: CHECK constraints, partial indexes, triggers, GIN/GIST indexes
 
 ---
 
-**Please read the README.md file to understand the project before generating code.**
+**Please read the README.md file in the project root to understand the project before generating code.**
 
 ---
 
