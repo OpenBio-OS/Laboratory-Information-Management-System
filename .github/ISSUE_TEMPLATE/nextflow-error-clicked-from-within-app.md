@@ -1,6 +1,6 @@
 ---
 name: Nextflow error clicked from within app
-about: Nextflow error
+about: My netflow pipeline failed and I need help
 title: "[NEXTFLOW ERROR]: My pipeline failed and I need help"
 labels: ''
 assignees: ''
