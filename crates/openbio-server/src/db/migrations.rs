@@ -46,32 +46,16 @@ fn get_migrations() -> Vec<Migration> {
             name: "20260209145633_add_visualization_model".to_string(),
             sql: include_str!("../../../../database/migrations/20260209145633_add_visualization_model/migration.sql"),
         },
+        Migration {
+            name: "20260210160509_add_asset_indexes".to_string(),
+            sql: include_str!("../../../../database/migrations/20260210160509_add_asset_indexes/migration.sql"),
+        },
     ]
-}
-
-/// Get database path from Prisma client URL
-/// Extracts the file path from URLs like "file:./openbio.db" or "file:/path/to/db.db"
-fn get_db_path_from_client(client: &PrismaClient) -> anyhow::Result<String> {
-    // The client stores the connection string internally
-    // For SQLite, we need to extract the file path
-    // This is a workaround - ideally we'd get it from the client directly
-    
-    // Try environment variables first
-    if let Ok(url) = std::env::var("DATABASE_URL") {
-        return Ok(url.trim_start_matches("file:").to_string());
-    }
-    if let Ok(url) = std::env::var("PRISMA_DATABASE_URL") {
-        return Ok(url.trim_start_matches("file:").to_string());
-    }
-    
-    // This should match what was passed to PrismaClient::_builder().with_url()
-    // but we need a better way to get it. For now, use default location.
-    Ok("./openbio.db".to_string())
 }
 
 /// Initialize or update the database schema
 /// This applies all pending migrations in order
-pub async fn apply_migrations(client: &PrismaClient, db_url: &str) -> anyhow::Result<()> {
+pub async fn apply_migrations(_client: &PrismaClient, db_url: &str) -> anyhow::Result<()> {
     use rusqlite::Connection;
     
     // Extract file path from URL (remove "file:" prefix)

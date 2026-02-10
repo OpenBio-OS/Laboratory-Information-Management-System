@@ -104,6 +104,14 @@ fn get_api_base_url_from_handle(app: &AppHandle) -> String {
     }
 }
 
+// Helper to get persistent log directory
+fn get_log_dir() -> std::path::PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("software.is-a.openbio")
+        .join("logs")
+}
+
 /// Update run status on the server
 async fn update_run_status(
     api_base: &str,
@@ -401,7 +409,12 @@ async fn run_nextflow_pipeline(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    let log_file_path = work_dir.join("pipeline.log");
+    // Log to persistent directory
+    let log_dir = get_log_dir();
+    if !log_dir.exists() {
+        let _ = std::fs::create_dir_all(&log_dir);
+    }
+    let log_file_path = log_dir.join(format!("pipeline_{}.log", run_id));
 
     // Log stdout in background
     if let Some(stdout) = stdout {
@@ -662,6 +675,27 @@ pub async fn delete_pipeline_run(
         return Err(format!("Server error: {}", response.status()));
     }
 
+    // Cleanup local files (logs and temp dirs)
+    let log_path = get_log_dir().join(format!("pipeline_{}.log", run_id));
+    if log_path.exists() {
+        let _ = std::fs::remove_file(log_path);
+        println!("[pipeline] Deleted log file for run {}", run_id);
+    }
+
+    // Cleanup temp directories if they exist
+    let temp_dir = std::env::temp_dir();
+    let work_dir = temp_dir.join(format!("nf_work_{}", run_id));
+    let out_dir = temp_dir.join(format!("nf_out_{}", run_id));
+
+    if work_dir.exists() {
+        let _ = std::fs::remove_dir_all(work_dir);
+        println!("[pipeline] Deleted work dir for run {}", run_id);
+    }
+    if out_dir.exists() {
+        let _ = std::fs::remove_dir_all(out_dir);
+        println!("[pipeline] Deleted out dir for run {}", run_id);
+    }
+
     Ok(())
 }
 
@@ -798,8 +832,9 @@ pub async fn get_pipeline_logs(
 
     // Check possible log locations
     let possible_locations = [
-        work_dir.join("pipeline.log"), // Our custom captured log (stdout + stderr)
-        work_dir.join(".nextflow.log"), // Nextflow's internal log
+        get_log_dir().join(format!("pipeline_{}.log", run_id)), // Permanent log
+        work_dir.join("pipeline.log"),                          // Legacy temp log
+        work_dir.join(".nextflow.log"),                         // Nextflow's internal log
         temp_dir
             .join(format!("nf_out_{}", &run_id))
             .join(".nextflow.log"),
@@ -936,125 +971,38 @@ async fn detect_and_upload_outputs(
     api_base: &str,
     run_id: &str,
     out_dir: &std::path::Path,
-    pipeline_type: &str,
+    _pipeline_type: &str,
 ) -> Result<(), String> {
     // 0. Update status to UPLOADING
     update_run_status(api_base, run_id, "UPLOADING", None).await;
 
-    let pipeline_type = pipeline_type.to_lowercase();
-    // let is_scrnaseq = pipeline_type.contains("scrnaseq");
-    // let is_rnaseq = pipeline_type.contains("rnaseq") && !is_scrnaseq;
+    println!("[pipeline] Zipping output directory: {:?}", out_dir);
 
-    // Universal Asset Discovery Strategy
-    // Recursively walk the output directory and upload files based on their extension/type.
-    // This allows for "cherry-picking" useful data without strict manifests.
+    // 1. Create Zip File
+    let temp_dir = std::env::temp_dir();
+    let zip_filename = format!("nf_out_{}.zip", run_id);
+    let zip_path = temp_dir.join(&zip_filename);
 
-    let walker = walkdir::WalkDir::new(out_dir).into_iter();
-
-    // Define exclusion list for heavy files we definitely don't want in the report/insight viewer
-    // let excluded_extensions = ["bam", "sam", "cram", "fq", "fastq", "gz", "zip", "tar"];
-    // Note: .gz is excluded by default to avoid uploading huge fastq.gz,
-    // BUT we might want matrix.mtx.gz. Special handling needed.
-
-    for entry in walker.filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if path.is_dir() {
-            continue;
-        }
-
-        let fname = entry.file_name().to_string_lossy().to_string();
-        let fname_lower = fname.to_lowercase();
-
-        // Determine Asset Type
-        let mut asset_type = "UNKNOWN";
-
-        // 1. Reports (HTML, PDF)
-        if fname_lower.ends_with(".html") || fname_lower.ends_with(".pdf") {
-            asset_type = "REPORT";
-        }
-        // 2. Data Tables (CSV, TSV, TXT, XLS)
-        else if fname_lower.ends_with(".csv")
-            || fname_lower.ends_with(".tsv")
-            || fname_lower.ends_with(".txt")
-        {
-            asset_type = "DATA";
-            if fname_lower.contains("counts") {
-                asset_type = "COUNTS";
-            }
-            if fname_lower.contains("feature") {
-                asset_type = "FEATURES";
-            }
-            if fname_lower.contains("barcode") {
-                asset_type = "BARCODES";
-            }
-        }
-        // 3. Images (PNG, SVG, JPG)
-        else if fname_lower.ends_with(".png")
-            || fname_lower.ends_with(".svg")
-            || fname_lower.ends_with(".jpg")
-            || fname_lower.ends_with(".jpeg")
-        {
-            asset_type = "IMAGE";
-        }
-        // 4. MultiQC Data (JSON, YAML)
-        else if fname_lower.contains("multiqc")
-            && (fname_lower.ends_with(".json") || fname_lower.ends_with(".yaml"))
-        {
-            asset_type = "MULTIQC_DATA";
-        }
-        // 5. Special Single Cell
-        else if fname_lower.ends_with("matrix.mtx") || fname_lower.ends_with("matrix.mtx.gz") {
-            asset_type = "MATRIX";
-        }
-
-        // Skip if UNKNOWN or explicitly suppressed
-        if asset_type == "UNKNOWN" {
-            continue;
-        }
-
-        // Upload
-        println!(
-            "[pipeline] Discovered asset: {} (Type: {})",
-            fname, asset_type
-        );
-        match upload_asset(api_base, run_id, path, asset_type).await {
-            Ok(_) => {}
-            Err(e) => eprintln!("[pipeline] Failed to upload asset {}: {}", fname, e),
-        }
+    if let Err(e) = zip_directory(out_dir, &zip_path) {
+        let err_msg = format!("Failed to zip output directory: {}", e);
+        eprintln!("[pipeline] {}", err_msg);
+        return Err(err_msg);
     }
 
-    Ok(())
-}
+    println!("[pipeline] Created zip file: {:?}", zip_path);
 
-async fn upload_asset(
-    api_base: &str,
-    run_id: &str,
-    file_path: &std::path::Path,
-    asset_type: &str, // Added asset_type parameter
-) -> Result<(), String> {
+    // 2. Upload Zip File
     let client = reqwest::Client::new();
-    let url = format!("{}/runs/{}/assets", api_base, run_id);
-
-    if !file_path.exists() {
-        return Err(format!("File not found: {:?}", file_path));
-    }
-
-    let filename = file_path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
+    let url = format!("{}/runs/{}/output", api_base, run_id);
 
     // Read file bytes
-    let data = std::fs::read(file_path).map_err(|e| e.to_string())?;
+    let data = std::fs::read(&zip_path).map_err(|e| e.to_string())?;
 
     // Create multipart form
-    // Note: requires "multipart" feature in reqwest
-    let part = reqwest::multipart::Part::bytes(data).file_name(filename.clone());
-    let mut form = reqwest::multipart::Form::new().part("file", part);
+    let part = reqwest::multipart::Part::bytes(data).file_name(zip_filename.clone());
+    let form = reqwest::multipart::Form::new().part("file", part);
 
-    // Add asset type field
-    form = form.text("asset_type", asset_type.to_string());
+    println!("[pipeline] Uploading zip file to: {}", url);
 
     let response = client
         .post(&url)
@@ -1068,7 +1016,57 @@ async fn upload_asset(
         return Err(format!("Server returned error: {}", text));
     }
 
-    println!("[pipeline] Uploaded {} as {}", filename, asset_type);
+    println!("[pipeline] Successfully uploaded output zip.");
+
+    // 3. Delete Zip File
+    let _ = std::fs::remove_file(&zip_path);
+
+    Ok(())
+}
+
+fn zip_directory(src_dir: &std::path::Path, dst_file: &std::path::Path) -> Result<(), String> {
+    if !src_dir.exists() {
+        return Err(format!("Source directory not found: {:?}", src_dir));
+    }
+
+    let file = std::fs::File::create(dst_file).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::FileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o755);
+
+    let walker = walkdir::WalkDir::new(src_dir);
+    let _prefix = src_dir.parent().unwrap_or(src_dir); // Use parent to keep the root folder name?
+                                                       // Actually, user wants "every folder and every file inside it".
+                                                       // If output is `nf_out_RUNID/foo.txt`, we probably want `foo.txt` at root of zip?
+                                                       // Or `nf_out_RUNID/foo.txt`?
+                                                       // User said "Nextflow outputs a folder... lets just keep every folder and every file inside it."
+                                                       // Usually standard zip behavior is relative to the root of the zipped folder.
+                                                       // Let's unzip INTO the target folder on server, so relative paths should be relative to `nf_out_RUNID`.
+
+    for entry in walker {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+
+        let name = path
+            .strip_prefix(src_dir)
+            .map_err(|e| e.to_string())?
+            .to_string_lossy()
+            .to_string();
+
+        if path.is_file() {
+            // println!("Adding file to zip: {}", name);
+            zip.start_file(name, options).map_err(|e| e.to_string())?;
+            let mut f = std::fs::File::open(path).map_err(|e| e.to_string())?;
+            std::io::copy(&mut f, &mut zip).map_err(|e| e.to_string())?;
+        } else if !name.is_empty() {
+            // println!("Adding dir to zip: {}", name);
+            zip.add_directory(name, options)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    zip.finish().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1139,6 +1137,7 @@ pub async fn open_pipeline_report(
     };
 
     // 1. Get the list of assets to find an HTML report
+    // 1. Get the list of assets to find an HTML report
     let client = reqwest::Client::new();
     // Endpoint is mounted at /pipelines/runs/{id}/assets
     let assets_url = format!("{}/pipelines/runs/{}/assets", api_base, run_id);
@@ -1162,39 +1161,98 @@ pub async fn open_pipeline_report(
         .await
         .map_err(|e| format!("Invalid assets JSON: {}", e))?;
 
-    // Find first REPORT type asset that ends with .html
-    // Prioritize multiqc_report.html if it exists
-    let mut report_filename = String::new();
-    let mut report_id = String::new();
+    // Check for Directory Asset (New Strategy)
+    // Look for mimeType = "application/x-directory" (camelCase from Prisma usually) or snake_case
+    let dir_asset = assets.iter().find(|a| {
+        a.get("mimeType").and_then(|s| s.as_str()) == Some("application/x-directory")
+            || a.get("mime_type").and_then(|s| s.as_str()) == Some("application/x-directory")
+    });
 
-    // First pass: look for multiqc
-    for asset in &assets {
-        if let Some(name) = asset.get("name").and_then(|n| n.as_str()) {
-            if name.to_lowercase() == "multiqc_report.html" {
-                report_filename = name.to_string();
-                if let Some(id) = asset.get("id").and_then(|i| i.as_str()) {
-                    report_id = id.to_string();
-                }
-                break;
-            }
+    let (report_url, report_filename) = if let Some(dir_asset) = dir_asset {
+        // Handle Directory Asset
+        let asset_id = dir_asset
+            .get("id")
+            .and_then(|s| s.as_str())
+            .ok_or("Directory asset has no ID")?;
+        println!("[pipeline] Found Directory Asset: {}", asset_id);
+
+        let files_url = format!("{}/assets/{}/files", api_base, asset_id);
+        let files_res = client
+            .get(&files_url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !files_res.status().is_success() {
+            return Err(format!(
+                "Failed to list directory files: {}",
+                files_res.status()
+            ));
         }
-    }
 
-    // Second pass: look for any .html report
-    if report_filename.is_empty() {
+        let files: Vec<serde_json::Value> = files_res.json().await.map_err(|e| e.to_string())?;
+
+        // Find report in files
+        // Priority: multiqc_report.html -> any .html (excluding execution/timeline)
+        let mut found_file = None;
+
+        // 1. MultiQC
+        if let Some(f) = files.iter().find(|f| {
+            f.get("name")
+                .and_then(|n| n.as_str())
+                .map(|n| n.to_lowercase())
+                == Some("multiqc_report.html".to_string())
+        }) {
+            found_file = Some(f);
+        }
+
+        // 2. Any HTML
+        if found_file.is_none() {
+            found_file = files.iter().find(|f| {
+                let name = f.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let name_lower = name.to_lowercase();
+                name_lower.ends_with(".html")
+                    && !name_lower.contains("execution_report")
+                    && !name_lower.contains("timeline")
+            });
+        }
+
+        // 3. Fallback
+        if found_file.is_none() {
+            found_file = files.iter().find(|f| {
+                let name = f.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                name.to_lowercase().ends_with(".html")
+            });
+        }
+
+        if let Some(f) = found_file {
+            let url = f
+                .get("url")
+                .and_then(|u| u.as_str())
+                .ok_or("File has no URL")?;
+            let name = f
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("report.html");
+
+            // URL from server is relative e.g. /assets/...
+            // We need to prepend api_base if it is not absolute.
+            let clean_base = api_base.trim_end_matches('/');
+            let full_url = format!("{}{}", clean_base, url);
+            (full_url, name.to_string())
+        } else {
+            return Err("No HTML report found in directory asset.".to_string());
+        }
+    } else {
+        // Legacy Logic (Individual Assets)
+        println!("[pipeline] No Directory Asset found. Using legacy asset search.");
+        let mut report_filename = String::new();
+        let mut report_id = String::new();
+
+        // First pass: look for multiqc
         for asset in &assets {
             if let Some(name) = asset.get("name").and_then(|n| n.as_str()) {
-                // Check if it is a report type or just ends in html
-                let is_report = asset
-                    .get("asset_type")
-                    .and_then(|t| t.as_str())
-                    .map(|t| t == "REPORT")
-                    .unwrap_or(false);
-
-                if (is_report || name.ends_with(".html"))
-                    && !name.contains("execution_report")
-                    && !name.contains("timeline")
-                {
+                if name.to_lowercase() == "multiqc_report.html" {
                     report_filename = name.to_string();
                     if let Some(id) = asset.get("id").and_then(|i| i.as_str()) {
                         report_id = id.to_string();
@@ -1203,32 +1261,59 @@ pub async fn open_pipeline_report(
                 }
             }
         }
-    }
 
-    // Third pass: Fallback to anything
-    if report_filename.is_empty() {
-        for asset in &assets {
-            if let Some(name) = asset.get("name").and_then(|n| n.as_str()) {
-                if name.ends_with(".html") {
-                    report_filename = name.to_string();
-                    if let Some(id) = asset.get("id").and_then(|i| i.as_str()) {
-                        report_id = id.to_string();
+        // Second pass: look for any .html report
+        if report_filename.is_empty() {
+            for asset in &assets {
+                if let Some(name) = asset.get("name").and_then(|n| n.as_str()) {
+                    // Check if it is a report type or just ends in html
+                    let is_report = asset
+                        .get("asset_type")
+                        .and_then(|t| t.as_str())
+                        .map(|t| t == "REPORT")
+                        .unwrap_or(false);
+
+                    if (is_report || name.ends_with(".html"))
+                        && !name.contains("execution_report")
+                        && !name.contains("timeline")
+                    {
+                        report_filename = name.to_string();
+                        if let Some(id) = asset.get("id").and_then(|i| i.as_str()) {
+                            report_id = id.to_string();
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
-    }
 
-    if report_filename.is_empty() || report_id.is_empty() {
-        return Err("No HTML report found for this pipeline run.".to_string());
-    }
+        // Third pass: Fallback to anything
+        if report_filename.is_empty() {
+            for asset in &assets {
+                if let Some(name) = asset.get("name").and_then(|n| n.as_str()) {
+                    if name.ends_with(".html") {
+                        report_filename = name.to_string();
+                        if let Some(id) = asset.get("id").and_then(|i| i.as_str()) {
+                            report_id = id.to_string();
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if report_filename.is_empty() || report_id.is_empty() {
+            return Err("No HTML report found for this pipeline run.".to_string());
+        }
+
+        let report_url = format!("{}/files/{}/view", api_base, report_id);
+        (report_url, report_filename)
+    };
 
     println!(
-        "[pipeline] Selected report: {} (ID: {})",
-        report_filename, report_id
+        "[pipeline] Selected report: {} (URL: {})",
+        report_filename, report_url
     );
-    let report_url = format!("{}/files/{}/view", api_base, report_id);
 
     let response = client
         .get(&report_url)

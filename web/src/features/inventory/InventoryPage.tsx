@@ -209,11 +209,7 @@ export function InventoryPage() {
         <div className="flex-1 overflow-auto">
           <div className="p-6 min-w-max">
             <div className="mx-auto m-6">
-              {samplesLoading || containersLoading ? (
-                <div className="flex items-center justify-center h-64">
-                  <div className="w-8 h-8 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
-                </div>
-              ) : searchQuery ? (
+              {searchQuery ? (
                 /* Search Results View */
                 <div>
                   <div className="mb-6">

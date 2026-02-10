@@ -91,6 +91,17 @@ Common use cases: CHECK constraints, partial indexes, triggers, GIN/GIST indexes
 
 **Please read the README.md file in the project root to understand the project before generating code.**
 
+DO NOT EDIT THE MIGRATION FILES AFTER THEY'RE CREATED. THE AGENT FILE SAYS NEVER EDIT MIGRATION FILES. NEVER EVER EVER EVER EDIT MIGRATION FILES. READ THE .AGENT/RULES.MD FILE.
+
+#### 🤖 ATTENTION AI AGENTS (GEMINI, ETC.):
+1. **Source of Truth**: The ONLY source of truth for the database schema is `database/schema.prisma`.
+2. **NO MANUAL SQL**: Do NOT ever attempt to run `CREATE INDEX`, `ALTER TABLE`, or any other DDL commands directly via `sqlite3` or any other tool.
+3. **MIGRATION ONLY**: All schema changes MUST be done by:
+    a. Editing `database/schema.prisma`.
+    b. Running `npx prisma migrate dev --name <name> --schema database/schema.prisma`.
+4. **IMMUTABLE MIGRATIONS**: Never edit existing files in `database/migrations/`.
+5. **FAILING TO FOLLOW THESE RULES CAUSES SERVER PANICS.** If you create an index manually, and then a migration tries to create it again, the server WILL NOT START.
+
 ---
 
 **These instructions apply to ALL files in the project and must be followed at ALL times, regardless of the model or chat session being used.**

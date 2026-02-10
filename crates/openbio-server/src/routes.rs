@@ -1,7 +1,7 @@
 //! API route handlers
 use crate::db::prisma::{
     self, container, digital_asset, equipment, equipment_location, experiment, experiment_entry,
-    experiment_folder, experiment_mention, library, paper, sample,
+    experiment_folder, experiment_mention, library, paper, pipeline_run, sample,
 };
 use crate::AppState;
 use axum::{
@@ -52,6 +52,12 @@ pub fn api_routes() -> Router<AppState> {
         .nest("/visualizations", visualization_routes())
         // File serving route
         .route("/files/{id}/view", get(serve_file))
+        // Directory Asset Routes
+        .route("/assets/{id}/files", get(list_directory_asset_files))
+        .route(
+            "/assets/{id}/files/{*path}",
+            get(serve_directory_asset_file),
+        )
 }
 
 fn pipeline_routes() -> Router<AppState> {
@@ -66,6 +72,8 @@ fn pipeline_routes() -> Router<AppState> {
             "/runs/{id}/assets",
             post(upload_pipeline_asset).get(list_pipeline_assets),
         )
+        // New endpoint for zipped output ingestion
+        .route("/runs/{id}/output", post(ingest_pipeline_output))
 }
 
 fn visualization_routes() -> Router<AppState> {
@@ -829,13 +837,22 @@ pub struct CreateExperimentRequest {
 }
 
 async fn list_experiments(State(state): State<AppState>) -> Json<Vec<experiment::Data>> {
+    let start = std::time::Instant::now();
     let experiments = state
         .db
         .experiment()
         .find_many(vec![])
         .exec()
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            println!("Error listing experiments: {}", e);
+            vec![]
+        });
+    println!(
+        "[server] list_experiments: {} items in {:?}",
+        experiments.len(),
+        start.elapsed()
+    );
     Json(experiments)
 }
 
@@ -876,20 +893,26 @@ async fn create_experiment(
 async fn get_experiment(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Json<Option<experiment::Data>> {
+) -> Result<Json<experiment::Data>, (StatusCode, String)> {
+    let start = std::time::Instant::now();
     let experiment = state
         .db
         .experiment()
-        .find_unique(experiment::id::equals(id))
-        .with(experiment::mentions::fetch(vec![]))
-        .with(experiment::entries::fetch(vec![]))
+        .find_unique(experiment::id::equals(id.clone()))
         .with(experiment::samples::fetch(vec![]))
+        .with(experiment::assets::fetch(vec![]))
         .with(experiment::pipeline_runs::fetch(vec![]))
         .exec()
         .await
-        .ok()
-        .flatten();
-    Json(experiment)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Experiment not found".to_string()))?;
+    println!(
+        "[server] get_experiment ({}): assets={}, in {:?}",
+        id,
+        experiment.assets.as_ref().map(|a| a.len()).unwrap_or(0),
+        start.elapsed()
+    );
+    Ok(Json(experiment))
 }
 
 #[derive(Deserialize)]
@@ -1532,20 +1555,25 @@ async fn delete_experiment_file(
         ));
     }
 
-    // Delete the file from disk
-    let file_path = std::path::Path::new(&asset.storage_key);
-    if file_path.exists() {
-        fs::remove_file(file_path).ok(); // Ignore errors if file doesn't exist
-    }
+    // STRICT DELETION:
+    // 1. Remove from Disk based on storage_key
+    // 2. Remove from DB
 
-    // Also remove from experiment's upload folder if it exists there
-    let experiment_file_path = state
-        .storage_path
-        .join("uploads")
-        .join(&experiment_id)
-        .join(&asset.filename);
-    if experiment_file_path.exists() {
-        fs::remove_file(&experiment_file_path).ok();
+    let file_path = state.storage_path.join(&asset.storage_key);
+
+    // Also check for potential legacy locations or alternative paths if storage_key is just 'filename' like in some old code?
+    // Current logic uses "uploads/{exp_id}/{filename}" or "equipment/{eq_id}/{filename}"
+    // so joining state.storage_path + asset.storage_key should be correct.
+
+    if file_path.exists() {
+        if let Err(e) = fs::remove_file(&file_path) {
+            tracing::error!("Failed to delete file from disk: {:?} - {}", file_path, e);
+            // We continue to delete from DB even if disk fails, to avoid "ghost" assets
+        } else {
+            tracing::info!("Deleted file from disk: {:?}", file_path);
+        }
+    } else {
+        tracing::warn!("File not found on disk during deletion: {:?}", file_path);
     }
 
     // Delete from database
@@ -2433,13 +2461,7 @@ async fn ingest_equipment_file(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "Equipment not found".to_string()))?;
 
-    let experiment_id = equip.locked_by_experiment_id.clone().ok_or((
-        StatusCode::BAD_REQUEST,
-        "Equipment is not locked to any experiment. Attach equipment to an experiment first."
-            .to_string(),
-    ))?;
-
-    // Process the uploaded file
+    // Process the uploaded file first to get filename/data
     let field = multipart
         .next_field()
         .await
@@ -2459,71 +2481,49 @@ async fn ingest_equipment_file(
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     let file_size = data.len() as i32;
-
-    // Compute SHA256 checksum (simple size-based placeholder)
     let _checksum = sha2_hash(&data);
 
-    // Save file to storage: storage/equipment/{equipment_id}/{filename}
-    let equip_storage_dir = state.storage_path.join("equipment").join(&equipment_id);
+    // DETERMINATION LOGIC:
+    // If equipment is locked by an experiment -> Upload to uploads/{experiment_id}/
+    // If NOT locked -> REJECT. "Dead" agent behavior.
 
-    fs::create_dir_all(&equip_storage_dir).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to create storage dir: {}", e),
-        )
-    })?;
+    let locked_exp_id = equip.locked_by_experiment_id.clone().ok_or((
+        StatusCode::BAD_REQUEST,
+        "Equipment is not locked to any experiment. Agent should be inactive.".to_string(),
+    ))?;
 
-    let storage_key = format!("equipment/{}/{}", equipment_id, filename);
-    let file_path = state.storage_path.join(&storage_key);
-
-    let mut file = fs::File::create(&file_path).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to create file: {}", e),
-        )
-    })?;
-    file.write_all(&data).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to write file: {}", e),
-        )
-    })?;
-
-    // Replace existing files in experiment uploads dir (1 file per experiment)
-    let experiment_uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
-    if experiment_uploads_dir.exists() {
-        fs::remove_dir_all(&experiment_uploads_dir).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to clean experiment uploads dir: {}", e),
-            )
-        })?;
-    }
-    fs::create_dir_all(&experiment_uploads_dir).map_err(|e| {
+    // LOCKED: Upload to experiment folder
+    let uploads_dir = state.storage_path.join("uploads").join(&locked_exp_id);
+    fs::create_dir_all(&uploads_dir).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to create experiment uploads dir: {}", e),
         )
     })?;
-    let experiment_file_path = experiment_uploads_dir.join(&filename);
-    fs::copy(&file_path, &experiment_file_path).map_err(|e| {
+
+    let file_path = uploads_dir.join(&filename);
+    let storage_key = format!("uploads/{}/{}", locked_exp_id, filename);
+
+    // Write file
+    fs::write(&file_path, &data).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to copy to experiment dir: {}", e),
+            format!("Failed to write file to experiment dir: {}", e),
         )
     })?;
-
-    // NOTE: We no longer delete old assets - experiments can have multiple files
 
     // Create DigitalAsset record
     let mut asset_params: Vec<digital_asset::SetParam> =
         vec![digital_asset::machine_id::set(Some(equipment_id.clone()))];
+
     if let Some(mime) = &content_type {
         asset_params.push(digital_asset::mime_type::set(Some(mime.clone())));
     }
     asset_params.push(digital_asset::size_bytes::set(Some(file_size)));
+
+    // Connect to experiment is now MANDATORY
     asset_params.push(digital_asset::experiment::connect(experiment::id::equals(
-        experiment_id.clone(),
+        locked_exp_id.clone(),
     )));
 
     let asset = state
@@ -2534,6 +2534,7 @@ async fn ingest_equipment_file(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    // Create ExperimentEntry
     // Build calibration info from equipment data
     let cal_text = match equip.last_maintenance.as_ref() {
         Some(lm) => format!("Last calibrated {}", lm.format("%d/%m/%Y")),
@@ -2541,9 +2542,8 @@ async fn ingest_equipment_file(
     };
 
     let timestamp = prisma_client_rust::chrono::Utc::now();
-    let ts_str = timestamp.format("%d/%m/%Y %H:%M:%S").to_string();
 
-    // Build the mention HTML span (same format the TipTap RichMention extension parses)
+    // Build the mention HTML span
     let equip_type = equip.r#type.clone();
     let mention_html = format!(
         r#"<span data-type="mention" data-id="{}" data-name="{}" data-entity-type="equipment" data-category="Equipment" data-subcategory="{}" data-path="{}" data-mentioned-at="{}">@{}</span>"#,
@@ -2555,37 +2555,34 @@ async fn ingest_equipment_file(
         html_escape(&equip.name),
     );
 
-    // Build the auto-import note as HTML paragraph and append to experiment content
+    // Build the auto-import note
     let import_html = format!(
         "<p>📎 {} auto imported from {} ({}) at {}</p>",
         html_escape(&filename),
         mention_html,
         html_escape(&cal_text),
-        html_escape(&ts_str),
+        timestamp.format("%H:%M:%S")
     );
 
-    let exp = state
-        .db
-        .experiment()
-        .find_unique(experiment::id::equals(experiment_id.clone()))
-        .exec()
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or((StatusCode::NOT_FOUND, "Experiment not found".to_string()))?;
-
-    let mut new_content = exp.content.clone();
-    new_content.push_str(&import_html);
-
+    // Create the entry
     state
         .db
-        .experiment()
-        .update(
-            experiment::id::equals(experiment_id.clone()),
-            vec![experiment::content::set(new_content)],
+        .experiment_entry()
+        .create(
+            experiment::id::equals(locked_exp_id.clone()),
+            import_html,
+            vec![experiment_entry::attached_asset_id::set(Some(
+                asset.id.clone(),
+            ))],
         )
         .exec()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to create experiment entry: {}", e),
+            )
+        })?;
 
     // Update equipment last sync time
     let _ = state
@@ -2601,10 +2598,13 @@ async fn ingest_equipment_file(
         .await;
 
     Ok(Json(serde_json::json!({
-        "status": "ok",
-        "asset_id": asset.id,
-        "filename": filename,
-        "experiment_id": experiment_id,
+        "success": true,
+        "asset": {
+            "id": asset.id,
+            "filename": asset.filename,
+            "storageKey": asset.storage_key,
+            "experimentId": asset.experiment_id
+        }
     })))
 }
 
@@ -2692,3 +2692,280 @@ async fn delete_equipment_location(
 }
 
 // DOI Lookup Handler (re-adding if it was missing or just for context)
+
+// ==========================================
+// Pipeline Output Ingestion (Directory Preservation)
+// ==========================================
+
+// Ingest pipeline output (ZIP) -> Unzip -> Create Directory Asset
+// This replaces the old method of uploading individual files.
+async fn ingest_pipeline_output(
+    State(state): State<AppState>,
+    Path(run_id): Path<String>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // 1. Fetch PipelineRun to get ExperimentID
+    let run = state
+        .db
+        .pipeline_run()
+        .find_unique(pipeline_run::id::equals(run_id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Pipeline run not found".to_string()))?;
+
+    let experiment_id = run.experiment_id;
+
+    // 2. Process the uploaded ZIP file
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+        .ok_or((StatusCode::BAD_REQUEST, "No file in request".to_string()))?;
+
+    let data = field
+        .bytes()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    // 3. Define Storage Paths
+    let output_dirname = format!("run_{}_output", run_id);
+    let uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
+    let output_dir = uploads_dir.join(&output_dirname);
+    let storage_key = format!("uploads/{}/{}", experiment_id, output_dirname);
+
+    // Ensure parent uploads dir exists
+    fs::create_dir_all(&uploads_dir).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create uploads dir: {}", e),
+        )
+    })?;
+
+    // 4. Unzip the content
+    let cursor = std::io::Cursor::new(data);
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Failed to read zip archive: {}", e),
+        )
+    })?;
+
+    // Extract everything
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to read file {} from zip: {}", i, e),
+            )
+        })?;
+
+        let outpath = match file.enclosed_name() {
+            Some(path) => output_dir.join(path),
+            None => continue,
+        };
+
+        if (*file.name()).ends_with('/') {
+            fs::create_dir_all(&outpath).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to create directory {:?}: {}", outpath, e),
+                )
+            })?;
+        } else {
+            if let Some(p) = outpath.parent() {
+                if !p.exists() {
+                    fs::create_dir_all(p).map_err(|e| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("Failed to create parent directory {:?}: {}", p, e),
+                        )
+                    })?;
+                }
+            }
+            let mut outfile = fs::File::create(&outpath).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to create file {:?}: {}", outpath, e),
+                )
+            })?;
+            std::io::copy(&mut file, &mut outfile).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to copy file {:?}: {}", outpath, e),
+                )
+            })?;
+        }
+
+        // Set permissions on Unix
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Some(mode) = file.unix_mode() {
+                fs::set_permissions(&outpath, fs::Permissions::from_mode(mode)).ok();
+            }
+        }
+    }
+
+    // 5. Create ONE DigitalAsset for the Directory
+    let asset_params = vec![
+        digital_asset::mime_type::set(Some("application/x-directory".to_string())),
+        digital_asset::size_bytes::set(None), // Size is complex for dirs, leave null or calcluate
+        digital_asset::experiment::connect(experiment::id::equals(experiment_id.clone())),
+        digital_asset::pipeline_run::connect(pipeline_run::id::equals(run_id.clone())),
+    ];
+
+    let asset = state
+        .db
+        .digital_asset()
+        .create(output_dirname, storage_key.clone(), asset_params)
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "asset": asset
+    })))
+}
+
+// List files within a Directory Asset
+// GET /assets/:id/files
+async fn list_directory_asset_files(
+    State(state): State<AppState>,
+    Path(asset_id): Path<String>,
+) -> Result<Json<Vec<serde_json::Value>>, (StatusCode, String)> {
+    let asset = state
+        .db
+        .digital_asset()
+        .find_unique(digital_asset::id::equals(asset_id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Asset not found".to_string()))?;
+
+    // Verify it is a directory
+    if asset.mime_type.as_deref() != Some("application/x-directory") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Asset is not a directory".to_string(),
+        ));
+    }
+
+    let dir_path = state.storage_path.join(&asset.storage_key);
+    if !dir_path.exists() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "Directory not found on disk".to_string(),
+        ));
+    }
+
+    let asset_id_clone = asset_id.clone();
+    // Walk filesystem to list files (use spawn_blocking to avoid blocking the async runtime)
+    let files = tokio::task::spawn_blocking(move || {
+        let mut files = Vec::new();
+        let walker = walkdir::WalkDir::new(&dir_path).into_iter();
+
+        for entry in walker.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_file() {
+                // Compute relative path from the directory root
+                let relative_path = path
+                    .strip_prefix(&dir_path)
+                    .unwrap_or(path)
+                    .to_string_lossy()
+                    .to_string();
+
+                let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+                let filename = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+
+                // Simple mime detection
+                let mime = mime_guess::from_path(path)
+                    .first_or_octet_stream()
+                    .to_string();
+
+                files.push(serde_json::json!({
+                    "path": relative_path,
+                    "name": filename,
+                    "size": size,
+                    "mimeType": mime,
+                    "url": format!("/assets/{}/files/{}", asset_id_clone, relative_path)
+                }));
+            }
+        }
+        files
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(files))
+}
+
+// Serve a specific file from a Directory Asset
+// GET /assets/:id/files/*path
+async fn serve_directory_asset_file(
+    State(state): State<AppState>,
+    Path((asset_id, file_path)): Path<(String, String)>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let asset = state
+        .db
+        .digital_asset()
+        .find_unique(digital_asset::id::equals(asset_id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Asset not found".to_string()))?;
+
+    // Verify it is a directory
+    if asset.mime_type.as_deref() != Some("application/x-directory") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Asset is not a directory".to_string(),
+        ));
+    }
+
+    // Construct full path
+    // Prevent directory traversal attacks by canonicalizng?
+    // Basic check: join and ensure it starts with storage path
+    let base_path = state.storage_path.join(&asset.storage_key);
+    let target_path = base_path.join(&file_path);
+
+    if !target_path.exists() {
+        return Err((StatusCode::NOT_FOUND, "File not found".to_string()));
+    }
+
+    // Security check: ensure target_path is inside base_path
+    let canonical_base = base_path.canonicalize().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Invalid base path".to_string(),
+        )
+    })?;
+    let canonical_target = target_path
+        .canonicalize()
+        .map_err(|_| (StatusCode::NOT_FOUND, "Invalid file path".to_string()))?;
+
+    if !canonical_target.starts_with(&canonical_base) {
+        return Err((StatusCode::FORBIDDEN, "Access denied".to_string()));
+    }
+
+    let file = tokio::fs::File::open(target_path).await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to open file".to_string(),
+        )
+    })?;
+
+    let content_type = mime_guess::from_path(&file_path)
+        .first_or_octet_stream()
+        .to_string();
+
+    Ok((
+        [(header::CONTENT_TYPE, content_type)],
+        Body::from_stream(ReaderStream::new(file)),
+    ))
+}

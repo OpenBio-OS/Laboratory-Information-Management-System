@@ -312,6 +312,9 @@ model DigitalAsset {
   createdAt  DateTime @default(now())
   uploadedBy String?
   machineId  String? // Which instrument produced this
+
+  @@index([experimentId])
+  @@index([pipelineRunId])
 }
 
 /// Pipeline execution record
