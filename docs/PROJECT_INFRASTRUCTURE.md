@@ -392,7 +392,7 @@ In the equpment module you add a facility, then the facility has a room.
 
 Inside the room you add a piece of equipment and it's relevant information: Microscope 201, last calibrated December, _needs to be calibrated every 200 days_.
 
-OpenBio reminds you when your equipment was claibrated, it's saved in the database and the experiment knows how accurate the equipment used is.
+OpenBio reminds you when your equipment was calibrated, it's saved in the database and the experiment knows how accurate the equipment used is.
 
 ------
 
