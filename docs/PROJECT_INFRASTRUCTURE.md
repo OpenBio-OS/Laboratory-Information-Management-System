@@ -1182,22 +1182,9 @@ PATH=/Users/user/Library/Application Support/OpenBio/pipeline-env/micromamba/env
 
 #### Setup Fails
 - Check internet connection
-- Check disk space (need ~500MB free)
+- Check disk space (need ~10GB free)
 - Check firewall (allows conda-forge/bioconda)
 - View logs: `AppData/OpenBio/pipeline-env/setup.log`
-
-#### Pipeline Won't Run
-- Verify Docker is running: `docker --version`
-- Check Nextflow version: `nextflow -version`
-- View environment: `AppData/OpenBio/pipeline-env/env_config.json`
-
-#### Reset Pipeline Environment
-```typescript
-// In Settings tab:
-"Reset Pipeline Environment" button
-→ Deletes AppData/OpenBio/pipeline-env/
-→ Next pipeline access triggers fresh bootstrap
-```
 
 ### License Compliance
 

@@ -59,6 +59,8 @@ pub struct AppState {
     local_agents: Mutex<HashMap<String, Child>>,
     /// Agent lock state (for Agent mode): tracks which client has locked this agent
     agent_locked_by: Mutex<Option<String>>,
+    /// Cancellation channels for running pipelines
+    pub pipeline_cancellations: Mutex<HashMap<String, tokio::sync::mpsc::Sender<()>>>,
 }
 
 impl AppState {
@@ -67,6 +69,7 @@ impl AppState {
             config: Mutex::new(AppConfig::default()),
             local_agents: Mutex::new(HashMap::new()),
             agent_locked_by: Mutex::new(None),
+            pipeline_cancellations: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -470,7 +473,7 @@ fn list_local_agents(state: State<AppState>) -> Vec<String> {
 
 /// Update auto-start setting
 #[tauri::command]
-fn update_auto_start(enabled: bool, state: State<AppState>, app: AppHandle) -> Result<(), String> {
+fn update_auto_start(enabled: bool, state: State<AppState>, _app: AppHandle) -> Result<(), String> {
     let mut config = state.config.lock().unwrap();
     config.auto_start = enabled;
 
@@ -483,10 +486,10 @@ fn update_auto_start(enabled: bool, state: State<AppState>, app: AppHandle) -> R
     {
         use tauri_plugin_autostart::ManagerExt;
         if enabled {
-            app.autolaunch().enable().map_err(|e| e.to_string())?;
+            _app.autolaunch().enable().map_err(|e| e.to_string())?;
             tracing::info!("Auto-start enabled");
         } else {
-            app.autolaunch().disable().map_err(|e| e.to_string())?;
+            _app.autolaunch().disable().map_err(|e| e.to_string())?;
             tracing::info!("Auto-start disabled");
         }
     }
@@ -873,6 +876,7 @@ pub fn run() {
         config: Mutex::new(config.clone()),
         local_agents: Mutex::new(HashMap::new()),
         agent_locked_by: Mutex::new(None),
+        pipeline_cancellations: Mutex::new(HashMap::new()),
     };
 
     tauri::Builder::default()
@@ -906,9 +910,10 @@ pub fn run() {
             commands::get_pipeline_logs,
             commands::cancel_pipeline,
             commands::list_pipelines,
-            commands::list_pipeline_runs,
-            commands::delete_pipeline_run,
-            commands::get_pipeline_templates,
+            commands::pipeline::list_pipeline_runs,
+            commands::pipeline::delete_pipeline_run,
+            commands::pipeline::reset_pipeline_env,
+            commands::pipeline::get_pipeline_templates,
             // Pipeline environment commands
             commands::check_pipeline_environment,
             commands::check_docker_installed,

@@ -283,6 +283,7 @@ import { ExperimentsPage } from "./features/experiments/ExperimentsPage";
 import { EquipmentPage } from "./features/equipment/EquipmentPage";
 import { PipelineManager } from "./routes/PipelineManager";
 import { InsightContainer } from "./routes/InsightContainer";
+import { ResetEnvironmentModal } from './components/ResetEnvironmentModal';
 
 // Views
 function DashboardView() {
@@ -345,6 +346,7 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
   const [loading, setLoading] = useState(true);
   const [showResetSetupDialog, setShowResetSetupDialog] = useState(false);
   const [showResetDatabaseDialog, setShowResetDatabaseDialog] = useState(false);
+  const [showResetEnvDialog, setShowResetEnvDialog] = useState(false);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -569,8 +571,22 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
               Re-run Setup
             </Button>
           </div>
+
+          <div className="flex items-center justify-between p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+            <div>
+              <h4 className="font-medium text-white mb-1">Reset Pipeline Environment</h4>
+              <p className="text-sm text-white/40">Delete the local Nextflow/Micromamba environment. It will be re-downloaded on the next run.</p>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => setShowResetEnvDialog(true)}
+              className="hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/30"
+            >
+              Reset Pipeline
+            </Button>
+          </div>
         </div>
-      </Card>
+      </Card >
 
       {showResetSetupDialog && (
         <ConfirmModal
@@ -581,17 +597,35 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
           confirmText="Reset Setup"
           variant="warning"
         />
-      )}
+      )
+      }
 
-      {showResetDatabaseDialog && (
-        <DeleteConfirmModal
-          title="Delete All Data"
-          message="⚠️ WARNING: This will permanently delete ALL your data including experiments, samples, and uploaded files. This action CANNOT be undone."
-          onClose={() => setShowResetDatabaseDialog(false)}
-          onConfirm={handleResetDatabase}
-          confirmWord="DELETE"
+      {
+        showResetDatabaseDialog && (
+          <DeleteConfirmModal
+            title="Delete All Data"
+            message="⚠️ WARNING: This will permanently delete ALL your data including experiments, samples, and uploaded files. This action CANNOT be undone."
+            onClose={() => setShowResetDatabaseDialog(false)}
+            onConfirm={handleResetDatabase}
+            confirmWord="DELETE"
+          />
+        )
+      }
+
+      {showResetEnvDialog && (
+        <ResetEnvironmentModal
+          onClose={() => setShowResetEnvDialog(false)}
+          onConfirm={async () => {
+            try {
+              await invoke('reset_pipeline_env');
+              console.log("Pipeline environment reset successfully");
+            } catch (e) {
+              console.error("Failed to reset environment:", e);
+              alert("Failed to reset environment: " + e);
+            }
+          }}
         />
       )}
-    </div>
+    </div >
   );
 }

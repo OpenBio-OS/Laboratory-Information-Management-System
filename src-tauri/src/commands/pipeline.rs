@@ -2,10 +2,12 @@
 // NOTE: Pipeline execution happens CLIENT-SIDE. Server only stores metadata.
 
 use serde::{Deserialize, Serialize};
+use std::io::Write; // Keep Write for file output
 use std::process::Stdio;
 use tauri::{AppHandle, Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+use tokio::sync::mpsc;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct StartPipelineRequest {
@@ -399,14 +401,27 @@ async fn run_nextflow_pipeline(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
+    let log_file_path = work_dir.join("pipeline.log");
+
     // Log stdout in background
     if let Some(stdout) = stdout {
         let run_id_clone = run_id.clone();
+        let log_path = log_file_path.clone();
         tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 println!("[nf:{}] {}", &run_id_clone[..8], line);
+                // Append to log file
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_path)
+                {
+                    if let Err(e) = writeln!(file, "{}", line) {
+                        eprintln!("Failed to write to log file: {}", e);
+                    }
+                }
             }
         });
     }
@@ -414,17 +429,67 @@ async fn run_nextflow_pipeline(
     // Log stderr in background
     if let Some(stderr) = stderr {
         let run_id_clone = run_id.clone();
+        let log_path = log_file_path.clone();
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 eprintln!("[nf:{}] [ERR] {}", &run_id_clone[..8], line);
+                // Append to log file
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_path)
+                {
+                    if let Err(e) = writeln!(file, "[ERR] {}", line) {
+                        eprintln!("Failed to write to log file: {}", e);
+                    }
+                }
             }
         });
     }
 
     // Wait for process to complete
-    match child.wait().await {
+    // Register cancellation channel
+    let (cancel_tx, mut cancel_rx) = mpsc::channel::<()>(1);
+    {
+        let state = app.state::<crate::AppState>();
+        let mut cancellations = state.pipeline_cancellations.lock().unwrap();
+        cancellations.insert(run_id.clone(), cancel_tx);
+    } // Drop lock
+
+    // Wait for process to complete or be cancelled
+    let status_result = tokio::select! {
+        res = child.wait() => res,
+        _ = cancel_rx.recv() => {
+            println!("[pipeline] Cancellation received for run {}", run_id);
+            // Try to kill the process
+            if let Err(e) = child.start_kill() {
+                eprintln!("[pipeline] Failed to kill process: {}", e);
+            }
+            // Wait for it to exit
+            let _ = child.wait().await;
+
+            update_run_status(&api_base, &run_id, "CANCELLED", Some("Cancelled by user".to_string())).await;
+
+            // Cleanup and return
+            {
+                let state = app.state::<crate::AppState>();
+                let mut cancellations = state.pipeline_cancellations.lock().unwrap();
+                cancellations.remove(&run_id);
+            }
+            return;
+        }
+    };
+
+    // Remove from cancellations map since it finished naturally
+    {
+        let state = app.state::<crate::AppState>();
+        let mut cancellations = state.pipeline_cancellations.lock().unwrap();
+        cancellations.remove(&run_id);
+    }
+
+    match status_result {
         Ok(status) => {
             if status.success() {
                 println!(
@@ -516,17 +581,54 @@ pub async fn cancel_pipeline(
     run_id: String,
     state: State<'_, crate::AppState>,
 ) -> Result<(), String> {
+    let mut local_signal_sent = false;
+
+    // 1. Try to kill the local process if it exists
+    {
+        let state = state.inner(); // Get inner reference without lock
+        let cancellations = state.pipeline_cancellations.lock().unwrap();
+        if let Some(tx) = cancellations.get(&run_id) {
+            // Send cancellation signal
+            let _ = tx.try_send(()); // Ignore error if receiver dropped
+            println!(
+                "[pipeline] Sent cancellation signal to local run {}",
+                run_id
+            );
+            local_signal_sent = true;
+        }
+    }
+
+    // 2. Also tell the server (redundant but good for consistency/metadata)
+    // If we sent a local signal, the local process loop will update the status to CANCELLED/FAILED.
+    // Calling the server might race with that update, causing a 500 error (database locked).
+    // So if we sent the signal, we treat server errors as warnings.
     let url = format!("{}/runs/{}/cancel", get_api_base_url(&state), run_id);
 
     let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+    let response_result = client.post(&url).send().await;
 
-    if !response.status().is_success() {
-        return Err(format!("Server error: {}", response.status()));
+    match response_result {
+        Ok(response) => {
+            if !response.status().is_success() {
+                let msg = format!("Server returned error: {}", response.status());
+                if local_signal_sent {
+                    println!("[pipeline] [WARN] Server cancel failed (ignoring since local signal sent): {}", msg);
+                } else {
+                    return Err(format!("Server error: {}", response.status()));
+                }
+            }
+        }
+        Err(e) => {
+            let msg = format!("Request failed: {}", e);
+            if local_signal_sent {
+                println!(
+                    "[pipeline] [WARN] Server cancel failed (ignoring since local signal sent): {}",
+                    msg
+                );
+            } else {
+                return Err(msg);
+            }
+        }
     }
 
     Ok(())
@@ -549,6 +651,24 @@ pub async fn delete_pipeline_run(
 
     if !response.status().is_success() {
         return Err(format!("Server error: {}", response.status()));
+    }
+
+    Ok(())
+}
+
+/// Reset the pipeline environment (delete .openbio-pipelines)
+#[tauri::command]
+pub async fn reset_pipeline_env(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let env_path = crate::pipeline_env::get_env_path(&app_handle)?;
+
+    println!(
+        "[pipeline] Resetting pipeline environment at: {:?}",
+        env_path
+    );
+
+    if env_path.exists() {
+        std::fs::remove_dir_all(&env_path)
+            .map_err(|e| format!("Failed to delete environment: {}", e))?;
     }
 
     Ok(())
@@ -669,7 +789,8 @@ pub async fn get_pipeline_logs(
 
     // Check possible log locations
     let possible_locations = [
-        work_dir.join(".nextflow.log"),
+        work_dir.join("pipeline.log"), // Our custom captured log (stdout + stderr)
+        work_dir.join(".nextflow.log"), // Nextflow's internal log
         temp_dir
             .join(format!("nf_out_{}", &run_id))
             .join(".nextflow.log"),

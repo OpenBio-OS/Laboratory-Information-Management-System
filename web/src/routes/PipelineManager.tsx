@@ -7,6 +7,7 @@ import { PipelineRunModal } from '../components/PipelineRunModal';
 // import { useNavigation } from '../App';
 import { Plus, X, Terminal, Trash2, HeartPulse } from 'lucide-react';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
+import Ansi from 'ansi-to-react';
 import { ReportViewer } from '../components/ReportViewer';
 
 interface PipelineRun {
@@ -407,7 +408,7 @@ function PipelineLogsModal({ runId, onClose }: { runId: string; onClose: () => v
           <div className="flex items-center gap-3">
             <Terminal size={20} className="text-brand-primary" />
             <h3 className="text-lg text-white">Pipeline Logs</h3>
-            <span className="text-xs text-white/40 font-mono">{runId.slice(0, 8)}...</span>
+            <span className="text-xs text-white/40 font-mono">{runId.slice(0, 12)}...</span>
           </div>
           <div className="flex items-center gap-3">
             {/* <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
@@ -428,27 +429,30 @@ function PipelineLogsModal({ runId, onClose }: { runId: string; onClose: () => v
           </div>
         </div>
 
+
         {/* Logs Content */}
         <div className="flex-1 overflow-auto p-4 bg-black/50">
-          <pre className="font-mono text-xs text-white/80 whitespace-pre-wrap">
-            {logs}
+          <div className="font-mono text-xs text-white/80 whitespace-pre-wrap">
+            <Ansi useClasses>{logs}</Ansi>
             <div ref={logsEndRef} />
-          </pre>
+          </div>
         </div>
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-white/10 flex justify-between items-center bg-white/5">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
+          <a
+            href="https://github.com/OpenBio-OS/Laboratory-Information-Management-System/issues/new?template=nextflow-error-clicked-from-within-app.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-brand-primary hover:text-brand-secondary transition-colors font-medium flex items-center gap-1"
           >
-            Cancel
-          </button>
+            I need help
+          </a>
           <button
             onClick={onClose}
             className="px-6 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-all shadow-[0_0_20px_rgba(23,185,120,0.2)]"
           >
-            Close
+            Hide
           </button>
         </div>
       </div>
