@@ -37,3 +37,7 @@ npm run tauri dev
 ```
 
 **That's it!** The Prisma client is automatically regenerated on build if the schema changes. The database file (`openbio.db`) is created automatically in the project root on first run.
+
+## Project Infrastructure
+
+For detailed information on the projects infrastructure, please refer to the [PROJECT_INFRASTRUCTURE.md](docs/PROJECT_INFRASTRUCTURE.md) file.

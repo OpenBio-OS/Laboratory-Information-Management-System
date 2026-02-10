@@ -14,7 +14,7 @@ interface PipelineRun {
   experimentId: string;
   experimentName: string;
   pipelineType: string;
-  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  status: 'PENDING' | 'RUNNING' | 'UPLOADING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
   progress?: number;
   startedAt: string;
   completedAt?: string;
@@ -116,6 +116,7 @@ export function PipelineManager() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'RUNNING': return 'bg-blue-500/10 text-blue-400 border border-blue-500/20';
+      case 'UPLOADING': return 'bg-purple-500/10 text-purple-400 border border-purple-500/20';
       case 'COMPLETED': return 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20';
       case 'FAILED': return 'bg-red-500/10 text-red-400 border border-red-500/20';
       case 'CANCELLED': return 'bg-white/5 text-white/60 border border-white/10';

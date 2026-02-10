@@ -798,6 +798,9 @@ async fn detect_and_upload_outputs(
     out_dir: &std::path::Path,
     pipeline_type: &str,
 ) -> Result<(), String> {
+    // 0. Update status to UPLOADING
+    update_run_status(api_base, run_id, "UPLOADING", None).await;
+
     let pipeline_type = pipeline_type.to_lowercase();
     let is_scrnaseq = pipeline_type.contains("scrnaseq");
     let is_rnaseq = pipeline_type.contains("rnaseq") && !is_scrnaseq;
@@ -821,25 +824,20 @@ async fn detect_and_upload_outputs(
     // 2. Scenario A: Single-Cell (Matrix Market)
     if is_scrnaseq {
         // Recursive search for matrix.mtx might be needed, but let's try standard paths first
-        // cellranger/outs/filtered_feature_bc_matrix/
-        // star/outs/ ...
-        // nf-core/scrnaseq output structure varies, but we look for the key files anywhere in out_dir
-
         // Simple heuristic: walk the dir to find matrix.mtx
         let walker = walkdir::WalkDir::new(out_dir).into_iter();
         for entry in walker.filter_map(|e| e.ok()) {
             let fname = entry.file_name().to_string_lossy();
+            let path = entry.path();
+
             if fname == "matrix.mtx" || fname == "matrix.mtx.gz" {
-                println!(
-                    "[pipeline] Found SC Matrix at {:?}, uploading...",
-                    entry.path()
-                );
-                let _ = upload_asset(api_base, run_id, entry.path(), "MATRIX").await;
+                println!("[pipeline] Found SC Matrix at {:?}, uploading...", path);
+                let _ = upload_asset(api_base, run_id, path, "MATRIX").await;
             } else if fname == "barcodes.tsv" || fname == "barcodes.tsv.gz" {
-                let _ = upload_asset(api_base, run_id, entry.path(), "BARCODES").await;
+                let _ = upload_asset(api_base, run_id, path, "BARCODES").await;
             } else if fname == "features.tsv" || fname == "features.tsv.gz" || fname == "genes.tsv"
             {
-                let _ = upload_asset(api_base, run_id, entry.path(), "FEATURES").await;
+                let _ = upload_asset(api_base, run_id, path, "FEATURES").await;
             }
         }
     }
@@ -859,6 +857,24 @@ async fn detect_and_upload_outputs(
                 let _ = upload_asset(api_base, run_id, entry.path(), "COUNTS").await;
                 break; // Only need one main counts file usually
             }
+        }
+    }
+
+    // 4. Universal: Coordinate Files (UMAP, t-SNE, PCA)
+    // Run this for ALL pipelines to be scalable/compatible with future modules
+    let walker = walkdir::WalkDir::new(out_dir).into_iter();
+    for entry in walker.filter_map(|e| e.ok()) {
+        let fname = entry.file_name().to_string_lossy();
+        let path = entry.path();
+
+        if (fname.contains("umap")
+            || fname.contains("tsne")
+            || fname.contains("projection")
+            || fname.contains("pca"))
+            && fname.ends_with(".csv")
+        {
+            println!("[pipeline] Found Coordinates at {:?}, uploading...", path);
+            let _ = upload_asset(api_base, run_id, path, "COORDS").await;
         }
     }
 
