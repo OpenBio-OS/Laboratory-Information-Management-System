@@ -135,7 +135,7 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
           <ArrowLeft size={24} />
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-white">
+          <h1 className="text-2xl text-white">
             Single Cell Canvas
           </h1>
           <p className="text-sm text-white/40">
@@ -151,7 +151,7 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
               <div className="w-16 h-16 bg-red-400/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-400/20">
                 <ArrowLeft className="text-red-400 rotate-90" size={32} />
               </div>
-              <h2 className="text-xl font-bold text-white mb-2">Load Error</h2>
+              <h2 className="text-xl text-white mb-2">Load Error</h2>
               <p className="text-white/60 mb-4">{error}</p>
               <p className="text-xs text-white/30 mb-6 font-medium uppercase tracking-wider">
                 Note: SharedArrayBuffer requires specific isolation headers.
@@ -171,7 +171,7 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
                 <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-brand-primary mx-auto" />
                 <div className="absolute inset-0 animate-pulse rounded-full h-16 w-16 border border-brand-primary/20 mx-auto" />
               </div>
-              <p className="text-white font-bold tracking-tight text-lg mb-1">
+              <p className="text-white font-semibold tracking-tight text-lg mb-1">
                 {loadingStatus || "Initializing WASM engine..."}
               </p>
               <p className="text-white/40 text-sm font-medium">Processing high-dimensional genomics data</p>
@@ -193,24 +193,24 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
             {/* Side Panel */}
             <div className="w-96 bg-white/5 backdrop-blur-md border-l border-white/5 p-6 space-y-4 overflow-y-auto">
               <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                <h3 className="font-semibold text-white mb-2">Selection</h3>
-                <p className="text-3xl font-bold text-brand-primary">
+                <h3 className="font-medium text-white mb-2">Selection</h3>
+                <p className="text-3xl font-semibold text-brand-primary">
                   {selectedCount.toLocaleString()}
                 </p>
-                <p className="text-xs text-white/40 uppercase tracking-widest font-bold">cells selected</p>
+                <p className="text-xs text-white/40 uppercase tracking-widest font-semibold">cells selected</p>
               </div>
 
               <button
                 onClick={handleAnalyze}
                 disabled={selectedCount === 0}
-                className="w-full px-4 py-2 bg-brand-primary text-black font-bold rounded-xl hover:bg-brand-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="w-full px-4 py-2 bg-brand-primary text-black font-semibold rounded-xl hover:bg-brand-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 Analyze Selection
               </button>
 
               {analysisResult && (
                 <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                  <h3 className="font-semibold text-white mb-2">Analysis Results</h3>
+                  <h3 className="font-medium text-white mb-2">Analysis Results</h3>
                   <pre className="text-xs bg-black/40 p-3 rounded-lg overflow-auto text-white/80 border border-white/5">
                     {analysisResult}
                   </pre>
@@ -218,7 +218,7 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
               )}
 
               <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                <h3 className="font-semibold text-white mb-2">Tools</h3>
+                <h3 className="font-medium text-white mb-2">Tools</h3>
                 <div className="space-y-2">
                   <button className="w-full px-3 py-2 text-sm border border-white/10 rounded-lg hover:bg-white/5 text-white/70 hover:text-white transition-all">
                     Export Selection

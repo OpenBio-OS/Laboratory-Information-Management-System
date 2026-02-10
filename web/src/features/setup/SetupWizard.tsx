@@ -92,7 +92,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           <div className="inline-flex p-3 rounded-full bg-brand-primary/10 text-brand-primary mb-4 shadow-[0_0_20px_rgba(23,185,120,0.2)]">
             <img src="/logo-transparent-green-text.png" alt="OpenBio Logo" className="w-14 h-14 animate-pulse" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">Welcome to OpenBio</h1>
+          <h1 className="text-3xl text-white mb-2">Welcome to OpenBio</h1>
           <p className="text-white/60 text-lg">Let's set up your biological operating system</p>
         </div>
 
@@ -144,7 +144,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 function Step1ModeSelection({ onSelect }: { onSelect: (mode: DeploymentMode) => void }) {
   return (
     <div className="animate-fade-in">
-      <h2 className="text-xl font-semibold text-white mb-2">How will you use OpenBio?</h2>
+      <h2 className="text-xl text-white mb-2">How will you use OpenBio?</h2>
       <p className="text-white/60 mb-6">
         Choose the deployment mode that fits your needs. You can change this later in settings.
       </p>
@@ -164,7 +164,7 @@ function Step1ModeSelection({ onSelect }: { onSelect: (mode: DeploymentMode) => 
             <div className="mb-4 w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-white/40 group-hover:text-brand-primary group-hover:bg-brand-primary/10 transition-colors">
               <item.icon size={24} />
             </div>
-            <h3 className="text-lg font-medium text-white mb-1 group-hover:text-brand-primary transition-colors">{item.title}</h3>
+            <h3 className="text-lg text-white mb-1 group-hover:text-brand-primary transition-colors">{item.title}</h3>
             <p className="text-sm text-white/50 mb-3">{item.desc}</p>
             <span className="inline-block px-2 py-1 text-xs font-medium text-white/40 bg-white/5 rounded-md border border-white/5">
               {item.tag}
@@ -247,7 +247,7 @@ function Step2Configure({ config, setConfig, onBack, onNext }: Step2Props) {
 
   return (
     <div className="animate-fade-in">
-      <h2 className="text-xl font-semibold text-white mb-6">Configure {modeLabels[config.mode]}</h2>
+      <h2 className="text-xl text-white mb-6">Configure {modeLabels[config.mode]}</h2>
 
       <div className="space-y-6 mb-8">
         {config.mode === 'local' && (
@@ -425,7 +425,7 @@ function Step3Complete({ isInitializing }: { isInitializing: boolean }) {
       {isInitializing ? (
         <>
           <Loader2 size={48} className="text-brand-primary animate-spin mb-6" />
-          <h2 className="text-2xl font-semibold text-white mb-2">Setting up your workspace...</h2>
+          <h2 className="text-2xl text-white mb-2">Setting up your workspace...</h2>
           <p className="text-white/60">Creating data directories and initializing database</p>
         </>
       ) : (
@@ -433,7 +433,7 @@ function Step3Complete({ isInitializing }: { isInitializing: boolean }) {
           <div className="w-16 h-16 rounded-full bg-brand-primary/20 text-brand-primary flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(23,185,120,0.3)]">
             <Check size={32} />
           </div>
-          <h2 className="text-2xl font-semibold text-white mb-2">You're all set!</h2>
+          <h2 className="text-2xl text-white mb-2">You're all set!</h2>
           <p className="text-white/60">OpenBio is ready to use. Launching dashboard...</p>
         </>
       )}

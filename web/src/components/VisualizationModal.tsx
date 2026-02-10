@@ -18,11 +18,11 @@ interface Experiment {
   name: string;
 }
 
-interface Props {
+interface VisualizationModalProps {
   onClose: () => void;
 }
 
-export function NewVisualizationDialog({ onClose }: Props) {
+export function VisualizationModal({ onClose }: VisualizationModalProps) {
   const { navigateTo } = useNavigation();
   const [activeTab, setActiveTab] = useState<'pipeline' | 'manual'>('pipeline');
   const [runs, setRuns] = useState<PipelineRun[]>([]);
@@ -40,7 +40,13 @@ export function NewVisualizationDialog({ onClose }: Props) {
   useEffect(() => {
     loadPipelineRuns();
     loadExperiments();
-  }, []);
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
 
   const loadExperiments = async () => {
     try {
@@ -101,8 +107,8 @@ export function NewVisualizationDialog({ onClose }: Props) {
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5">
           <div>
-            <h2 className="text-xl font-bold text-white">New Visualization</h2>
-            <p className="text-xs text-white/40 font-medium tracking-wide">Register or create a data visualization</p>
+            <h2 className="text-xl text-white">Visualization</h2>
+            <p className="text-xs text-white/40 uppercase tracking-widest">Register or create a data visualization</p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -113,7 +119,7 @@ export function NewVisualizationDialog({ onClose }: Props) {
         <div className="flex border-b border-white/10 bg-black/20">
           <button
             onClick={() => setActiveTab('pipeline')}
-            className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'pipeline'
+            className={`flex-1 py-3 text-sm flex items-center justify-center gap-2 transition-all ${activeTab === 'pipeline'
               ? 'text-brand-primary border-b-2 border-brand-primary bg-brand-primary/5'
               : 'text-white/40 hover:text-white hover:bg-white/5'
               }`}
@@ -123,7 +129,7 @@ export function NewVisualizationDialog({ onClose }: Props) {
           </button>
           <button
             onClick={() => setActiveTab('manual')}
-            className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'manual'
+            className={`flex-1 py-3 text-sm flex items-center justify-center gap-2 transition-all ${activeTab === 'manual'
               ? 'text-brand-primary border-b-2 border-brand-primary bg-brand-primary/5'
               : 'text-white/40 hover:text-white hover:bg-white/5'
               }`}
@@ -154,14 +160,14 @@ export function NewVisualizationDialog({ onClose }: Props) {
               {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-24 gap-3">
                   <Loader2 className="animate-spin text-brand-primary" size={24} />
-                  <p className="text-white/40 text-[10px] font-bold uppercase tracking-[0.2em]">Synchronizing Results</p>
+                  <p className="text-white/40 text-[10px] uppercase tracking-[0.2em]">Synchronizing Results</p>
                 </div>
               ) : filteredRuns.length === 0 ? (
                 <div className="text-center py-20">
                   <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/5">
                     <Search className="text-white/10" size={32} />
                   </div>
-                  <h3 className="text-white font-bold mb-1">No completed runs found</h3>
+                  <h3 className="text-white mb-1">No completed runs found</h3>
                   <p className="text-white/30 text-xs max-w-[240px] mx-auto">
                     Complete a pipeline run to see it here, or use Manual Register to upload existing data.
                   </p>
@@ -179,8 +185,8 @@ export function NewVisualizationDialog({ onClose }: Props) {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-bold text-white truncate">{run.experimentName}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 rounded uppercase font-bold tracking-wider">
+                        <span className="text-white truncate">{run.experimentName}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 rounded uppercase tracking-wider">
                           {run.pipelineType.split('/').pop()}
                         </span>
                       </div>
@@ -204,7 +210,7 @@ export function NewVisualizationDialog({ onClose }: Props) {
           <div className="p-8 space-y-6 flex-1 overflow-y-auto">
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Visualization Name</label>
+                <label className="text-xs text-white/40 uppercase tracking-widest">Visualization Name</label>
                 <input
                   type="text"
                   value={manualName}
@@ -216,7 +222,7 @@ export function NewVisualizationDialog({ onClose }: Props) {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Analysis Type</label>
+                  <label className="text-xs text-white/40 uppercase tracking-widest">Analysis Type</label>
                   <select
                     value={manualType}
                     onChange={(e) => setManualType(e.target.value)}
@@ -230,7 +236,7 @@ export function NewVisualizationDialog({ onClose }: Props) {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Associate Experiment</label>
+                  <label className="text-xs text-white/40 uppercase tracking-widest">Associate Experiment</label>
                   <select
                     value={manualExperimentId}
                     onChange={(e) => setManualExperimentId(e.target.value)}
@@ -246,7 +252,7 @@ export function NewVisualizationDialog({ onClose }: Props) {
 
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Local Data Path</label>
+                  <label className="text-xs text-white/40 uppercase tracking-widest">Local Data Path</label>
                 </div>
                 <div className="flex gap-2">
                   <input
@@ -266,7 +272,7 @@ export function NewVisualizationDialog({ onClose }: Props) {
                 <FileText size={20} />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-white">Direct Registration</h4>
+                <h4 className="text-sm text-white">Direct Registration</h4>
                 <p className="text-xs text-white/40 mt-1 leading-relaxed">
                   This will register the selected folder as a permanent visualization entry.
                   Unlike pipeline outputs, this data won't be moved or modified.
@@ -280,7 +286,7 @@ export function NewVisualizationDialog({ onClose }: Props) {
         <div className="px-6 py-4 bg-white/5 border-t border-white/10 flex justify-between items-center mt-auto">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 text-sm text-white/80 rounded-lg hover:bg-white/5 transition-colors"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
           >
             Cancel
           </button>
@@ -289,7 +295,7 @@ export function NewVisualizationDialog({ onClose }: Props) {
             <button
               onClick={handleManualRegister}
               disabled={!manualName || !manualPath || isRegistering}
-              className="px-6 py-2 bg-brand-primary text-black font-bold rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 flex items-center gap-2 shadow-[0_0_20px_rgba(23,185,120,0.2)]"
+              className="px-6 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 flex items-center gap-2 shadow-[0_0_20px_rgba(23,185,120,0.2)]"
             >
               {isRegistering ? <Loader2 className="animate-spin" size={16} /> : <BarChart2 size={16} />}
               Register Visualization

@@ -128,7 +128,7 @@ export function PipelineSetupWizard({ onComplete }: PipelineSetupWizardProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-white mb-2">Setting Up Pipeline Engine</h2>
+            <h2 className="text-2xl text-white mb-2">Setting Up Pipeline Engine</h2>
             <p className="text-white/60 text-sm">One-time install — this won't happen again.</p>
           </div>
 
@@ -176,7 +176,7 @@ export function PipelineSetupWizard({ onComplete }: PipelineSetupWizardProps) {
               />
             </div>
 
-            <h2 className="text-2xl font-bold text-white mb-2">Docker Required</h2>
+            <h2 className="text-2xl text-white mb-2">Docker Required</h2>
             <p className="text-white/60 text-sm leading-relaxed">
               To run analysis pipelines, OpenBio requires Docker to be installed and <span className='font-semibold'>running</span> on your system.
             </p>
@@ -202,7 +202,7 @@ export function PipelineSetupWizard({ onComplete }: PipelineSetupWizardProps) {
               <button
                 onClick={checkDocker}
                 disabled={isCheckingDocker}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 text-white font-medium rounded-xl hover:bg-white/10 transition-all disabled:opacity-50 active:scale-[0.98]"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all disabled:opacity-50 active:scale-[0.98]"
               >
                 <RefreshCw size={16} className={isCheckingDocker ? 'animate-spin' : ''} />
                 {isCheckingDocker ? 'Checking...' : "I've Installed Docker — Recheck"}
@@ -232,7 +232,7 @@ export function PipelineSetupWizard({ onComplete }: PipelineSetupWizardProps) {
               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Pipeline Environment Ready!</h2>
+          <h2 className="text-2xl text-white mb-2">Pipeline Environment Ready!</h2>
           <p className="text-white/60 text-sm">Everything is set up. Redirecting...</p>
         </div>
       </div>
@@ -249,7 +249,7 @@ export function PipelineSetupWizard({ onComplete }: PipelineSetupWizardProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Setup Failed</h2>
+          <h2 className="text-2xl text-white mb-2">Setup Failed</h2>
         </div>
 
         <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 mb-6 max-h-40 overflow-auto">
@@ -258,7 +258,7 @@ export function PipelineSetupWizard({ onComplete }: PipelineSetupWizardProps) {
 
         <button
           onClick={handleRetry}
-          className="w-full px-4 py-2 bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-all"
+          className="w-full px-4 py-2 bg-brand-primary text-black font-semibold rounded-lg hover:bg-brand-secondary transition-all"
         >
           Try Again
         </button>

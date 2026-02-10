@@ -102,7 +102,7 @@ export function CreateContainerModal({ onClose, parentId, parentName }: CreateCo
       <div className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-xl shadow-xl overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
-          <h3 className="text-lg font-semibold text-white">
+          <h3 className="text-lg text-white">
             {parentContainer ? `Add ${getNextTypeLabel()}` : 'Create Facility'}
           </h3>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
@@ -200,14 +200,14 @@ export function CreateContainerModal({ onClose, parentId, parentName }: CreateCo
         <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
           >
             Cancel
           </button>
           <button
             onClick={() => createMutation.mutate()}
             disabled={!name || !type || createMutation.isPending}
-            className="px-4 py-2 bg-brand-primary text-black text-sm font-bold rounded-lg hover:bg-brand-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-4 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {createMutation.isPending ? 'Creating...' : `Create ${availableTypes.find(t => t.id === type)?.label || 'Container'}`}
           </button>

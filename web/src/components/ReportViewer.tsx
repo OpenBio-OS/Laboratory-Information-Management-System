@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { X, ExternalLink, ArrowLeft } from 'lucide-react';
+import { X, ExternalLink, ArrowLeft, HeartPulse } from 'lucide-react';
 import { useNavigation } from '../App';
 
 interface ReportViewerProps {
@@ -16,7 +16,19 @@ export function ReportViewer({ experimentId, onClose }: ReportViewerProps) {
 
   useEffect(() => {
     loadReport();
-  }, [experimentId]);
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (onClose) {
+          onClose();
+        } else {
+          navigateTo({ tab: 'insight', itemId: undefined });
+        }
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [experimentId, onClose, navigateTo]);
 
   const loadReport = async () => {
     try {
@@ -37,37 +49,48 @@ export function ReportViewer({ experimentId, onClose }: ReportViewerProps) {
 
   return (
     <div className="h-full w-full bg-main flex flex-col overflow-hidden">
-      <div className="px-6 py-4 border-b border-white/5 bg-surface/30 backdrop-blur-md flex justify-between items-center z-10">
+      <div className="px-6 py-4 border-b border-white/5 bg-white/5 flex justify-between items-center z-10 w-full">
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => {
-              if (onClose) {
-                onClose();
-              } else {
-                navigateTo({ tab: 'insight', itemId: undefined });
-              }
-            }}
-            className="p-2 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors"
-            title={onClose ? "Close" : "Back to Gallery"}
-          >
-            {onClose ? <X size={20} /> : <ArrowLeft size={20} />}
-          </button>
-          <div>
-            <h2 className="font-bold text-white tracking-tight">MultiQC Report</h2>
-            <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold mt-0.5">Pipeline Analytics</p>
+          {!onClose && (
+            <button
+              onClick={() => navigateTo({ tab: 'insight', itemId: undefined })}
+              className="p-2 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors"
+              title="Back to Gallery"
+            >
+              <ArrowLeft size={20} />
+            </button>
+          )}
+          <div className="flex items-center gap-3">
+            <HeartPulse size={20} className="text-brand-primary mr-2" />
+            <div>
+              <h2 className="text-lg text-white tracking-tight">MultiQC Report</h2>
+              <p className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5">Pipeline Analytics</p>
+            </div>
           </div>
         </div>
-        {reportUrl && (
-          <a
-            href={reportUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-medium text-white transition-all hover:scale-105 active:scale-95"
-          >
-            <ExternalLink size={14} className="text-brand-primary" />
-            Open in New Tab
-          </a>
-        )}
+
+        <div className="flex items-center gap-3">
+          {reportUrl && (
+            <a
+              href={reportUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-semibold text-white transition-all hover:scale-105 active:scale-95"
+            >
+              <ExternalLink size={14} className="text-brand-primary" />
+              Open in New Tab
+            </a>
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="text-white/40 hover:text-white transition-colors"
+              title="Close"
+            >
+              <X size={20} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 w-full h-full relative border-t border-white/5">

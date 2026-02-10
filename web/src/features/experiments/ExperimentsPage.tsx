@@ -1105,8 +1105,8 @@ function CreateFolderModal({ onClose, onCreate, parentId }: CreateFolderModalPro
         className="bg-neutral-900 border border-white/10 rounded-xl w-full max-w-sm"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/5">
-          <h2 className="text-lg font-semibold text-white">New Folder</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5">
+          <h2 className="text-xl text-white">New Folder</h2>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
           </button>
@@ -1158,17 +1158,17 @@ function CreateFolderModal({ onClose, onCreate, parentId }: CreateFolderModalPro
           </div>
         </div>
 
-        <div className="flex justify-between gap-3 px-6 py-4 border-t border-white/5 bg-white/5">
+        <div className="px-6 py-4 border-t border-white/10 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!name.trim()}
-            className="px-4 py-2 bg-brand-primary text-black text-sm font-bold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-2 bg-brand-primary text-black text-sm rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 shadow-[0_0_20px_rgba(23,185,120,0.2)]"
           >
             Create
           </button>
@@ -1215,8 +1215,8 @@ function CreateExperimentModal({ onClose, onCreate, folders, defaultFolderId }: 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-neutral-900 border border-white/10 rounded-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/5">
-          <h2 className="text-lg font-semibold text-white">New Experiment</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5">
+          <h2 className="text-xl text-white">New Experiment</h2>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
           </button>
@@ -1262,17 +1262,17 @@ function CreateExperimentModal({ onClose, onCreate, folders, defaultFolderId }: 
           </div>
         </div>
 
-        <div className="flex justify-between gap-3 px-6 py-4 border-t border-white/5 bg-white/5">
+        <div className="px-6 py-4 border-t border-white/10 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!name.trim() || !folderId}
-            className="px-4 py-2 bg-brand-primary text-black text-sm font-bold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-2 bg-brand-primary text-black text-sm rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 shadow-[0_0_20px_rgba(23,185,120,0.2)]"
           >
             Create
           </button>
@@ -1304,10 +1304,10 @@ function DeleteFileModal({ onClose, onConfirm, fileName }: DeleteFileModalProps)
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-neutral-900 border border-red-500/20 rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
+        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-red-500/10">
           <div className="flex items-center gap-2">
             <AlertTriangle size={20} className="text-red-400" />
-            <h3 className="text-lg font-semibold text-white">Delete File</h3>
+            <h3 className="text-xl text-white">Delete File</h3>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -1316,22 +1316,22 @@ function DeleteFileModal({ onClose, onConfirm, fileName }: DeleteFileModalProps)
 
         <div className="p-6">
           <p className="text-white/80 text-sm">
-            Are you sure you want to delete <span className="font-semibold text-white">{fileName}</span>?
+            Are you sure you want to delete <span className="text-white">{fileName}</span>?
             <br />
             This action cannot be undone.
           </p>
         </div>
 
-        <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
+        <div className="px-6 py-4 border-t border-white/10 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 transition-colors"
+            className="px-6 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)]"
           >
             Delete
           </button>
@@ -1372,10 +1372,10 @@ function DeleteExperimentModal({ onClose, onConfirm, experimentName }: DeleteExp
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-neutral-900 border border-red-500/20 rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
+        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-red-500/10">
           <div className="flex items-center gap-2">
             <AlertTriangle size={20} className="text-red-400" />
-            <h3 className="text-lg font-semibold text-white">Delete Experiment</h3>
+            <h3 className="text-xl text-white">Delete Experiment</h3>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -1387,7 +1387,7 @@ function DeleteExperimentModal({ onClose, onConfirm, experimentName }: DeleteExp
             <p className="text-sm text-red-200">
               <strong>Warning:</strong> This action cannot be undone. This will permanently delete the experiment and all its data, including attached files.
             </p>
-            <p className="text-sm text-white font-semibold mt-2 line-clamp-2">{experimentName}</p>
+            <p className="text-sm text-white mt-2 line-clamp-2">{experimentName}</p>
           </div>
 
           <div className="space-y-2">
@@ -1405,17 +1405,17 @@ function DeleteExperimentModal({ onClose, onConfirm, experimentName }: DeleteExp
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
+        <div className="px-6 py-4 border-t border-white/10 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={!isValid}
-            className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-6 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 disabled:opacity-50 transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)]"
           >
             Delete Experiment
           </button>
@@ -1457,10 +1457,10 @@ function DeleteFolderModal({ onClose, onConfirm, folderName, experimentCount }: 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-neutral-900 border border-red-500/20 rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
+        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-red-500/10">
           <div className="flex items-center gap-2">
             <AlertTriangle size={20} className="text-red-400" />
-            <h3 className="text-lg font-semibold text-white">Delete Folder</h3>
+            <h3 className="text-xl text-white">Delete Folder</h3>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -1472,7 +1472,7 @@ function DeleteFolderModal({ onClose, onConfirm, folderName, experimentCount }: 
             <p className="text-sm text-red-200">
               <strong>Warning:</strong> This will permanently delete the folder and all {experimentCount} experiment{experimentCount !== 1 ? 's' : ''} inside it, including their data and attached files. This action cannot be undone.
             </p>
-            <p className="text-sm text-white font-semibold mt-2">{folderName}</p>
+            <p className="text-sm text-white mt-2">{folderName}</p>
           </div>
 
           <div className="space-y-2">
@@ -1490,17 +1490,17 @@ function DeleteFolderModal({ onClose, onConfirm, folderName, experimentCount }: 
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
+        <div className="px-6 py-4 border-t border-white/10 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={!isValid}
-            className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-6 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 disabled:opacity-50 transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)]"
           >
             Delete Folder & Experiments
           </button>
@@ -1773,10 +1773,10 @@ function EquipmentPickerModal({ equipment, locations, experimentId, onLock, onUn
         className="bg-neutral-900 border border-white/10 rounded-xl w-full max-w-md max-h-[600px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/5">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5">
+          <h2 className="text-xl text-white flex items-center gap-2">
             <Microscope size={20} className="text-brand-primary" />
-            Attach Equipment & Run
+            Attach Equipment
           </h2>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />

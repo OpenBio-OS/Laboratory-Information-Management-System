@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { DeleteConfirmModal } from './components/DeleteConfirmModal';
-import { AgentConnectionDialog } from './components/AgentConnectionDialog';
+import { AgentConnectionModal } from './components/AgentConnectionModal';
 import {
   Equipment,
   EquipmentLocation,
@@ -729,7 +729,7 @@ function CreateLocationModal({ onClose, onCreate, parentName }: CreateLocationMo
       <div className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
-          <h3 className="text-lg font-semibold text-white">
+          <h3 className="text-lg text-white">
             {parentName ? `Add ${locationTypeLabel}` : 'Create Facility'}
           </h3>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
@@ -776,17 +776,17 @@ function CreateLocationModal({ onClose, onCreate, parentName }: CreateLocationMo
           </div> */}
         </div>
 
-        <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
+        <div className="px-6 py-4 border-t border-white/10 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!name.trim()}
-            className="px-4 py-2 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 shadow-[0_0_20px_rgba(23,185,120,0.2)]"
           >
             Create
           </button>
@@ -845,7 +845,7 @@ function AddEquipmentModal({ roomId, roomName, onClose, onSave }: AddEquipmentMo
       <div className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
-          <h3 className="text-lg font-semibold text-white">Add Equipment</h3>
+          <h3 className="text-lg text-white">Add Equipment</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
           </button>
@@ -889,14 +889,14 @@ function AddEquipmentModal({ roomId, roomName, onClose, onSave }: AddEquipmentMo
         <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm text-white/60 hover:text-white transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!name.trim()}
-            className="px-4 py-2 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Create
           </button>
@@ -1313,7 +1313,7 @@ function EquipmentDetailView({ equipment, onUpdate }: EquipmentDetailViewProps) 
 
       {/* Agent Connection Dialog */}
       {showAgentDialog && (
-        <AgentConnectionDialog
+        <AgentConnectionModal
           onClose={() => setShowAgentDialog(false)}
           onConnect={handleAgentConnect}
         />

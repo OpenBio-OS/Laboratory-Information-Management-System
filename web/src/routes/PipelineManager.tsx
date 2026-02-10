@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { PipelineSetupWizard } from '../components/PipelineSetupWizard';
-import { NewPipelineRunDialog } from '../components/NewPipelineRunDialog';
+import { PipelineRunModal } from '../components/PipelineRunModal';
 // import { useNavigation } from '../App';
 import { Plus, X, Terminal, Trash2, HeartPulse } from 'lucide-react';
-import { DeleteConfirmDialog } from '../components/DeleteConfirmDialog';
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { ReportViewer } from '../components/ReportViewer';
 
 interface PipelineRun {
@@ -161,7 +161,7 @@ export function PipelineManager() {
           </div>
           <button
             onClick={() => setShowNewRunDialog(true)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
+            className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
           >
             <Plus size={16} />
             New Pipeline Run
@@ -250,7 +250,7 @@ export function PipelineManager() {
                     {run.status === 'RUNNING' && (
                       <button
                         onClick={() => cancelRun(run.id)}
-                        className="px-3 py-1.5 text-sm border border-red-500/20 text-red-400 rounded-lg hover:bg-red-500/10 transition-all font-medium"
+                        className="px-3 py-1.5 text-sm border border-red-500/20 text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
                       >
                         Cancel
                       </button>
@@ -315,7 +315,7 @@ export function PipelineManager() {
 
       {/* New Pipeline Run Dialog */}
       {showNewRunDialog && (
-        <NewPipelineRunDialog
+        <PipelineRunModal
           onClose={() => setShowNewRunDialog(false)}
           onSuccess={() => {
             setShowNewRunDialog(false);
@@ -333,7 +333,7 @@ export function PipelineManager() {
       )}
 
       {deletingRunId && (
-        <DeleteConfirmDialog
+        <DeleteConfirmModal
           title="Delete Pipeline Run"
           message="Are you sure you want to delete this pipeline run? This will permanently remove the record and all output data from disk."
           onConfirm={() => handleDeleteRun(deletingRunId)}
@@ -385,6 +385,14 @@ function PipelineLogsModal({ runId, onClose }: { runId: string; onClose: () => v
   }, [runId, isLive]);
 
   useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  useEffect(() => {
     if (logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
@@ -397,7 +405,7 @@ function PipelineLogsModal({ runId, onClose }: { runId: string; onClose: () => v
         <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5">
           <div className="flex items-center gap-3">
             <Terminal size={20} className="text-brand-primary" />
-            <h3 className="text-lg font-bold text-white">Pipeline Logs</h3>
+            <h3 className="text-lg text-white">Pipeline Logs</h3>
             <span className="text-xs text-white/40 font-mono">{runId.slice(0, 8)}...</span>
           </div>
           <div className="flex items-center gap-3">
@@ -428,10 +436,16 @@ function PipelineLogsModal({ runId, onClose }: { runId: string; onClose: () => v
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-white/10 flex justify-end">
+        <div className="px-6 py-4 border-t border-white/10 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm border border-white/10 text-white/80 rounded-lg hover:bg-white/5 transition-colors"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onClose}
+            className="px-6 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-all shadow-[0_0_20px_rgba(23,185,120,0.2)]"
           >
             Close
           </button>

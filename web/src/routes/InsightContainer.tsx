@@ -58,7 +58,7 @@ export function InsightContainer() {
                     >
                         <ArrowLeft size={24} />
                     </button>
-                    <h1 className="text-xl font-bold text-white">Loading...</h1>
+                    <h1 className="text-xl text-white">Loading...</h1>
                 </div>
                 <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
@@ -81,7 +81,7 @@ export function InsightContainer() {
                     >
                         <ArrowLeft size={24} />
                     </button>
-                    <h1 className="text-xl font-bold text-white">Error</h1>
+                    <h1 className="text-xl text-white">Error</h1>
                 </div>
                 <div className="flex-1 flex items-center justify-center">
                     <div className="text-center text-red-400">

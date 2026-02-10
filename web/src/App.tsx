@@ -6,8 +6,8 @@ import { queryClient } from "./lib/queryClient";
 import { ApiProvider, useApi } from "./lib/ApiContext";
 import { SetupWizard, SetupConfig } from "./features/setup";
 import { ChartScatter, Database, FlaskConical, LayoutDashboard, Microscope, Refrigerator, Settings, SquareLibrary, SquareFunction } from "lucide-react";
-import { ConfirmModal as ConfirmDialog } from "./components/ConfirmModal";
-import { DeleteConfirmDialog } from "./components/DeleteConfirmDialog";
+import { ConfirmModal } from "./components/ConfirmModal";
+import { DeleteConfirmModal } from "./components/DeleteConfirmModal";
 import "./App.css";
 
 // ==========================================
@@ -233,7 +233,7 @@ function AppContent() {
         {/* Main content */}
         <main className="flex-1 flex flex-col overflow-hidden relative">
           <header className="h-20 flex items-center px-8 z-10">
-            <h1 className="text-2xl font-bold">
+            <h1 className="text-2xl">
               {navItems.find(n => n.id === activeTab)?.label}
             </h1>
           </header>
@@ -264,7 +264,7 @@ const Card = ({ children, className = "" }: { children: React.ReactNode; classNa
 );
 
 const Button = ({ children, variant = "primary", className = "", ...props }: any) => {
-  const baseStyle = "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 active:scale-95";
+  const baseStyle = "px-4 py-2 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 active:scale-95";
   const variants = {
     primary: "bg-brand-primary text-black hover:bg-brand-secondary hover:shadow-[0_0_20px_rgba(23,185,120,0.3)]",
     secondary: "bg-white/5 text-white hover:bg-white/10 border border-white/5",
@@ -299,7 +299,7 @@ function DashboardView() {
 
       <Card className="relative overflow-hidden">
         <div className="relative z-10">
-          <h2 className="text-2xl font-bold mb-2">Welcome to OpenBio</h2>
+          <h2 className="text-2xl mb-2">Welcome to OpenBio</h2>
           <p className="text-white/60 mb-6">
             Your local-first Biological Operating System. Get started by adding samples to your inventory or creating an experiment.
           </p>
@@ -431,7 +431,7 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
   return (
     <div className="space-y-6 px-8">
       <Card>
-        <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
+        <h3 className="text-lg mb-6 flex items-center gap-2">
           <div className="w-1 h-6 bg-brand-primary rounded-full"></div>
           General
         </h3>
@@ -573,7 +573,7 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
       </Card>
 
       {showResetSetupDialog && (
-        <ConfirmDialog
+        <ConfirmModal
           title="Reset Application"
           message="Are you sure you want to re-run the setup wizard? This will require you to reconfigure your deployment mode and connection settings."
           onClose={() => setShowResetSetupDialog(false)}
@@ -584,13 +584,14 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
       )}
 
       {showResetDatabaseDialog && (
-        <DeleteConfirmDialog
+        <DeleteConfirmModal
           title="Delete All Data"
           message="⚠️ WARNING: This will permanently delete ALL your data including experiments, samples, and uploaded files. This action CANNOT be undone."
           onClose={() => setShowResetDatabaseDialog(false)}
           onConfirm={handleResetDatabase}
           confirmWord="DELETE"
         />
-      )}    </div>
+      )}
+    </div>
   );
 }

@@ -41,7 +41,7 @@ export function ConfirmModal({
         <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5">
           <div className="flex items-center gap-2">
             <AlertTriangle size={20} className={isDanger ? 'text-red-400' : 'text-brand-primary'} />
-            <h3 className="text-lg font-bold text-white">{title}</h3>
+            <h3 className="text-lg text-white">{title}</h3>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -59,7 +59,7 @@ export function ConfirmModal({
         <div className="px-6 py-4 border-t border-white/10 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-bold text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
           >
             {cancelText}
           </button>
@@ -68,7 +68,7 @@ export function ConfirmModal({
               onConfirm();
               onClose();
             }}
-            className={`px-6 py-2 text-black text-sm font-bold rounded-lg transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(23,185,120,0.2)] ${isDanger
+            className={`px-6 py-2 text-black text-sm font-semibold rounded-lg transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(23,185,120,0.2)] ${isDanger
               ? 'bg-red-500 hover:bg-red-600 shadow-[0_0_20px_rgba(239,68,68,0.2)]'
               : 'bg-brand-primary hover:bg-brand-secondary'
               }`}

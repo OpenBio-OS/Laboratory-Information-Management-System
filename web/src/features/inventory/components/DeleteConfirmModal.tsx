@@ -18,7 +18,7 @@ export function DeleteConfirmModal({ onClose, onConfirm, itemName, itemType }: D
                 onClose();
             }
         };
-        
+
         window.addEventListener('keydown', handleEscape);
         return () => window.removeEventListener('keydown', handleEscape);
     }, [onClose]);
@@ -37,7 +37,7 @@ export function DeleteConfirmModal({ onClose, onConfirm, itemName, itemType }: D
                 <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
                     <div className="flex items-center gap-2">
                         <AlertTriangle size={20} className="text-red-400" />
-                        <h3 className="text-lg font-semibold text-white">Delete {itemType}</h3>
+                        <h3 className="text-lg text-white">Delete {itemType}</h3>
                     </div>
                     <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
                         <X size={20} />
@@ -72,14 +72,14 @@ export function DeleteConfirmModal({ onClose, onConfirm, itemName, itemType }: D
                 <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+                        className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={handleConfirm}
                         disabled={!isValid}
-                        className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                         Delete {itemType}
                     </button>

@@ -206,7 +206,7 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-neutral-900 border border-white/10 rounded-xl w-full max-w-lg max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/5">
-          <h2 className="text-lg font-semibold text-white">Add Paper</h2>
+          <h2 className="text-lg text-white">Add Paper</h2>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
           </button>
@@ -231,7 +231,7 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
               <button
                 onClick={handleDoiLookup}
                 disabled={isLooking || !doi.trim()}
-                className="px-4 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-brand-primary text-black text-sm rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLooking ? "..." : "Autofill"}
               </button>
@@ -310,13 +310,13 @@ function AddPaperModal({ onClose, onAdd, collections }: AddPaperModalProps) {
         </div>
 
         <div className="flex justify-between gap-3 px-6 py-4 border-t border-white/5 bg-white/5">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-white/60 hover:text-white transition-colors">
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!title.trim() || !collectionId}
-            className="px-4 py-2 bg-brand-primary text-black text-sm font-bold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Add Paper
           </button>
@@ -357,7 +357,7 @@ function DeleteCollectionModal({ onClose, onConfirm, collectionName, paperCount 
         <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
           <div className="flex items-center gap-2">
             <AlertTriangle size={20} className="text-red-400" />
-            <h3 className="text-lg font-semibold text-white">Delete Collection</h3>
+            <h3 className="text-lg text-white">Delete Collection</h3>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -369,7 +369,7 @@ function DeleteCollectionModal({ onClose, onConfirm, collectionName, paperCount 
             <p className="text-sm text-red-200">
               <strong>Warning:</strong> This will permanently delete the collection and all {paperCount} paper{paperCount !== 1 ? 's' : ''} inside it, including their PDFs. This action cannot be undone.
             </p>
-            <p className="text-sm text-white font-semibold mt-2">{collectionName}</p>
+            <p className="text-sm text-white mt-2">{collectionName}</p>
           </div>
 
           <div className="space-y-2">
@@ -390,14 +390,14 @@ function DeleteCollectionModal({ onClose, onConfirm, collectionName, paperCount 
         <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm text-white/60 hover:text-white transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={!isValid}
-            className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Delete Collection & Papers
           </button>
@@ -437,7 +437,7 @@ function DeletePaperModal({ onClose, onConfirm, paperTitle }: DeletePaperModalPr
         <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
           <div className="flex items-center gap-2">
             <AlertTriangle size={20} className="text-red-400" />
-            <h3 className="text-lg font-semibold text-white">Delete Paper</h3>
+            <h3 className="text-lg text-white">Delete Paper</h3>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -449,7 +449,7 @@ function DeletePaperModal({ onClose, onConfirm, paperTitle }: DeletePaperModalPr
             <p className="text-sm text-red-200">
               <strong>Warning:</strong> This action cannot be undone. This will permanently delete:
             </p>
-            <p className="text-sm text-white font-semibold mt-2 line-clamp-2">{paperTitle}</p>
+            <p className="text-sm text-white mt-2 line-clamp-2">{paperTitle}</p>
           </div>
 
           <div className="space-y-2">
@@ -470,14 +470,14 @@ function DeletePaperModal({ onClose, onConfirm, paperTitle }: DeletePaperModalPr
         <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm text-white/60 hover:text-white transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={!isValid}
-            className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Delete Paper
           </button>
@@ -517,7 +517,7 @@ function CreateCollectionModal({ onClose, onCreate }: CreateCollectionModalProps
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-neutral-900 border border-white/10 rounded-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/5">
-          <h2 className="text-lg font-semibold text-white">New Collection</h2>
+          <h2 className="text-lg text-white">New Collection</h2>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
           </button>
@@ -563,13 +563,13 @@ function CreateCollectionModal({ onClose, onCreate }: CreateCollectionModalProps
         </div>
 
         <div className="flex justify-between gap-3 px-6 py-4 border-t border-white/5 bg-white/5">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-white/60 hover:text-white transition-colors">
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!name.trim()}
-            className="px-4 py-2 bg-brand-primary text-black text-sm font-bold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Create
           </button>

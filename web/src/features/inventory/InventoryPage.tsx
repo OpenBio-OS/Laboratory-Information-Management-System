@@ -209,175 +209,175 @@ export function InventoryPage() {
         <div className="flex-1 overflow-auto">
           <div className="p-6 min-w-max">
             <div className="mx-auto m-6">
-            {samplesLoading || containersLoading ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="w-8 h-8 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
-              </div>
-            ) : searchQuery ? (
-              /* Search Results View */
-              <div>
-                <div className="mb-6">
-                  <h2 className="text-2xl font-bold text-white">Search Results</h2>
-                  <p className="text-white/40 text-sm">{filteredSamples.length} sample{filteredSamples.length !== 1 ? 's' : ''} found</p>
+              {samplesLoading || containersLoading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="w-8 h-8 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
                 </div>
+              ) : searchQuery ? (
+                /* Search Results View */
+                <div>
+                  <div className="mb-6">
+                    <h2 className="text-2xl text-white">Search Results</h2>
+                    <p className="text-white/40 text-sm">{filteredSamples.length} sample{filteredSamples.length !== 1 ? 's' : ''} found</p>
+                  </div>
 
-                {filteredSamples.length > 0 ? (
-                  <div className="space-y-3">
-                    {filteredSamples.map(sample => (
-                      <div
-                        key={sample.id}
-                        onClick={() => {
-                          if (sample.containerId) {
-                            setSelectedContainerId(sample.containerId);
-                            setSelectedSlot(sample.slotPosition || null);
-                            setSearchQuery(''); // Clear search to show the box view
-                          }
-                        }}
-                        className="bg-surface/50 hover:bg-neutral-900/80 border border-white/10 rounded-xl p-5 hover:border-brand-primary/30 transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-white mb-1">{sample.name}</h3>
-                            {sample.metadata && (
-                              <p className="text-sm text-white/60 mb-3 line-clamp-2">{sample.metadata}</p>
-                            )}
-                            <div className="flex items-center gap-2 text-xs text-white/40">
-                              <span className="font-mono">{getLocationPath(sample)}</span>
+                  {filteredSamples.length > 0 ? (
+                    <div className="space-y-3">
+                      {filteredSamples.map(sample => (
+                        <div
+                          key={sample.id}
+                          onClick={() => {
+                            if (sample.containerId) {
+                              setSelectedContainerId(sample.containerId);
+                              setSelectedSlot(sample.slotPosition || null);
+                              setSearchQuery(''); // Clear search to show the box view
+                            }
+                          }}
+                          className="bg-surface/50 hover:bg-neutral-900/80 border border-white/10 rounded-xl p-5 hover:border-brand-primary/30 transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <h3 className="text-lg font-semibold text-white mb-1">{sample.name}</h3>
+                              {sample.metadata && (
+                                <p className="text-sm text-white/60 mb-3 line-clamp-2">{sample.metadata}</p>
+                              )}
+                              <div className="flex items-center gap-2 text-xs text-white/40">
+                                <span className="font-mono">{getLocationPath(sample)}</span>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12 text-white/40">
-                    No samples found matching "{searchQuery}"
-                  </div>
-                )}
-              </div>
-            ) : selectedContainer?.type === 'box' ? (
-              /* Box View - Show Grid and Sample Management */
-              <>
-                <div className="mb-6">
-                  <h2 className="text-2xl font-bold text-white">{selectedContainer.name}</h2>
-                  <p className="text-white/40 text-sm">Box • {filteredSamples.length} of {displayedSamples.length} samples{searchQuery ? ' (filtered)' : ''}</p>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-white/40">
+                      No samples found matching "{searchQuery}"
+                    </div>
+                  )}
                 </div>
-
-                <div className="flex gap-8 items-start">
-                  <div className="flex-1">
-                    <BoxGrid
-                      samples={filteredSamples.map(s => ({ ...s, slotPosition: s.slotPosition ?? null }))}
-                      rows={selectedContainer.layoutConfig?.rows || 9}
-                      cols={selectedContainer.layoutConfig?.cols || 9}
-                      selectedSlot={selectedSlot}
-                      onSlotClick={(slot) => setSelectedSlot(slot)}
-                    />
+              ) : selectedContainer?.type === 'box' ? (
+                /* Box View - Show Grid and Sample Management */
+                <>
+                  <div className="mb-6">
+                    <h2 className="text-2xl text-white">{selectedContainer.name}</h2>
+                    <p className="text-white/40 text-sm">Box • {filteredSamples.length} of {displayedSamples.length} samples{searchQuery ? ' (filtered)' : ''}</p>
                   </div>
 
-                  {/* Sample Management Panel */}
-                  <div className="w-96 min-w-96 bg-surface/30 border border-white/5 rounded-xl p-4 -mt-14">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-sm font-medium text-white/60">Sample Management</h4>
+                  <div className="flex gap-8 items-start">
+                    <div className="flex-1">
+                      <BoxGrid
+                        samples={filteredSamples.map(s => ({ ...s, slotPosition: s.slotPosition ?? null }))}
+                        rows={selectedContainer.layoutConfig?.rows || 9}
+                        cols={selectedContainer.layoutConfig?.cols || 9}
+                        selectedSlot={selectedSlot}
+                        onSlotClick={(slot) => setSelectedSlot(slot)}
+                      />
                     </div>
 
-                    {/* Fixed-height slot selection area */}
-                    <div className="h-[200px] mb-4">
-                      {selectedSlot ? (
-                        (() => {
-                          const sampleInSlot = filteredSamples.find(s => s.slotPosition === selectedSlot);
-                          return sampleInSlot ? (
-                            /* Slot occupied - show sample details and actions */
-                            <div className="space-y-4 h-full flex flex-col">
-                              <div className="bg-white/5 border border-white/10 rounded-lg p-4 flex-1 overflow-y-auto">
-                                <div className="text-xs text-white/40 mb-1">Position: {selectedSlot}</div>
-                                <div className="text-lg font-semibold text-white mb-2">{sampleInSlot.name}</div>
-                                {sampleInSlot.metadata && (
-                                  <div className="text-sm text-white/60 mt-2 whitespace-pre-wrap">{sampleInSlot.metadata}</div>
-                                )}
-                              </div>
+                    {/* Sample Management Panel */}
+                    <div className="w-96 min-w-96 bg-surface/30 border border-white/5 rounded-xl p-4 -mt-14">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-sm font-semibold text-white/60">Sample Management</h4>
+                      </div>
 
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => setEditSampleId(sampleInSlot.id)}
-                                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-brand-primary/20 text-brand-primary border border-brand-primary/30 text-sm font-medium rounded-lg hover:bg-brand-primary/30 transition-colors"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => setDeleteSampleId(sampleInSlot.id)}
-                                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-500/20 text-red-400 border border-red-500/30 text-sm font-medium rounded-lg hover:bg-red-500/30 transition-colors"
-                                >
-                                  <X size={14} />
-                                  Delete
-                                </button>
+                      {/* Fixed-height slot selection area */}
+                      <div className="h-[200px] mb-4">
+                        {selectedSlot ? (
+                          (() => {
+                            const sampleInSlot = filteredSamples.find(s => s.slotPosition === selectedSlot);
+                            return sampleInSlot ? (
+                              /* Slot occupied - show sample details and actions */
+                              <div className="space-y-4 h-full flex flex-col">
+                                <div className="bg-white/5 border border-white/10 rounded-lg p-4 flex-1 overflow-y-auto">
+                                  <div className="text-xs text-white/40 mb-1">Position: {selectedSlot}</div>
+                                  <div className="text-lg font-semibold text-white mb-2">{sampleInSlot.name}</div>
+                                  {sampleInSlot.metadata && (
+                                    <div className="text-sm text-white/60 mt-2 whitespace-pre-wrap">{sampleInSlot.metadata}</div>
+                                  )}
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => setEditSampleId(sampleInSlot.id)}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-brand-primary/20 text-brand-primary border border-brand-primary/30 text-sm font-medium rounded-lg hover:bg-brand-primary/30 transition-colors"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteSampleId(sampleInSlot.id)}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-500/20 text-red-400 border border-red-500/30 text-sm font-medium rounded-lg hover:bg-red-500/30 transition-colors"
+                                  >
+                                    <X size={14} />
+                                    Delete
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ) : (
-                            /* Slot empty - show add button */
-                            <div className="h-full flex items-center justify-center">
-                              <div className="bg-brand-primary/10 border border-brand-primary/20 rounded-lg p-6 text-center">
-                                <div className="text-sm text-white/80 mb-2.5">Slot {selectedSlot} is empty</div>
-                                <button
-                                  onClick={() => setIsCreateSampleModalOpen(true)}
-                                  className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-colors w-full"
-                                >
-                                  <Plus size={16} />
-                                  Add Sample to {selectedSlot}
-                                </button>
+                            ) : (
+                              /* Slot empty - show add button */
+                              <div className="h-full flex items-center justify-center">
+                                <div className="bg-brand-primary/10 border border-brand-primary/20 rounded-lg p-6 text-center">
+                                  <div className="text-sm text-white/80 mb-2.5">Slot {selectedSlot} is empty</div>
+                                  <button
+                                    onClick={() => setIsCreateSampleModalOpen(true)}
+                                    className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-colors w-full"
+                                  >
+                                    <Plus size={16} />
+                                    Add Sample to {selectedSlot}
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })()
-                      ) : (
-                        /* No slot selected */
-                        <div className="h-full flex items-center justify-center">
-                          <div className="text-white/30 text-sm text-center">Select a slot in the grid to add or manage samples</div>
+                            );
+                          })()
+                        ) : (
+                          /* No slot selected */
+                          <div className="h-full flex items-center justify-center">
+                            <div className="text-white/30 text-sm text-center">Select a slot in the grid to add or manage samples</div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* All Samples list - always visible */}
+                      <div className="pt-4 border-t border-white/10">
+                        <div className="text-xs text-white/40 mb-2">All Samples ({filteredSamples.length})</div>
+                        <div className="space-y-2 h-[300px] overflow-y-auto">
+                          {filteredSamples.map(s => {
+                            const sampleInSlot = selectedSlot ? filteredSamples.find(sample => sample.slotPosition === selectedSlot) : null;
+                            const isSelected = sampleInSlot && s.id === sampleInSlot.id;
+                            return (
+                              <div
+                                key={s.id}
+                                onClick={() => setSelectedSlot(s.slotPosition || null)}
+                                className={`p-2 rounded-lg border cursor-pointer transition-colors ${isSelected
+                                  ? 'bg-white/20 border-white/50 text-white'
+                                  : 'bg-white/5 border-white/5 hover:border-white/30 text-white/70'
+                                  }`}
+                              >
+                                <div className="text-sm font-medium">{s.name}</div>
+                                <div className="text-xs text-white/40">Slot: {s.slotPosition || 'Unassigned'}</div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      )}
-                    </div>
-
-                    {/* All Samples list - always visible */}
-                    <div className="pt-4 border-t border-white/10">
-                      <div className="text-xs text-white/40 mb-2">All Samples ({filteredSamples.length})</div>
-                      <div className="space-y-2 h-[300px] overflow-y-auto">
-                        {filteredSamples.map(s => {
-                          const sampleInSlot = selectedSlot ? filteredSamples.find(sample => sample.slotPosition === selectedSlot) : null;
-                          const isSelected = sampleInSlot && s.id === sampleInSlot.id;
-                          return (
-                            <div
-                              key={s.id}
-                              onClick={() => setSelectedSlot(s.slotPosition || null)}
-                              className={`p-2 rounded-lg border cursor-pointer transition-colors ${isSelected
-                                ? 'bg-white/20 border-white/50 text-white'
-                                : 'bg-white/5 border-white/5 hover:border-white/30 text-white/70'
-                                }`}
-                            >
-                              <div className="text-sm font-medium">{s.name}</div>
-                              <div className="text-xs text-white/40">Slot: {s.slotPosition || 'Unassigned'}</div>
-                            </div>
-                          );
-                        })}
                       </div>
                     </div>
                   </div>
+                </>
+              ) : (
+                /* Empty State - Prompt to use the tree */
+                <div className="flex flex-col items-center pt-16 text-white/30 -mt-6">
+                  <div className="w-16 h-16 mb-4 rounded-xl bg-white/5 flex items-center justify-center">
+                    <LayoutGrid size={32} className="opacity-50" />
+                  </div>
+                  <p className="text-lg font-medium">
+                    {containers.length === 0 ? 'No Storage Yet' : 'Select a Box'}
+                  </p>
+                  <p className="text-sm">
+                    {containers.length === 0
+                      ? 'Use the tree on the left to create your first freezer'
+                      : 'Use the tree on the left to navigate to a box'}
+                  </p>
                 </div>
-              </>
-            ) : (
-              /* Empty State - Prompt to use the tree */
-              <div className="flex flex-col items-center pt-16 text-white/30 -mt-6">
-                <div className="w-16 h-16 mb-4 rounded-xl bg-white/5 flex items-center justify-center">
-                  <LayoutGrid size={32} className="opacity-50" />
-                </div>
-                <p className="text-lg font-medium">
-                  {containers.length === 0 ? 'No Storage Yet' : 'Select a Box'}
-                </p>
-                <p className="text-sm">
-                  {containers.length === 0
-                    ? 'Use the tree on the left to create your first freezer'
-                    : 'Use the tree on the left to navigate to a box'}
-                </p>
-              </div>
-            )}
+              )}
             </div>
           </div>
         </div>

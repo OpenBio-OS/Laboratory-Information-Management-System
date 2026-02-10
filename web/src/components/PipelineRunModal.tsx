@@ -56,7 +56,7 @@ interface ParameterDefinition {
   description?: string;
 }
 
-interface NewPipelineRunDialogProps {
+interface PipelineRunModalProps {
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -173,7 +173,7 @@ function FolderTreeNode({
   );
 }
 
-export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialogProps) {
+export function PipelineRunModal({ onClose, onSuccess }: PipelineRunModalProps) {
   // Step management
   const [step, setStep] = useState<'experiment' | 'pipeline'>('experiment');
 
@@ -481,7 +481,7 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
         <div className="border-b border-white/10 bg-white/5">
           <div className="px-6 pt-4 pb-3 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <h2 className="text-xl font-bold text-white">New Pipeline Run</h2>
+              <h2 className="text-xl text-white">New Pipeline Run</h2>
             </div>
             <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
               <X size={20} />
@@ -796,78 +796,65 @@ export function NewPipelineRunDialog({ onClose, onSuccess }: NewPipelineRunDialo
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between bg-white/5">
-          <div>
-            <button
-              onClick={onClose}
-              className="px-4 py-1.5 text-sm text-white/80 rounded-lg hover:bg-white/5 transition-colors"
-            >
-              Cancel
-            </button>
-
-          </div>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
+          >
+            Cancel
+          </button>
 
           <div className="flex items-center gap-3">
-
             {step === 'pipeline' && (
               <button
                 onClick={() => setStep('experiment')}
-                className="flex items-center text-sm gap-2 px-4 py-2 text-white/60 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                className="flex items-center text-sm gap-2 px-4 py-2 text-white/60 hover:text-white rounded-lg hover:bg-white/5 transition-all"
               >
                 <ChevronLeft size={16} />
                 Back
               </button>
             )}
+
             {step === 'experiment' ? (
               <button
                 onClick={() => setStep('pipeline')}
-                disabled={!selectedExperiments}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={selectedExperiments.length === 0}
+                className="px-6 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 flex items-center gap-2 shadow-[0_0_20px_rgba(23,185,120,0.2)]"
               >
-                Next
+                Next Step
                 <ChevronRight size={16} />
               </button>
             ) : (
               <button
                 onClick={handleLaunchPipeline}
-                disabled={!selectedTemplate || isLaunching}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLaunching || !selectedTemplate}
+                className="px-6 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 flex items-center gap-2 shadow-[0_0_20px_rgba(23,185,120,0.2)]"
               >
-                {isLaunching ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    Starting...
-                  </>
-                ) : (
-                  <>
-                    <Play size={16} />
-                    Start Pipeline
-                  </>
-                )}
+                {isLaunching ? <Loader2 className="animate-spin" size={16} /> : <Play size={16} fill="currentColor" />}
+                Launch Pipeline
               </button>
             )}
           </div>
         </div>
+
+        {/* Child Modals */}
+        {showAddPipeline && (
+          <AddPipelineModal
+            onClose={() => setShowAddPipeline(false)}
+            onAdd={(pipeline) => {
+              setAvailablePipelines((prev) => [...prev, { ...pipeline, isCustom: true }]);
+              setShowAddPipeline(false);
+            }}
+          />
+        )}
+
+        {showDockerModal && (
+          <DockerRequirementModal
+            onClose={() => setShowDockerModal(false)}
+            onRecheck={handleRecheckDocker}
+            isChecking={isCheckingDocker}
+          />
+        )}
       </div>
-
-      {/* Add Pipeline Modal (placeholder - to be implemented) */}
-      {showAddPipeline && (
-        <AddPipelineModal
-          onClose={() => setShowAddPipeline(false)}
-          onAdd={(pipeline) => {
-            setAvailablePipelines((prev) => [...prev, { ...pipeline, isCustom: true }]);
-            setShowAddPipeline(false);
-          }}
-        />
-      )}
-
-      {/* Docker Requirement Modal */}
-      {showDockerModal && (
-        <DockerRequirementModal
-          onClose={() => setShowDockerModal(false)}
-          onRecheck={handleRecheckDocker}
-          isChecking={isCheckingDocker}
-        />
-      )}
     </div>
   );
 }
@@ -921,14 +908,14 @@ function AddPipelineModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
       <div
-        className="bg-neutral-900 border border-white/10 rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col"
+        className="bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5">
-          <h3 className="text-lg font-bold text-white">Add Custom Pipeline</h3>
+          <h3 className="text-lg text-white">Add Custom Pipeline</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={18} />
           </button>
@@ -976,12 +963,11 @@ function AddPipelineModal({
           <div className="border-t border-white/10 pt-4 space-y-4">
             <label className="block text-sm font-medium text-white/60">Pipeline Source *</label>
 
-            {/* Source Type Buttons */}
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setSourceType('nf-core')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${sourceType === 'nf-core'
+                className={`flex-1 px-3 py-2 rounded-lg text-sm transition-all ${sourceType === 'nf-core'
                   ? 'bg-brand-primary/20 border-brand-primary text-brand-primary border'
                   : 'bg-black/30 border-white/10 text-white/60 border hover:border-white/20'
                   }`}
@@ -991,17 +977,17 @@ function AddPipelineModal({
               <button
                 type="button"
                 onClick={() => setSourceType('github')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${sourceType === 'github'
+                className={`flex-1 px-3 py-2 rounded-lg text-sm transition-all ${sourceType === 'github'
                   ? 'bg-brand-primary/20 border-brand-primary text-brand-primary border'
                   : 'bg-black/30 border-white/10 text-white/60 border hover:border-white/20'
                   }`}
               >
-                GitHub URL
+                GitHub
               </button>
               <button
                 type="button"
                 onClick={() => setSourceType('local')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${sourceType === 'local'
+                className={`flex-1 px-3 py-2 rounded-lg text-sm transition-all ${sourceType === 'local'
                   ? 'bg-brand-primary/20 border-brand-primary text-brand-primary border'
                   : 'bg-black/30 border-white/10 text-white/60 border hover:border-white/20'
                   }`}
@@ -1010,7 +996,6 @@ function AddPipelineModal({
               </button>
             </div>
 
-            {/* Source Location Input */}
             <div>
               <input
                 type="text"
@@ -1020,20 +1005,19 @@ function AddPipelineModal({
                   sourceType === 'nf-core'
                     ? 'e.g., nf-core/rnaseq'
                     : sourceType === 'github'
-                      ? 'e.g., https://github.com/your-org/pipeline'
+                      ? 'e.g., https://github.com/org/pipeline'
                       : 'e.g., /path/to/my-pipeline'
                 }
                 className={`w-full px-4 py-2.5 bg-black/30 border rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50 ${!sourceLocation.trim() ? 'border-red-500/50' : 'border-white/10'
                   }`}
               />
               <p className="text-xs text-white/40 mt-1">
-                {sourceType === 'nf-core' && 'Enter the nf-core pipeline name (e.g., nf-core/rnaseq, nf-core/sarek)'}
-                {sourceType === 'github' && 'Enter the full GitHub/GitLab URL to the pipeline repository'}
-                {sourceType === 'local' && 'Enter the absolute path to the pipeline directory on this machine'}
+                {sourceType === 'nf-core' && 'Enter the nf-core pipeline name'}
+                {sourceType === 'github' && 'Enter the GitHub/GitLab URL'}
+                {sourceType === 'local' && 'Enter the absolute path to the pipeline directory'}
               </p>
             </div>
 
-            {/* Revision field for git-based sources */}
             {(sourceType === 'nf-core' || sourceType === 'github') && (
               <div>
                 <label className="block text-sm font-medium text-white/60 mb-1.5">
@@ -1043,7 +1027,7 @@ function AddPipelineModal({
                   type="text"
                   value={revision}
                   onChange={(e) => setRevision(e.target.value)}
-                  placeholder="e.g., main, v3.12.0, dev"
+                  placeholder="e.g., main, v3.12.0"
                   className="w-full px-4 py-2.5 bg-black/30 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
                 />
               </div>
@@ -1056,7 +1040,7 @@ function AddPipelineModal({
               <label className="text-sm font-medium text-white/60">Parameters</label>
               <button
                 onClick={addParameter}
-                className="flex items-center gap-1 text-xs text-brand-primary hover:text-brand-secondary transition-colors"
+                className="flex items-center gap-1 text-xs text-brand-primary hover:text-brand-secondary transition-colors font-semibold"
               >
                 <Plus size={12} />
                 Add Parameter
@@ -1112,25 +1096,12 @@ function AddPipelineModal({
                       Required
                     </label>
                   </div>
-                  {param.type === 'select' && (
-                    <input
-                      type="text"
-                      value={param.options?.join(', ') || ''}
-                      onChange={(e) =>
-                        updateParameter(index, {
-                          options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
-                        })
-                      }
-                      placeholder="Options (comma-separated)"
-                      className="w-full px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-brand-primary/50"
-                    />
-                  )}
                 </div>
               ))}
 
               {parameters.length === 0 && (
-                <p className="text-sm text-white/40 text-center py-4">
-                  No parameters defined. Add parameters to configure the pipeline.
+                <p className="text-sm text-white/40 text-center py-4 italic">
+                  No parameters defined.
                 </p>
               )}
             </div>
@@ -1138,17 +1109,17 @@ function AddPipelineModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 justify-between border-t border-white/10 flex gap-3">
+        <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 text-sm text-white/80 rounded-lg hover:bg-white/5 transition-colors"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={!name.trim() || !sourceLocation.trim()}
-            className="px-4 py-2 bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 shadow-[0_0_20px_rgba(23,185,120,0.2)]"
           >
             Add Pipeline
           </button>

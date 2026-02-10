@@ -33,7 +33,7 @@ export function LicenseAgreementScreen({ onAccept, onReject }: LicenseAgreementS
           <div className="inline-flex p-3 rounded-full bg-brand-primary/10 text-brand-primary mb-4 shadow-[0_0_20px_rgba(23,185,120,0.2)]">
             <img src="/logo-transparent-green-text.png" alt="OpenBio Logo" className="w-14 h-14" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">Welcome to OpenBio</h1>
+          <h1 className="text-3xl text-white mb-2">Welcome to OpenBio</h1>
           <p className="text-white/60 text-lg">Please review and accept the following terms to continue</p>
         </div>
 
@@ -47,9 +47,9 @@ export function LicenseAgreementScreen({ onAccept, onReject }: LicenseAgreementS
               </div>
               <h2 className="text-xl font-semibold text-white">License Agreement</h2>
             </div>
-            
+
             <div className="bg-black/30 rounded-lg p-4 max-h-64 overflow-y-auto text-sm text-white/70 space-y-3 mb-4 font-mono">
-              <p className="font-bold text-white">GNU AFFERO GENERAL PUBLIC LICENSE (AGPL v3)</p>
+              <p className="font-semibold text-white">GNU AFFERO GENERAL PUBLIC LICENSE (AGPL v3)</p>
               <p>
                 OpenBio is free and open-source software licensed under the GNU Affero General Public License version 3.
               </p>
@@ -74,11 +74,10 @@ export function LicenseAgreementScreen({ onAccept, onReject }: LicenseAgreementS
 
             <label className="flex items-center gap-3 cursor-pointer group" onClick={() => setLicenseAccepted(!licenseAccepted)}>
               <div
-                className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
-                  licenseAccepted
+                className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${licenseAccepted
                     ? 'bg-brand-primary border-brand-primary'
                     : 'border-white/30 group-hover:border-white/50'
-                }`}
+                  }`}
               >
                 {licenseAccepted && <Check size={14} className="text-white" />}
               </div>
@@ -96,9 +95,9 @@ export function LicenseAgreementScreen({ onAccept, onReject }: LicenseAgreementS
               </div>
               <h2 className="text-xl font-semibold text-white">Community Rules & Ethics</h2>
             </div>
-            
+
             <div className="bg-black/30 rounded-lg p-4 max-h-64 overflow-y-auto text-sm text-white/70 space-y-3 mb-4">
-              <p className="font-bold text-white">Responsible Use Guidelines</p>
+              <p className="font-semibold text-white">Responsible Use Guidelines</p>
               <p>
                 OpenBio is designed for legitimate scientific research and laboratory management. By using this software, you agree to:
               </p>
@@ -112,22 +111,21 @@ export function LicenseAgreementScreen({ onAccept, onReject }: LicenseAgreementS
                 <li>Report security vulnerabilities responsibly</li>
               </ul>
               <p className="pt-2">
-                <strong className="text-white">Data Privacy:</strong> OpenBio does not collect or transmit your research data 
+                <strong className="text-white">Data Privacy:</strong> OpenBio does not collect or transmit your research data
                 to external servers (except when you explicitly configure Enterprise mode). All data remains under your control.
               </p>
               <p className="pt-2">
-                <strong className="text-white">Liability:</strong> Users are solely responsible for ensuring compliance with 
+                <strong className="text-white">Liability:</strong> Users are solely responsible for ensuring compliance with
                 their institutional policies, local laws, and ethical guidelines.
               </p>
             </div>
 
             <label className="flex items-center gap-3 cursor-pointer group" onClick={() => setRulesAccepted(!rulesAccepted)}>
               <div
-                className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
-                  rulesAccepted
+                className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${rulesAccepted
                     ? 'bg-brand-primary border-brand-primary'
                     : 'border-white/30 group-hover:border-white/50'
-                }`}
+                  }`}
               >
                 {rulesAccepted && <Check size={14} className="text-white" />}
               </div>
@@ -148,11 +146,10 @@ export function LicenseAgreementScreen({ onAccept, onReject }: LicenseAgreementS
             <button
               onClick={onAccept}
               disabled={!canProceed}
-              className={`flex-1 px-6 py-3 rounded-xl font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
-                canProceed
+              className={`flex-1 px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${canProceed
                   ? 'bg-brand-primary text-white hover:bg-brand-secondary shadow-lg hover:shadow-brand-primary/25'
                   : 'bg-white/10 text-white/40 cursor-not-allowed'
-              }`}
+                }`}
             >
               Accept & Continue
               <ArrowRight size={18} />

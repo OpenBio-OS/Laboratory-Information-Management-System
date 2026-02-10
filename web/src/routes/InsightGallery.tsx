@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useNavigation } from '../App';
 import { Plus } from 'lucide-react';
-import { NewVisualizationDialog } from '../components/NewVisualizationDialog';
+import { VisualizationModal } from '../components/VisualizationModal';
 
 interface InsightInstance {
   id: string;
@@ -91,7 +91,7 @@ export function InsightGallery() {
           </div>
           <button
             onClick={() => setShowNewDialog(true)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
+            className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
           >
             <Plus size={16} />
             Create New Visualization
@@ -221,7 +221,7 @@ export function InsightGallery() {
                         e.stopPropagation();
                         openInsight(instance);
                       }}
-                      className="flex-1 px-3 py-1.5 bg-brand-primary text-black font-medium rounded-lg text-sm hover:bg-brand-secondary transition-all"
+                      className="flex-1 px-3 py-1.5 bg-brand-primary text-black font-semibold rounded-lg text-sm hover:bg-brand-secondary transition-all"
                     >
                       Open
                     </button>
@@ -245,7 +245,7 @@ export function InsightGallery() {
       </div>
 
       {showNewDialog && (
-        <NewVisualizationDialog onClose={() => setShowNewDialog(false)} />
+        <VisualizationModal onClose={() => setShowNewDialog(false)} />
       )}
     </div>
   );

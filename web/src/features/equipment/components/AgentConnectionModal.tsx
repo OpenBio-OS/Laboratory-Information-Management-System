@@ -3,12 +3,12 @@ import { X, Wifi, Monitor, Building2, Network, Loader2 } from 'lucide-react';
 
 type ConnectionMode = 'local' | 'mdns' | 'enterprise';
 
-interface AgentConnectionDialogProps {
+interface AgentConnectionModalProps {
   onClose: () => void;
   onConnect: (mode: ConnectionMode, ipAddress?: string) => Promise<void>;
 }
 
-export function AgentConnectionDialog({ onClose, onConnect }: AgentConnectionDialogProps) {
+export function AgentConnectionModal({ onClose, onConnect }: AgentConnectionModalProps) {
   const [selectedMode, setSelectedMode] = useState<ConnectionMode | null>(null);
   const [ipAddress, setIpAddress] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
@@ -20,7 +20,7 @@ export function AgentConnectionDialog({ onClose, onConnect }: AgentConnectionDia
         onClose();
       }
     };
-    
+
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [onClose, isConnecting]);
@@ -84,10 +84,10 @@ export function AgentConnectionDialog({ onClose, onConnect }: AgentConnectionDia
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
       <div className="w-full max-w-2xl bg-neutral-900 border border-white/10 rounded-2xl shadow-xl overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
+        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5">
           <div className="flex items-center gap-2">
             <Network size={20} className="text-brand-primary" />
-            <h3 className="text-lg font-semibold text-white">Connect to Agent</h3>
+            <h3 className="text-lg text-white">Connect to Agent</h3>
           </div>
           <button
             onClick={onClose}
@@ -138,7 +138,7 @@ export function AgentConnectionDialog({ onClose, onConnect }: AgentConnectionDia
                       />
                     </div>
                     <div className="flex-1">
-                      <div className="font-semibold text-white mb-1">
+                      <div className="text-white mb-1">
                         {mode.title}
                       </div>
                       <div className="text-sm text-white/60">
@@ -184,18 +184,18 @@ export function AgentConnectionDialog({ onClose, onConnect }: AgentConnectionDia
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
+        <div className="px-6 py-4 border-t border-white/10 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
             disabled={isConnecting}
-            className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors disabled:opacity-50"
+            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleConnect}
             disabled={!selectedMode || isConnecting}
-            className="px-4 py-2 bg-brand-primary text-black text-sm font-bold rounded-lg hover:bg-brand-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            className="px-6 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(23,185,120,0.2)]"
           >
             {isConnecting && <Loader2 size={16} className="animate-spin" />}
             {isConnecting ? 'Connecting...' : 'Connect'}

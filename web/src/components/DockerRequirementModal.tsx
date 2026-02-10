@@ -32,9 +32,9 @@ export function DockerRequirementModal({ onClose, onRecheck, isChecking }: Docke
             />
           </div>
 
-          <h2 className="text-2xl font-bold text-white mb-2">Docker Required</h2>
+          <h2 className="text-2xl text-white mb-2">Docker Required</h2>
           <p className="text-white/60 text-sm leading-relaxed">
-            To run analysis pipelines, OpenBio requires Docker to be installed and <span className='font-semibold'>running</span> on your system.
+            To run analysis pipelines, OpenBio requires Docker to be installed and running on your system.
           </p>
         </div>
 
@@ -50,7 +50,7 @@ export function DockerRequirementModal({ onClose, onRecheck, isChecking }: Docke
           <div className="space-y-3 pt-2">
             <button
               onClick={() => openUrl('https://www.docker.com/products/docker-desktop/')}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white text-black font-semibold rounded-xl hover:bg-neutral-200 transition-all active:scale-[0.98]"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white text-black rounded-xl hover:bg-neutral-200 transition-all active:scale-[0.98] font-semibold"
             >
               <ExternalLink size={18} />
               Get Docker Desktop
@@ -60,7 +60,7 @@ export function DockerRequirementModal({ onClose, onRecheck, isChecking }: Docke
               <button
                 onClick={onRecheck}
                 disabled={isChecking}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 text-white font-medium rounded-xl hover:bg-white/10 transition-all disabled:opacity-50 active:scale-[0.98]"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all disabled:opacity-50 active:scale-[0.98]"
               >
                 <RefreshCw size={16} className={isChecking ? 'animate-spin' : ''} />
                 {isChecking ? 'Checking...' : 'Recheck'}
@@ -68,7 +68,7 @@ export function DockerRequirementModal({ onClose, onRecheck, isChecking }: Docke
 
               <button
                 onClick={onClose}
-                className="flex items-center justify-center px-4 py-2.5 bg-white/5 border border-white/10 text-white/60 font-medium rounded-xl hover:bg-white/10 hover:text-white transition-all active:scale-[0.98]"
+                className="flex items-center justify-center px-4 py-2.5 bg-white/5 border border-white/10 text-white/60 rounded-xl hover:bg-white/10 hover:text-white transition-all active:scale-[0.98]"
               >
                 Skip for now
               </button>
@@ -77,7 +77,7 @@ export function DockerRequirementModal({ onClose, onRecheck, isChecking }: Docke
         </div>
 
         {/* Footer info */}
-        <div className="px-8 py-4 bg-white/5 border-t border-white/5 text-center text-[10px] text-white/30 uppercase tracking-widest font-semibold">
+        <div className="px-8 py-4 bg-white/5 border-t border-white/10 text-center text-[10px] text-white/30 uppercase tracking-widest">
           OpenBio Pipeline Engine • Containerized Analysis
         </div>
       </div>

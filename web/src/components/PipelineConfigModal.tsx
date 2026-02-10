@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { X, Loader2 } from 'lucide-react';
 
-interface PipelineConfigProps {
+interface PipelineConfigModalProps {
   experimentId: string;
   onClose: () => void;
   onSubmit: (config: PipelineConfig) => void;
@@ -32,7 +33,7 @@ interface ParameterDefinition {
   description?: string;
 }
 
-export function PipelineConfigDialog({ experimentId, onClose, onSubmit }: PipelineConfigProps) {
+export function PipelineConfigModal({ experimentId, onClose, onSubmit }: PipelineConfigModalProps) {
   const [availablePipelines, setAvailablePipelines] = useState<PipelineTemplate[]>([]);
   const [selectedPipeline, setSelectedPipeline] = useState<string>('');
   const [parameters, setParameters] = useState<Record<string, string>>({});
@@ -134,22 +135,20 @@ export function PipelineConfigDialog({ experimentId, onClose, onSubmit }: Pipeli
   const selectedTemplate = availablePipelines.find(p => p.name === selectedPipeline);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-neutral-900 border border-white/10 rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b">
+        <div className="px-6 py-4 border-b border-white/10 bg-white/5">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-gray-800">Configure Pipeline</h2>
-              <p className="text-sm text-gray-600">Experiment ID: {experimentId}</p>
+              <h2 className="text-xl text-white">Configure Pipeline</h2>
+              <p className="text-xs text-white/40 uppercase tracking-widest">Experiment: {experimentId.slice(0, 12)}</p>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-white/40 hover:text-white transition-colors"
             >
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X size={20} />
             </button>
           </div>
         </div>
@@ -157,24 +156,25 @@ export function PipelineConfigDialog({ experimentId, onClose, onSubmit }: Pipeli
         {/* Content */}
         <div className="flex-1 overflow-auto p-6">
           {isLoading ? (
-            <div className="flex justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+            <div className="flex flex-col items-center justify-center py-24 gap-3">
+              <Loader2 className="animate-spin text-brand-primary" size={24} />
+              <p className="text-white/40 text-[10px] uppercase tracking-[0.2em]">Synchronizing Templates</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Pipeline Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-white/60 mb-2">
                   Pipeline Type *
                 </label>
                 <select
                   value={selectedPipeline}
                   onChange={(e) => handlePipelineChange(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all font-medium appearance-none"
                   required
                 >
                   {availablePipelines.map((pipeline) => (
-                    <option key={pipeline.name} value={pipeline.name}>
+                    <option key={pipeline.name} value={pipeline.name} className="bg-neutral-900">
                       {pipeline.name} - {pipeline.description} (v{pipeline.version})
                     </option>
                   ))}
@@ -184,29 +184,29 @@ export function PipelineConfigDialog({ experimentId, onClose, onSubmit }: Pipeli
               {/* Pipeline Parameters */}
               {selectedTemplate && (
                 <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">
+                  <h3 className="text-lg text-white border-b border-white/10 pb-2">
                     Pipeline Parameters
                   </h3>
 
                   {selectedTemplate.parameters.map((param) => (
                     <div key={param.name}>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-white/60 mb-1">
                         {param.label} {param.required && <span className="text-red-500">*</span>}
                       </label>
                       {param.description && (
-                        <p className="text-xs text-gray-500 mb-2">{param.description}</p>
+                        <p className="text-xs text-white/40 mb-2 italic">{param.description}</p>
                       )}
 
                       {param.type === 'select' && (
                         <select
                           value={parameters[param.name] || ''}
                           onChange={(e) => handleParameterChange(param.name, e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all text-sm appearance-none"
                           required={param.required}
                         >
-                          {!param.default && <option value="">Select {param.label}</option>}
+                          {!param.default && <option value="" className="bg-neutral-900">Select {param.label}</option>}
                           {param.options?.map((option) => (
-                            <option key={option} value={option}>
+                            <option key={option} value={option} className="bg-neutral-900">
                               {option}
                             </option>
                           ))}
@@ -218,7 +218,7 @@ export function PipelineConfigDialog({ experimentId, onClose, onSubmit }: Pipeli
                           type="text"
                           value={parameters[param.name] || ''}
                           onChange={(e) => handleParameterChange(param.name, e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all text-sm placeholder:text-white/20 font-mono"
                           required={param.required}
                           placeholder={param.default}
                         />
@@ -229,21 +229,21 @@ export function PipelineConfigDialog({ experimentId, onClose, onSubmit }: Pipeli
                           type="number"
                           value={parameters[param.name] || ''}
                           onChange={(e) => handleParameterChange(param.name, e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all text-sm"
                           required={param.required}
                           placeholder={param.default}
                         />
                       )}
 
                       {param.type === 'boolean' && (
-                        <label className="flex items-center gap-2">
+                        <label className="flex items-center gap-2 group cursor-pointer">
                           <input
                             type="checkbox"
                             checked={parameters[param.name] === 'true'}
                             onChange={(e) => handleParameterChange(param.name, e.target.checked ? 'true' : 'false')}
-                            className="w-4 h-4 text-blue-500 rounded focus:ring-2 focus:ring-blue-500"
+                            className="w-4 h-4 bg-black/30 border-white/10 rounded text-brand-primary focus:ring-brand-primary focus:ring-offset-0"
                           />
-                          <span className="text-sm text-gray-600">Enable</span>
+                          <span className="text-sm text-white/60 group-hover:text-white transition-colors">Enable</span>
                         </label>
                       )}
                     </div>
@@ -252,17 +252,17 @@ export function PipelineConfigDialog({ experimentId, onClose, onSubmit }: Pipeli
               )}
 
               {/* Actions */}
-              <div className="flex gap-3 pt-4 border-t">
+              <div className="px-6 py-4 bg-white/5 border-t border-white/10 flex justify-between items-center -mx-6 -mb-6 mt-6">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 flex-1 py-1.5 text-sm text-white/80 rounded-lg hover:bg-white/5 transition-colors"
+                  className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                  className="px-6 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-all shadow-[0_0_20px_rgba(23,185,120,0.2)]"
                 >
                   Start Pipeline
                 </button>
