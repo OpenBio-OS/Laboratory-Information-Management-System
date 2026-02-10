@@ -347,6 +347,7 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
   const [showResetSetupDialog, setShowResetSetupDialog] = useState(false);
   const [showResetDatabaseDialog, setShowResetDatabaseDialog] = useState(false);
   const [showResetEnvDialog, setShowResetEnvDialog] = useState(false);
+  const [showCleanupConfirmDialog, setShowCleanupConfirmDialog] = useState(false);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -418,6 +419,18 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
     } catch (err) {
       console.error("Failed to reset database:", err);
       alert(`Failed to reset database: ${err}`);
+    }
+  };
+
+  const handleCleanupTemp = async () => {
+    try {
+      const result = await invoke<string>('cleanup_pipeline_temp');
+      alert(result);
+      setShowCleanupConfirmDialog(false);
+    } catch (err) {
+      console.error("Failed to cleanup:", err);
+      alert(`Failed to cleanup: ${err}`);
+      setShowCleanupConfirmDialog(false);
     }
   };
 
@@ -585,8 +598,22 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
               Reset Pipeline
             </Button>
           </div>
+
+          <div className="flex items-center justify-between p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+            <div>
+              <h4 className="font-medium text-white mb-1">Clean Up Temp Files</h4>
+              <p className="text-sm text-white/40">Remove old temporary pipeline execution directories from your system to free up space.</p>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => setShowCleanupConfirmDialog(true)}
+              className="hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/30"
+            >
+              Clean Up
+            </Button>
+          </div>
         </div>
-      </Card >
+      </Card>
 
       {showResetSetupDialog && (
         <ConfirmModal
@@ -612,18 +639,31 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
         )
       }
 
-      {showResetEnvDialog && (
-        <ResetEnvironmentModal
-          onClose={() => setShowResetEnvDialog(false)}
-          onConfirm={async () => {
-            try {
-              await invoke('reset_pipeline_env');
-              console.log("Pipeline environment reset successfully");
-            } catch (e) {
-              console.error("Failed to reset environment:", e);
-              alert("Failed to reset environment: " + e);
-            }
-          }}
+      {
+        showResetEnvDialog && (
+          <ResetEnvironmentModal
+            onClose={() => setShowResetEnvDialog(false)}
+            onConfirm={async () => {
+              try {
+                await invoke('reset_pipeline_env');
+                console.log("Pipeline environment reset successfully");
+              } catch (e) {
+                console.error("Failed to reset environment:", e);
+                alert("Failed to reset environment: " + e);
+              }
+            }}
+          />
+        )
+      }
+
+      {showCleanupConfirmDialog && (
+        <ConfirmModal
+          title="Clean Up Temp Files"
+          message="This will delete all 'nf_work_' and 'nf_out_' directories from your system temporary folder. This is safe to do if no pipelines are currently running. Proceed?"
+          onClose={() => setShowCleanupConfirmDialog(false)}
+          onConfirm={handleCleanupTemp}
+          confirmText="Clean Up"
+          variant="warning"
         />
       )}
     </div >

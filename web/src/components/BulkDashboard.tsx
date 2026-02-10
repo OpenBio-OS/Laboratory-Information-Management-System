@@ -1,17 +1,63 @@
-import { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, FileText, Download, BarChart2 } from 'lucide-react';
 import { useNavigation } from '../App';
+import { invoke } from '@tauri-apps/api/core';
 
 interface BulkDashboardProps {
   experimentId: string;
 }
 
+interface Asset {
+  id: string;
+  name: string;
+  path: string;
+  assetType: string;
+  createdAt: string;
+  sizeBytes?: string;
+}
+
 export function BulkDashboard({ experimentId }: BulkDashboardProps) {
   const { navigateTo } = useNavigation();
-  const [activeTab, setActiveTab] = useState<'pca' | 'heatmap' | 'de'>('pca');
-  const [isLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'pca' | 'heatmap' | 'de'>('overview');
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // TODO: Add data fetching using get_experiment_files or specialized command
+  useEffect(() => {
+    loadAssets();
+  }, [experimentId]);
+
+  const loadAssets = async () => {
+    setIsLoading(true);
+    try {
+      const data = await invoke<Asset[]>('get_experiment_assets', { experimentId });
+      setAssets(data);
+    } catch (err) {
+      console.error('Failed to load assets:', err);
+      setError('Failed to load analysis results.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getAssetsByType = (type: string) => assets.filter(a => a?.assetType === type);
+  const getAssetsByName = (pattern: string) => assets.filter(a => a?.name && a.name.toLowerCase().includes(pattern.toLowerCase()));
+
+  const openAsset = async (asset: Asset) => {
+    if (!asset || !asset.id) return;
+
+    // For reports, we might want to open in browser
+    if (asset.assetType === 'REPORT' || (asset.name && asset.name.endsWith('.html'))) {
+      const apiBase = "http://localhost:3000"; // TODO: Fetch from config
+      const url = `${apiBase}/files/${asset.id}/view`;
+      window.open(url, '_blank');
+    } else {
+      // Download or view raw
+      const apiBase = "http://localhost:3000";
+      const url = `${apiBase}/files/${asset.id}/download`;
+      window.open(url, '_blank');
+    }
+  };
 
   return (
     <div className="h-full flex flex-col bg-main overflow-hidden">
@@ -30,7 +76,7 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
               Bulk RNA-seq Dashboard
             </h1>
             <p className="text-sm text-white/40 flex items-center gap-2 mt-1 font-medium">
-              <span className="w-2 h-2 rounded-full bg-brand-primary animate-pulse" />
+              <span className={`w-2 h-2 rounded-full animate-pulse ${isLoading ? 'bg-yellow-500' : 'bg-green-500'}`} />
               Experiment: {experimentId}
             </p>
           </div>
@@ -39,13 +85,22 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
         {/* Tabs */}
         <div className="flex bg-white/5 p-1 rounded-xl border border-white/5">
           <button
+            onClick={() => setActiveTab('overview')}
+            className={`px-6 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'overview'
+              ? 'bg-white/10 text-white shadow-lg border border-white/10'
+              : 'text-white/40 hover:text-white hover:bg-white/5'
+              }`}
+          >
+            Overview
+          </button>
+          <button
             onClick={() => setActiveTab('pca')}
             className={`px-6 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'pca'
               ? 'bg-white/10 text-white shadow-lg border border-white/10'
               : 'text-white/40 hover:text-white hover:bg-white/5'
               }`}
           >
-            PCA Plot
+            PCA
           </button>
           <button
             onClick={() => setActiveTab('heatmap')}
@@ -63,68 +118,184 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
               : 'text-white/40 hover:text-white hover:bg-white/5'
               }`}
           >
-            Differential Expression
+            Diff. Expr.
           </button>
         </div>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 p-8 overflow-auto scrollbar-hide">
+      <div className="flex-1 p-8 min-h-0 overflow-hidden">
         {isLoading ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-primary mx-auto mb-4" />
-              <p className="text-white/40 font-medium">Analysis in progress...</p>
+              <p className="text-white/40 font-medium">Loading analysis results...</p>
             </div>
           </div>
+        ) : error ? (
+          <div className="h-full flex items-center justify-center text-red-400">
+            {error}
+          </div>
         ) : (
-          <div className="h-full bg-surface/30 backdrop-blur-md rounded-2xl border border-white/10 p-10 flex flex-col items-center justify-center text-center">
-            {activeTab === 'pca' && (
-              <>
-                <div className="w-20 h-20 bg-brand-primary/10 rounded-2xl flex items-center justify-center mb-6 text-brand-primary">
-                  <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl text-white mb-2 tracking-tight">Principal Component Analysis</h3>
-                <p className="text-white/40 max-w-sm font-medium leading-relaxed">
-                  Preparing the high-dimensional projection. Requires processing of <code className="text-brand-primary bg-brand-primary/5 px-1.5 py-0.5 rounded border border-brand-primary/20 text-xs">counts.tsv</code>.
-                </p>
-              </>
-            )}
+          <div className="h-full bg-surface/30 backdrop-blur-md rounded-2xl border border-white/10 flex flex-col overflow-hidden">
 
-            {activeTab === 'heatmap' && (
-              <>
-                <div className="w-20 h-20 bg-brand-primary/10 rounded-2xl flex items-center justify-center mb-6 text-brand-primary">
-                  <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M3 14h18m-9-4v8m-7-9l-5.6 5.6" />
-                    <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth={1.5} />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 4v16M15 4v16" />
-                  </svg>
-                </div>
-                <h3 className="text-xl text-white mb-2 tracking-tight">Expression Heatmap</h3>
-                <p className="text-white/40 max-w-sm font-medium leading-relaxed">
-                  Generating the gene expression matrix visualization. Analyzing clusters and hierarchical relationships.
-                </p>
-              </>
-            )}
+            {/* Scrollable Content Inside Card */}
+            <div className="flex-1 overflow-y-auto pl-8 py-8 pr-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+              {activeTab === 'overview' && (
+                <div className="space-y-8">
+                  {/* Reports Section */}
+                  {getAssetsByType('REPORT').length > 0 && (
+                    <div>
+                      <h3 className="text-lg text-white font-medium mb-4 pb-2 border-b border-white/5">
+                        Reports
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {getAssetsByType('REPORT').map(asset => (
+                          <AssetCard key={asset.id} asset={asset} onClick={() => openAsset(asset)} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-            {activeTab === 'de' && (
-              <>
-                <div className="w-20 h-20 bg-brand-primary/10 rounded-2xl flex items-center justify-center mb-6 text-brand-primary">
-                  <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
+                  {/* Plots Section */}
+                  {getAssetsByType('IMAGE').length > 0 && (
+                    <div>
+                      <h3 className="text-lg text-white font-medium mb-4 pb-2 border-b border-white/5">
+                        Plots & Figures
+                      </h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {getAssetsByType('IMAGE').map(asset => (
+                          <div key={asset.id} onClick={() => openAsset(asset)} className="group relative aspect-video bg-black/40 rounded-xl overflow-hidden border border-white/5 hover:border-brand-primary/50 transition-all cursor-pointer">
+                            <div className="absolute inset-0 flex items-center justify-center text-white/20 group-hover:text-brand-primary transition-colors">
+                              <BarChart2 size={32} />
+                            </div>
+                            {/* Ideally we would show a thumbnail here, but we don't have one yet. 
+                                            We could use the view URL if it's an image, but auth might be tricky. 
+                                            For now, a nice placeholder. */}
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+                              <p className="text-xs text-white truncate font-medium">{asset.name}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Data Section */}
+                  {(getAssetsByType('DATA').length > 0 || getAssetsByType('COUNTS').length > 0) && (
+                    <div>
+                      <h3 className="text-lg text-white font-medium mb-4 pb-2 border-b border-white/5">
+                        Data Files
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {[...getAssetsByType('DATA'), ...getAssetsByType('COUNTS'), ...getAssetsByType('MATRIX')].map(asset => (
+                          <AssetCard key={asset.id} asset={asset} onClick={() => openAsset(asset)} compact />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* All other assets if not caught above (fallback) */}
+                  {assets.filter(a => !['REPORT', 'IMAGE', 'DATA', 'COUNTS', 'MATRIX'].includes(a.assetType)).length > 0 && (
+                    <div>
+                      <h3 className="text-lg text-white font-medium mb-4 pb-2 border-b border-white/5">
+                        Other Files
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {assets.filter(a => !['REPORT', 'IMAGE', 'DATA', 'COUNTS', 'MATRIX'].includes(a.assetType)).map(asset => (
+                          <AssetCard key={asset.id} asset={asset} onClick={() => openAsset(asset)} compact />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {assets.length === 0 && (
+                    <div className="text-center py-20">
+                      <p className="text-white/40">No analysis files found.</p>
+                    </div>
+                  )}
                 </div>
-                <h3 className="text-xl text-white mb-2 tracking-tight">Differential Expression</h3>
-                <p className="text-white/40 max-w-sm font-medium leading-relaxed">
-                  Compiling the significant gene regulation table. Calculating fold-changes and adjusted p-values.
-                </p>
-              </>
-            )}
+              )}
+
+              {activeTab === 'pca' && (
+                <div className="h-full flex flex-col">
+                  {/* <h3 className="text-lg text-white font-medium mb-4 px-1">PCA Analysis</h3> */}
+                  <div className="flex-1 overflow-y-auto space-y-2">
+                    {getAssetsByName('pca').length > 0 ? (
+                      getAssetsByName('pca').map(a => (
+                        <AssetCard key={a.id} asset={a} onClick={() => openAsset(a)} />
+                      ))
+                    ) : (
+                      <p className="text-white/40 py-8 text-center">No PCA files found.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'heatmap' && (
+                <div className="h-full flex flex-col">
+                  {/* <h3 className="text-lg text-white font-medium mb-4 px-1">Heatmaps & Expression</h3> */}
+                  <div className="flex-1 overflow-y-auto space-y-2">
+                    {getAssetsByName('heatmap').concat(getAssetsByName('counts')).concat(getAssetsByName('tpm')).length > 0 ? (
+                      getAssetsByName('heatmap').concat(getAssetsByName('counts')).concat(getAssetsByName('tpm')).map(a => (
+                        <AssetCard key={a.id} asset={a} onClick={() => openAsset(a)} />
+                      ))
+                    ) : (
+                      <p className="text-white/40 py-8 text-center">No heatmap or expression data found.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'de' && (
+                <div className="h-full flex flex-col">
+                  {/* <h3 className="text-lg text-white font-medium mb-4 px-1">Differential Expression</h3> */}
+                  <div className="flex-1 overflow-y-auto space-y-2">
+                    {getAssetsByName('deseq').concat(getAssetsByName('diff')).length > 0 ? (
+                      getAssetsByName('deseq').concat(getAssetsByName('diff')).map(a => (
+                        <AssetCard key={a.id} asset={a} onClick={() => openAsset(a)} />
+                      ))
+                    ) : (
+                      <p className="text-white/40 py-8 text-center">No Differential Expression results found.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Sub-component for consistent file display
+function AssetCard({ asset, onClick, compact }: { asset: Asset, onClick: () => void, compact?: boolean }) {
+  return (
+    <div onClick={onClick} className={`bg-white/5 hover:bg-white/10 rounded-xl cursor-pointer border border-white/5 hover:border-white/10 transition-all group ${compact ? 'p-3 flex items-center justify-between' : 'p-4'}`}>
+      <div className="flex items-center gap-3 overflow-hidden">
+        <div className={`shrink-0 flex items-center justify-center rounded-lg ${compact ? 'w-8 h-8 bg-white/5' : 'w-10 h-10 bg-white/5'}`}>
+          {asset.assetType === 'REPORT' ? <FileText className="text-blue-400" size={compact ? 16 : 20} /> :
+            asset.assetType === 'IMAGE' ? <BarChart2 className="text-purple-400" size={compact ? 16 : 20} /> :
+              <Download className="text-green-400" size={compact ? 16 : 20} />}
+        </div>
+        <div className="min-w-0">
+          <h3 className={`text-white font-medium truncate ${compact ? 'text-sm' : 'text-base'}`} title={asset.name}>
+            {asset.name || 'Unnamed Asset'}
+          </h3>
+          {!compact && (
+            <p className="text-xs text-white/40 mt-0.5">{asset.assetType}</p>
+          )}
+        </div>
+      </div>
+      {compact && <span className="text-xs text-white/20 opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-wider font-medium ml-4">View</span>}
+      {!compact && (
+        <div className="mt-3 flex justify-between items-center text-xs border-t border-white/5 pt-3">
+          <span className="text-white/30">
+            {(parseInt(asset.sizeBytes || '0') / 1024).toFixed(1)} KB
+          </span>
+          <span className="text-brand-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">Click to view</span>
+        </div>
+      )}
     </div>
   );
 }

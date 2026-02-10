@@ -1353,7 +1353,8 @@ interface DeleteExperimentModalProps {
 
 function DeleteExperimentModal({ onClose, onConfirm, experimentName }: DeleteExperimentModalProps) {
   const [confirmText, setConfirmText] = useState('');
-  const isValid = confirmText.toLowerCase() === 'delete';
+  const confirmWord = 'DELETE';
+  const isValid = confirmText === confirmWord;
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -1392,7 +1393,7 @@ function DeleteExperimentModal({ onClose, onConfirm, experimentName }: DeleteExp
 
           <div className="space-y-2">
             <label className="text-sm font-medium text-white/80">
-              Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">delete</span> to confirm:
+              Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">{confirmWord}</span> to confirm:
             </label>
             <input
               type="text"
@@ -1438,7 +1439,8 @@ interface DeleteFolderModalProps {
 
 function DeleteFolderModal({ onClose, onConfirm, folderName, experimentCount }: DeleteFolderModalProps) {
   const [confirmText, setConfirmText] = useState('');
-  const isValid = confirmText.toLowerCase() === 'delete';
+  const confirmWord = 'DELETE';
+  const isValid = confirmText === confirmWord;
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -1477,7 +1479,7 @@ function DeleteFolderModal({ onClose, onConfirm, folderName, experimentCount }: 
 
           <div className="space-y-2">
             <label className="text-sm font-medium text-white/80">
-              Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">delete</span> to confirm:
+              Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">{confirmWord}</span> to confirm:
             </label>
             <input
               type="text"

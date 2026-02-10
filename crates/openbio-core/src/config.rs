@@ -1,5 +1,5 @@
 //! Configuration module for OpenBio
-//! 
+//!
 //! Configuration is stored in the user's app data directory and generated
 //! by the Setup Wizard on first launch. The developer never touches user config.
 
@@ -32,26 +32,26 @@ pub enum DeploymentMode {
 pub struct Config {
     /// Deployment mode (set by Setup Wizard)
     pub mode: DeploymentMode,
-    
+
     /// API URL (for spoke/enterprise modes, set by wizard)
     pub api_url: Option<String>,
-    
+
     /// Local server port (for local/hub modes)
     pub server_port: u16,
-    
+
     /// Lab name (for hub mode - what appears in mDNS discovery)
     pub lab_name: Option<String>,
-    
+
     /// Agent name (for agent mode - what appears in mDNS discovery)
     /// e.g. "Microscope Room 301", "Flow Cytometer", "Freezer Monitor"
     pub agent_name: Option<String>,
-    
+
     /// Auto-start application on system boot (default: true for Hub/Agent, false otherwise)
     pub auto_start: bool,
-    
+
     /// Minimize to system tray on startup (Hub mode only)
     pub minimize_to_tray: bool,
-    
+
     /// Data directory path (where SQLite and files are stored)
     /// This is relative to app data dir, set by wizard
     pub data_path: String,
@@ -75,13 +75,13 @@ impl Config {
     /// Get the config file path in user's app data directory
     pub fn config_path() -> PathBuf {
         // Platform-specific app data directory
-        // macOS: ~/Library/Application Support/OpenBio/config.toml
-        // Windows: %APPDATA%/OpenBio/config.toml
-        // Linux: ~/.local/share/OpenBio/config.toml
+        // macOS: ~/Library/Application Support/software.is-a.openbio/config.toml
+        // Windows: %APPDATA%/software.is-a.openbio/config.toml
+        // Linux: ~/.local/share/software.is-a.openbio/config.toml
         let app_dir = dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("OpenBio");
-        
+            .join("software.is-a.openbio");
+
         app_dir.join("config.toml")
     }
 
@@ -89,8 +89,8 @@ impl Config {
     pub fn data_dir(&self) -> PathBuf {
         let app_dir = dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("OpenBio");
-        
+            .join("software.is-a.openbio");
+
         app_dir.join(&self.data_path)
     }
 
@@ -108,12 +108,12 @@ impl Config {
     /// Load configuration from app data directory
     pub fn load() -> Result<Self, crate::Error> {
         let path = Self::config_path();
-        
+
         if !path.exists() {
             // No config = first launch, return unconfigured
             return Ok(Self::new_unconfigured());
         }
-        
+
         let content = std::fs::read_to_string(&path)?;
         let config: Config = toml::from_str(&content)?;
         Ok(config)
@@ -123,14 +123,14 @@ impl Config {
     /// Called by Setup Wizard when user completes setup
     pub fn save(&self) -> Result<(), crate::Error> {
         let path = Self::config_path();
-        
+
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
-        let content = toml::to_string_pretty(self)
-            .map_err(|e| crate::Error::Storage(e.to_string()))?;
+
+        let content =
+            toml::to_string_pretty(self).map_err(|e| crate::Error::Storage(e.to_string()))?;
         std::fs::write(&path, content)?;
         Ok(())
     }

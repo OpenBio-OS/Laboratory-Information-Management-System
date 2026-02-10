@@ -335,7 +335,8 @@ interface DeleteCollectionModalProps {
 
 function DeleteCollectionModal({ onClose, onConfirm, collectionName, paperCount }: DeleteCollectionModalProps) {
   const [confirmText, setConfirmText] = useState("");
-  const isValid = confirmText.toLowerCase() === "delete";
+  const confirmWord = 'DELETE';
+  const isValid = confirmText === confirmWord;
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -374,7 +375,7 @@ function DeleteCollectionModal({ onClose, onConfirm, collectionName, paperCount 
 
           <div className="space-y-2">
             <label className="text-sm font-medium text-white/80">
-              Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">delete</span> to confirm:
+              Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">{confirmWord}</span> to confirm:
             </label>
             <input
               type="text"
@@ -415,7 +416,8 @@ interface DeletePaperModalProps {
 
 function DeletePaperModal({ onClose, onConfirm, paperTitle }: DeletePaperModalProps) {
   const [confirmText, setConfirmText] = useState("");
-  const isValid = confirmText.toLowerCase() === "delete";
+  const confirmWord = 'DELETE';
+  const isValid = confirmText === confirmWord;
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -454,7 +456,7 @@ function DeletePaperModal({ onClose, onConfirm, paperTitle }: DeletePaperModalPr
 
           <div className="space-y-2">
             <label className="text-sm font-medium text-white/80">
-              Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">delete</span> to confirm:
+              Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">{confirmWord}</span> to confirm:
             </label>
             <input
               type="text"

@@ -38,10 +38,10 @@ export function DeleteConfirmModal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-xl shadow-xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+      <div className="w-full max-w-md bg-neutral-900 border border-red-500/20 rounded-2xl shadow-xl overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5">
+        <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-red-500/10">
           <div className="flex items-center gap-2">
             <AlertTriangle size={20} className="text-red-400" />
             <h3 className="text-lg text-white">{title}</h3>
@@ -60,7 +60,7 @@ export function DeleteConfirmModal({
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-medium text-white/40 uppercase tracking-widest">
+            <label className="text-sm font-medium text-white/80">
               Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">{confirmWord}</span> to confirm
             </label>
             <input
@@ -75,17 +75,17 @@ export function DeleteConfirmModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-white/10 flex justify-between items-center bg-white/5">
+        <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-white/40 hover:text-white transition-all hover:bg-white/5 rounded-lg"
+            className="px-4 py-2 text-sm text-white/60 hover:text-white transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={!isValid}
-            className="px-6 py-2 bg-red-500 text-black text-sm font-semibold rounded-lg transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)] disabled:opacity-50 disabled:shadow-none"
+            className="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Confirm Delete
           </button>

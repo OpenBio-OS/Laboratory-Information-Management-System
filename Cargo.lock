@@ -3837,6 +3837,7 @@ dependencies = [
  "lazy_static",
  "mdns-sd",
  "memmap2",
+ "open",
  "openbio-agent",
  "openbio-core",
  "openbio-server",

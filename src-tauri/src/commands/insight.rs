@@ -88,7 +88,7 @@ pub async fn get_experiment_files(
                 // Prepend app data dir
                 let data_dir = dirs::data_dir()
                     .unwrap_or(PathBuf::from("."))
-                    .join("OpenBio");
+                    .join("software.is-a.openbio");
                 let abs = data_dir.join(r);
                 Some(abs.to_string_lossy().to_string())
             } else {
@@ -258,4 +258,30 @@ pub async fn list_experiments(
 
     let experiments: Vec<Experiment> = resp.json().await.map_err(|e| e.to_string())?;
     Ok(experiments)
+}
+
+/// Get all assets for an experiment (raw list)
+#[tauri::command]
+pub async fn get_experiment_assets(
+    experiment_id: String,
+    state: State<'_, crate::AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let api_base = get_api_base_url(&state);
+    let url = format!("{}/experiments/{}/files", api_base, experiment_id);
+
+    let client = reqwest::Client::new();
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Server returned {}", resp.status()));
+    }
+
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let files = json
+        .get("files")
+        .and_then(|f| f.as_array())
+        .ok_or("No files field in response")?
+        .clone();
+
+    Ok(files)
 }

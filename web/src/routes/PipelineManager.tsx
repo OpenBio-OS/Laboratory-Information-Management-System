@@ -7,8 +7,8 @@ import { PipelineRunModal } from '../components/PipelineRunModal';
 // import { useNavigation } from '../App';
 import { Plus, X, Terminal, Trash2, HeartPulse } from 'lucide-react';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
+import { ConfirmModal } from '../components/ConfirmModal';
 import Ansi from 'ansi-to-react';
-import { ReportViewer } from '../components/ReportViewer';
 
 interface PipelineRun {
   id: string;
@@ -32,7 +32,7 @@ export function PipelineManager() {
   const [showNewRunDialog, setShowNewRunDialog] = useState(false);
   const [selectedRunForLogs, setSelectedRunForLogs] = useState<string | null>(null);
   const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
-  const [showReportForExperimentId, setShowReportForExperimentId] = useState<string | null>(null);
+  const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,8 +94,14 @@ export function PipelineManager() {
     setSelectedRunForLogs(runId);
   };
 
-  const viewResults = (experimentId: string) => {
-    setShowReportForExperimentId(experimentId);
+  const viewResults = async (runId: string) => {
+    try {
+      const msg = await invoke<string>('open_pipeline_report', { runId });
+      console.log(msg);
+    } catch (err) {
+      console.error('Failed to open report:', err);
+      alert('Failed to open report: ' + err);
+    }
   };
 
   const handleDeleteRun = async (id: string) => {
@@ -251,7 +257,7 @@ export function PipelineManager() {
                   <div className="flex items-center gap-2">
                     {run.status === 'RUNNING' && (
                       <button
-                        onClick={() => cancelRun(run.id)}
+                        onClick={() => setCancellingRunId(run.id)}
                         className="px-3 py-1.5 text-sm border border-red-500/20 text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
                       >
                         Cancel
@@ -260,7 +266,7 @@ export function PipelineManager() {
 
                     {run.status === 'COMPLETED' && (
                       <button
-                        onClick={() => viewResults(run.experimentId)}
+                        onClick={() => viewResults(run.id)}
                         className="px-3 py-1.5 text-sm bg-brand-primary/10 text-brand-primary border border-brand-primary/20 rounded-lg hover:bg-brand-primary/20 transition-all font-semibold flex items-center gap-2"
                       >
                         <HeartPulse size={16} />
@@ -343,15 +349,18 @@ export function PipelineManager() {
         />
       )}
 
-      {showReportForExperimentId && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-8 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-neutral-900 w-full max-w-6xl h-full max-h-[90vh] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col relative scale-[1.02] animate-in zoom-in-95 duration-200">
-            <ReportViewer
-              experimentId={showReportForExperimentId}
-              onClose={() => setShowReportForExperimentId(null)}
-            />
-          </div>
-        </div>
+      {cancellingRunId && (
+        <ConfirmModal
+          title="Cancel Pipeline Run"
+          message="Are you sure you want to cancel this running pipeline? This process will be terminated immediately."
+          variant="danger"
+          confirmText="Yes, Cancel"
+          onConfirm={() => {
+            if (cancellingRunId) cancelRun(cancellingRunId);
+            setCancellingRunId(null);
+          }}
+          onClose={() => setCancellingRunId(null)}
+        />
       )}
     </div>
   );
@@ -408,7 +417,7 @@ function PipelineLogsModal({ runId, onClose }: { runId: string; onClose: () => v
           <div className="flex items-center gap-3">
             <Terminal size={20} className="text-brand-primary" />
             <h3 className="text-lg text-white">Pipeline Logs</h3>
-            <span className="text-xs text-white/40 font-mono">{runId.slice(0, 12)}...</span>
+            <span className="text-xs text-white/20">PROC ID:</span><span className="text-xs text-white/40 font-mono -ml-1">{runId.slice(0, 12)}...</span>
           </div>
           <div className="flex items-center gap-3">
             {/* <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">

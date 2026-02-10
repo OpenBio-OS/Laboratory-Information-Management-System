@@ -54,7 +54,7 @@ pub struct AppConfig {
 
 /// Shared application state
 pub struct AppState {
-    config: Mutex<AppConfig>,
+    pub config: Mutex<AppConfig>,
     /// Track local agent processes by equipment ID
     local_agents: Mutex<HashMap<String, Child>>,
     /// Agent lock state (for Agent mode): tracks which client has locked this agent
@@ -74,11 +74,11 @@ impl AppState {
     }
 }
 
-/// Get the config directory path
+/// Get the config directory path (BUNDLE IDENTIFIER)
 fn config_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("OpenBio")
+        .join("software.is-a.openbio")
 }
 
 /// Get the config file path
@@ -913,6 +913,8 @@ pub fn run() {
             commands::pipeline::list_pipeline_runs,
             commands::pipeline::delete_pipeline_run,
             commands::pipeline::reset_pipeline_env,
+            commands::pipeline::cleanup_pipeline_temp,
+            commands::pipeline::open_pipeline_report,
             commands::pipeline::get_pipeline_templates,
             // Pipeline environment commands
             commands::check_pipeline_environment,
@@ -932,6 +934,7 @@ pub fn run() {
             commands::delete_insight_instance,
             commands::register_visualization,
             commands::get_experiment_report_url,
+            commands::get_experiment_assets,
         ])
         .setup(move |app| {
             // Check if running in Agent mode

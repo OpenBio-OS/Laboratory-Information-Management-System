@@ -509,6 +509,15 @@ async fn run_nextflow_pipeline(
                     eprintln!("[pipeline] [WARN] Output detection failed: {}", e);
                 } else {
                     println!("[pipeline] Output detection and upload completed");
+
+                    // Auto-cleanup: Remove temp directories to save space
+                    println!("[pipeline] Cleaning up temp directories...");
+                    if let Err(e) = std::fs::remove_dir_all(&out_dir) {
+                        eprintln!("[pipeline] [WARN] Failed to remove out_dir: {}", e);
+                    }
+                    if let Err(e) = std::fs::remove_dir_all(&work_dir) {
+                        eprintln!("[pipeline] [WARN] Failed to remove work_dir: {}", e);
+                    }
                 }
 
                 update_run_status(&api_base, &run_id, "COMPLETED", None).await;
@@ -803,9 +812,19 @@ pub async fn get_pipeline_logs(
         }
     }
 
+    // If no log file found, check the status
+    if let Ok(status_info) = get_pipeline_status(run_id.clone(), _state).await {
+        if status_info.status == "COMPLETED" {
+            return Ok(format!(
+                "Pipeline Run: {}\nStatus: COMPLETED\n\nWorkflow completed successfully.\nTemporary log files have been cleaned up to save disk space.\n\nPlease view the Report or Insight tab for results.",
+                run_id
+            ));
+        }
+    }
+
     // If no log file found, return a status message
     Ok(format!(
-        "Pipeline run: {}\n\nNo log file found yet.\n\nLogs will appear here once the pipeline starts.\nWork directory: {}\nChecked locations:\n{}",
+        "Pipeline run: {}\n\nNo log file found on this machine.\nLogs are only available on the machine that started the pipeline.\nIf this run was started on another device, logs cannot be viewed here.\n\nWork directory: {}\nChecked locations:\n{}",
         run_id,
         work_dir.display(),
         possible_locations.iter().map(|p| format!("  - {}", p.display())).collect::<Vec<_>>().join("\n")
@@ -923,79 +942,84 @@ async fn detect_and_upload_outputs(
     update_run_status(api_base, run_id, "UPLOADING", None).await;
 
     let pipeline_type = pipeline_type.to_lowercase();
-    let is_scrnaseq = pipeline_type.contains("scrnaseq");
-    let is_rnaseq = pipeline_type.contains("rnaseq") && !is_scrnaseq;
+    // let is_scrnaseq = pipeline_type.contains("scrnaseq");
+    // let is_rnaseq = pipeline_type.contains("rnaseq") && !is_scrnaseq;
 
-    // 1. Universal: MultiQC Report
-    let report_paths = vec![
-        out_dir.join("multiqc").join("multiqc_report.html"),
-        out_dir.join("multiqc_report.html"),
-    ];
-    for path in report_paths {
-        if path.exists() {
-            println!(
-                "[pipeline] Found MultiQC report at {:?}, uploading...",
-                path
-            );
-            let _ = upload_asset(api_base, run_id, &path, "REPORT").await;
-            break;
-        }
-    }
+    // Universal Asset Discovery Strategy
+    // Recursively walk the output directory and upload files based on their extension/type.
+    // This allows for "cherry-picking" useful data without strict manifests.
 
-    // 2. Scenario A: Single-Cell (Matrix Market)
-    if is_scrnaseq {
-        // Recursive search for matrix.mtx might be needed, but let's try standard paths first
-        // Simple heuristic: walk the dir to find matrix.mtx
-        let walker = walkdir::WalkDir::new(out_dir).into_iter();
-        for entry in walker.filter_map(|e| e.ok()) {
-            let fname = entry.file_name().to_string_lossy();
-            let path = entry.path();
-
-            if fname == "matrix.mtx" || fname == "matrix.mtx.gz" {
-                println!("[pipeline] Found SC Matrix at {:?}, uploading...", path);
-                let _ = upload_asset(api_base, run_id, path, "MATRIX").await;
-            } else if fname == "barcodes.tsv" || fname == "barcodes.tsv.gz" {
-                let _ = upload_asset(api_base, run_id, path, "BARCODES").await;
-            } else if fname == "features.tsv" || fname == "features.tsv.gz" || fname == "genes.tsv"
-            {
-                let _ = upload_asset(api_base, run_id, path, "FEATURES").await;
-            }
-        }
-    }
-
-    // 3. Scenario B: Bulk RNA (Counts Table)
-    if is_rnaseq {
-        // Look for salmon.merged.gene_counts.tsv
-        let walker = walkdir::WalkDir::new(out_dir).into_iter();
-        for entry in walker.filter_map(|e| e.ok()) {
-            let fname = entry.file_name().to_string_lossy();
-            if fname.contains("salmon.merged.gene_counts.tsv") || fname.contains("gene_counts.tsv")
-            {
-                println!(
-                    "[pipeline] Found Counts Table at {:?}, uploading...",
-                    entry.path()
-                );
-                let _ = upload_asset(api_base, run_id, entry.path(), "COUNTS").await;
-                break; // Only need one main counts file usually
-            }
-        }
-    }
-
-    // 4. Universal: Coordinate Files (UMAP, t-SNE, PCA)
-    // Run this for ALL pipelines to be scalable/compatible with future modules
     let walker = walkdir::WalkDir::new(out_dir).into_iter();
-    for entry in walker.filter_map(|e| e.ok()) {
-        let fname = entry.file_name().to_string_lossy();
-        let path = entry.path();
 
-        if (fname.contains("umap")
-            || fname.contains("tsne")
-            || fname.contains("projection")
-            || fname.contains("pca"))
-            && fname.ends_with(".csv")
+    // Define exclusion list for heavy files we definitely don't want in the report/insight viewer
+    // let excluded_extensions = ["bam", "sam", "cram", "fq", "fastq", "gz", "zip", "tar"];
+    // Note: .gz is excluded by default to avoid uploading huge fastq.gz,
+    // BUT we might want matrix.mtx.gz. Special handling needed.
+
+    for entry in walker.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_dir() {
+            continue;
+        }
+
+        let fname = entry.file_name().to_string_lossy().to_string();
+        let fname_lower = fname.to_lowercase();
+
+        // Determine Asset Type
+        let mut asset_type = "UNKNOWN";
+
+        // 1. Reports (HTML, PDF)
+        if fname_lower.ends_with(".html") || fname_lower.ends_with(".pdf") {
+            asset_type = "REPORT";
+        }
+        // 2. Data Tables (CSV, TSV, TXT, XLS)
+        else if fname_lower.ends_with(".csv")
+            || fname_lower.ends_with(".tsv")
+            || fname_lower.ends_with(".txt")
         {
-            println!("[pipeline] Found Coordinates at {:?}, uploading...", path);
-            let _ = upload_asset(api_base, run_id, path, "COORDS").await;
+            asset_type = "DATA";
+            if fname_lower.contains("counts") {
+                asset_type = "COUNTS";
+            }
+            if fname_lower.contains("feature") {
+                asset_type = "FEATURES";
+            }
+            if fname_lower.contains("barcode") {
+                asset_type = "BARCODES";
+            }
+        }
+        // 3. Images (PNG, SVG, JPG)
+        else if fname_lower.ends_with(".png")
+            || fname_lower.ends_with(".svg")
+            || fname_lower.ends_with(".jpg")
+            || fname_lower.ends_with(".jpeg")
+        {
+            asset_type = "IMAGE";
+        }
+        // 4. MultiQC Data (JSON, YAML)
+        else if fname_lower.contains("multiqc")
+            && (fname_lower.ends_with(".json") || fname_lower.ends_with(".yaml"))
+        {
+            asset_type = "MULTIQC_DATA";
+        }
+        // 5. Special Single Cell
+        else if fname_lower.ends_with("matrix.mtx") || fname_lower.ends_with("matrix.mtx.gz") {
+            asset_type = "MATRIX";
+        }
+
+        // Skip if UNKNOWN or explicitly suppressed
+        if asset_type == "UNKNOWN" {
+            continue;
+        }
+
+        // Upload
+        println!(
+            "[pipeline] Discovered asset: {} (Type: {})",
+            fname, asset_type
+        );
+        match upload_asset(api_base, run_id, path, asset_type).await {
+            Ok(_) => {}
+            Err(e) => eprintln!("[pipeline] Failed to upload asset {}: {}", fname, e),
         }
     }
 
@@ -1046,4 +1070,194 @@ async fn upload_asset(
 
     println!("[pipeline] Uploaded {} as {}", filename, asset_type);
     Ok(())
+}
+
+/// Cleanup all temporary pipeline directories
+#[tauri::command]
+pub async fn cleanup_pipeline_temp() -> Result<String, String> {
+    let temp_dir = std::env::temp_dir();
+    let mut count = 0;
+    let mut errors = Vec::new();
+
+    println!("[pipeline] Starting cleanup of temp dir: {:?}", temp_dir);
+
+    // Read directory directly to avoid walkdir dependency if not strictly needed,
+    // but we already use walkdir in this file so it's fine.
+    // Using read_dir is safer for just one level.
+    if let Ok(entries) = std::fs::read_dir(&temp_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if let Some(fname) = path.file_name().map(|s| s.to_string_lossy()) {
+                if (fname.starts_with("nf_work_") || fname.starts_with("nf_out_")) && path.is_dir()
+                {
+                    println!("[pipeline] Deleting temp dir: {:?}", path);
+                    if let Err(e) = std::fs::remove_dir_all(&path) {
+                        let err_msg = format!("Failed to delete {:?}: {}", path, e);
+                        eprintln!("[pipeline] {}", err_msg);
+                        errors.push(err_msg);
+                    } else {
+                        count += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(format!(
+            "Cleaned up {} temporary pipeline directories.",
+            count
+        ))
+    } else {
+        // Return Ok even with errors so partial success is reported nicely
+        Ok(format!(
+            "Cleaned up {} directories. {} errors occurred (check logs).",
+            count,
+            errors.len()
+        ))
+    }
+}
+
+/// Download and open the pipeline report in the default browser
+#[tauri::command]
+pub async fn open_pipeline_report(
+    run_id: String,
+    state: State<'_, crate::AppState>,
+) -> Result<String, String> {
+    let api_base = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        if config.mode == crate::DeploymentMode::Local || config.mode == crate::DeploymentMode::Hub
+        {
+            format!("http://localhost:{}/api", config.server_port)
+        } else {
+            let base = config
+                .api_url
+                .clone()
+                .unwrap_or_else(|| "http://localhost:3000".to_string());
+            base.trim_end_matches('/').to_string()
+        }
+    };
+
+    // 1. Get the list of assets to find an HTML report
+    let client = reqwest::Client::new();
+    // Endpoint is mounted at /pipelines/runs/{id}/assets
+    let assets_url = format!("{}/pipelines/runs/{}/assets", api_base, run_id);
+    println!("[pipeline] Fetching asset list from: {}", assets_url);
+
+    let assets_response = client
+        .get(&assets_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to request assets: {}", e))?;
+
+    if !assets_response.status().is_success() {
+        return Err(format!(
+            "Failed to list assets. Status: {}",
+            assets_response.status()
+        ));
+    }
+
+    let assets: Vec<serde_json::Value> = assets_response
+        .json()
+        .await
+        .map_err(|e| format!("Invalid assets JSON: {}", e))?;
+
+    // Find first REPORT type asset that ends with .html
+    // Prioritize multiqc_report.html if it exists
+    let mut report_filename = String::new();
+    let mut report_id = String::new();
+
+    // First pass: look for multiqc
+    for asset in &assets {
+        if let Some(name) = asset.get("name").and_then(|n| n.as_str()) {
+            if name.to_lowercase() == "multiqc_report.html" {
+                report_filename = name.to_string();
+                if let Some(id) = asset.get("id").and_then(|i| i.as_str()) {
+                    report_id = id.to_string();
+                }
+                break;
+            }
+        }
+    }
+
+    // Second pass: look for any .html report
+    if report_filename.is_empty() {
+        for asset in &assets {
+            if let Some(name) = asset.get("name").and_then(|n| n.as_str()) {
+                // Check if it is a report type or just ends in html
+                let is_report = asset
+                    .get("asset_type")
+                    .and_then(|t| t.as_str())
+                    .map(|t| t == "REPORT")
+                    .unwrap_or(false);
+
+                if (is_report || name.ends_with(".html"))
+                    && !name.contains("execution_report")
+                    && !name.contains("timeline")
+                {
+                    report_filename = name.to_string();
+                    if let Some(id) = asset.get("id").and_then(|i| i.as_str()) {
+                        report_id = id.to_string();
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // Third pass: Fallback to anything
+    if report_filename.is_empty() {
+        for asset in &assets {
+            if let Some(name) = asset.get("name").and_then(|n| n.as_str()) {
+                if name.ends_with(".html") {
+                    report_filename = name.to_string();
+                    if let Some(id) = asset.get("id").and_then(|i| i.as_str()) {
+                        report_id = id.to_string();
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    if report_filename.is_empty() || report_id.is_empty() {
+        return Err("No HTML report found for this pipeline run.".to_string());
+    }
+
+    println!(
+        "[pipeline] Selected report: {} (ID: {})",
+        report_filename, report_id
+    );
+    let report_url = format!("{}/files/{}/view", api_base, report_id);
+
+    let response = client
+        .get(&report_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to request report: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Report not found. Has the pipeline finished uploading? (Status: {})",
+            response.status()
+        ));
+    }
+
+    let content = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to download report content: {}", e))?;
+
+    // 2. Save to temp file
+    // We append run_id to filename to avoid collisions and allow multiple open reports
+    let temp_file_name = format!("report_{}.html", run_id);
+    let temp_path = std::env::temp_dir().join(&temp_file_name);
+
+    std::fs::write(&temp_path, content)
+        .map_err(|e| format!("Failed to write temp report: {}", e))?;
+
+    // 3. Open with default browser
+    open::that(&temp_path).map_err(|e| format!("Failed to open report in browser: {}", e))?;
+
+    Ok(format!("Opened report at {:?}", temp_path))
 }

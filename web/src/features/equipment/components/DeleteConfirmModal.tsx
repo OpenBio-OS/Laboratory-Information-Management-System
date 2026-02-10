@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, AlertTriangle } from 'lucide-react';
 
 interface DeleteConfirmModalProps {
@@ -10,7 +10,8 @@ interface DeleteConfirmModalProps {
 
 export function DeleteConfirmModal({ onClose, onConfirm, itemName, itemType }: DeleteConfirmModalProps) {
     const [confirmText, setConfirmText] = useState('');
-    const isValid = confirmText.toLowerCase() === 'delete';
+    const confirmWord = 'DELETE';
+    const isValid = confirmText === confirmWord;
 
     const handleConfirm = () => {
         if (isValid) {
@@ -18,6 +19,17 @@ export function DeleteConfirmModal({ onClose, onConfirm, itemName, itemType }: D
             onClose();
         }
     };
+
+    useEffect(() => {
+        const handleEscape = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose();
+            }
+        };
+
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [onClose]);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
@@ -44,7 +56,7 @@ export function DeleteConfirmModal({ onClose, onConfirm, itemName, itemType }: D
 
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-white/80">
-                            Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">delete</span> to confirm:
+                            Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">{confirmWord}</span> to confirm:
                         </label>
                         <input
                             type="text"

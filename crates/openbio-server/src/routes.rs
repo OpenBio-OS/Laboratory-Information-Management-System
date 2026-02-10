@@ -62,7 +62,10 @@ fn pipeline_routes() -> Router<AppState> {
         .route("/runs/{id}/status", patch(update_pipeline_status))
         .route("/runs/{id}", delete(delete_pipeline_run))
         .route("/runs/{id}/cancel", post(cancel_pipeline_run))
-        .route("/runs/{id}/assets", post(upload_pipeline_asset))
+        .route(
+            "/runs/{id}/assets",
+            post(upload_pipeline_asset).get(list_pipeline_assets),
+        )
 }
 
 fn visualization_routes() -> Router<AppState> {
@@ -372,7 +375,7 @@ async fn upload_pipeline_asset(
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     // 1. Verify pipeline run exists
-    let _run = state
+    let run = state
         .db
         .pipeline_run()
         .find_unique(crate::db::prisma::pipeline_run::id::equals(id.clone()))
@@ -446,21 +449,25 @@ async fn upload_pipeline_asset(
     if file_processed {
         // 3. Create DigitalAsset
         let storage_key = format!("pipelines/{}/{}", id, saved_filename);
+
+        let mut params = vec![
+            digital_asset::pipeline_run::connect(crate::db::prisma::pipeline_run::id::equals(
+                id.clone(),
+            )),
+            digital_asset::size_bytes::set(Some(saved_size)),
+            digital_asset::mime_type::set(saved_content_type),
+            digital_asset::asset_type::set(asset_type.clone()),
+        ];
+
+        // Link to parent experiment
+        params.push(digital_asset::experiment::connect(
+            crate::db::prisma::experiment::id::equals(run.experiment_id.clone()),
+        ));
+
         let asset = state
             .db
             .digital_asset()
-            .create(
-                saved_filename.clone(),
-                storage_key,
-                vec![
-                    digital_asset::pipeline_run::connect(
-                        crate::db::prisma::pipeline_run::id::equals(id.clone()),
-                    ),
-                    digital_asset::size_bytes::set(Some(saved_size)),
-                    digital_asset::mime_type::set(saved_content_type),
-                    digital_asset::asset_type::set(asset_type.clone()),
-                ],
-            )
+            .create(saved_filename.clone(), storage_key, params)
             .exec()
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -474,6 +481,50 @@ async fn upload_pipeline_asset(
     }
 
     Err((StatusCode::BAD_REQUEST, "No file field found".to_string()))
+}
+
+// List assets for a pipeline run
+async fn list_pipeline_assets(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<serde_json::Value>>, (StatusCode, String)> {
+    // 1. Verify pipeline run exists
+    let _run = state
+        .db
+        .pipeline_run()
+        .find_unique(crate::db::prisma::pipeline_run::id::equals(id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Pipeline run not found".to_string()))?;
+
+    // 2. Fetch assets linked to this run
+    let assets = state
+        .db
+        .digital_asset()
+        .find_many(vec![
+            crate::db::prisma::digital_asset::pipeline_run_id::equals(Some(id)),
+        ])
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // 3. Convert to JSON
+    let json_assets: Vec<serde_json::Value> = assets
+        .into_iter()
+        .map(|a| {
+            serde_json::json!({
+                "id": a.id,
+                "name": a.filename,
+                "path": a.storage_key,
+                "asset_type": a.asset_type,
+                "created_at": a.created_at.to_string(),
+                "size_bytes": a.size_bytes
+            })
+        })
+        .collect();
+
+    Ok(Json(json_assets))
 }
 
 fn inventory_routes() -> Router<AppState> {
@@ -1442,6 +1493,7 @@ async fn list_experiment_files(
         .map(|asset| {
             serde_json::json!({
                 "id": asset.id,
+                "name": asset.filename.clone(),
                 "filename": asset.filename,
                 "path": asset.storage_key,
                 "size": asset.size_bytes,
@@ -1522,7 +1574,7 @@ async fn serve_file(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let path = std::path::Path::new(&asset.storage_key);
+    let path = state.storage_path.join(&asset.storage_key);
     if !path.exists() {
         return Err(StatusCode::NOT_FOUND);
     }

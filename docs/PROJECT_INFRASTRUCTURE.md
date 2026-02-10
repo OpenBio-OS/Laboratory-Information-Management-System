@@ -465,9 +465,9 @@ OpenBio is deployed on a server in the cloud. Every team member has their own la
 On the apps first intilisation, you are prompted to select a deployment mode. This will generate a config.toml file in the root of the application. This file is used to configure the application and is used to determine the deployment mode. The user will be prompted through a setup wizard to configure the application.
 
 **Config Location:**
-- **macOS**: `~/Library/Application Support/OpenBio/config.toml`
-- **Windows**: `%APPDATA%/OpenBio/config.toml`
-- **Linux**: `~/.local/share/OpenBio/config.toml`
+- **macOS**: `~/Library/Application Support/software.is-a.openbio/config.toml`
+- **Windows**: `%APPDATA%/software.is-a.openbio/config.toml`
+- **Linux**: `~/.local/share/software.is-a.openbio/config.toml`
 
 ### Solo Mode
 
@@ -486,7 +486,7 @@ User's Computer
 │   └── NextFlow Pipeline (runs on client)
 └── Embedded Axum Server
     └── SQLite Database
-    └── Local File Storage (/Users/admin/.../OpenBio/storage/)
+    └── Local File Storage (/Users/admin/.../software.is-a.openbio/storage/)
 ```
 
 ### Hub & Spoke Mode
@@ -1023,7 +1023,7 @@ Total bootstrap download: ~1GB (one-time)
 ### Directory Structure
 
 ```
-AppData/OpenBio/
+AppData/software.is-a.openbio/
 ├── pipeline-env/
 │   ├── micromamba/           # Micromamba root
 │   │   ├── pkgs/            # Downloaded package cache
@@ -1162,9 +1162,9 @@ Script is available in `scripts/download-micromamba.sh`
 
 #### Environment Variables Set
 ```bash
-JAVA_HOME=/Users/user/Library/Application Support/OpenBio/pipeline-env/micromamba/envs/openbio-pipelines
-NXF_HOME=/Users/user/Library/Application Support/OpenBio/pipeline-env
-PATH=/Users/user/Library/Application Support/OpenBio/pipeline-env/micromamba/envs/openbio-pipelines/bin:$PATH
+JAVA_HOME=/Users/user/Library/Application Support/software.is-a.openbio/pipeline-env/micromamba/envs/openbio-pipelines
+NXF_HOME=/Users/user/Library/Application Support/software.is-a.openbio/pipeline-env
+PATH=/Users/user/Library/Application Support/software.is-a.openbio/pipeline-env/micromamba/envs/openbio-pipelines/bin:$PATH
 ```
 
 ### Possible Future Enhancement?
@@ -1184,7 +1184,7 @@ PATH=/Users/user/Library/Application Support/OpenBio/pipeline-env/micromamba/env
 - Check internet connection
 - Check disk space (need ~10GB free)
 - Check firewall (allows conda-forge/bioconda)
-- View logs: `AppData/OpenBio/pipeline-env/setup.log`
+- View logs: `AppData/software.is-a.openbio/pipeline-env/setup.log`
 
 ### License Compliance
 

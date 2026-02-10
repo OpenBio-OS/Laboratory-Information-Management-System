@@ -10,7 +10,8 @@ interface DeleteConfirmModalProps {
 
 export function DeleteConfirmModal({ onClose, onConfirm, itemName, itemType }: DeleteConfirmModalProps) {
     const [confirmText, setConfirmText] = useState('');
-    const isValid = confirmText.toLowerCase() === 'delete';
+    const confirmWord = 'DELETE';
+    const isValid = confirmText === confirmWord;
 
     useEffect(() => {
         const handleEscape = (e: KeyboardEvent) => {
@@ -55,7 +56,7 @@ export function DeleteConfirmModal({ onClose, onConfirm, itemName, itemType }: D
 
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-white/80">
-                            Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">delete</span> to confirm:
+                            Type <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-white">{confirmWord}</span> to confirm:
                         </label>
                         <input
                             type="text"
