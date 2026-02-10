@@ -53,6 +53,25 @@ pub struct PipelineInfo {
     pub version: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ParameterDefinition {
+    pub name: String,
+    pub label: String,
+    pub r#type: String, // "text" | "number" | "select" | "boolean"
+    pub required: bool,
+    pub default: Option<String>,
+    pub options: Option<Vec<String>>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PipelineTemplate {
+    pub name: String,
+    pub description: String,
+    pub version: String,
+    pub parameters: Vec<ParameterDefinition>,
+}
+
 /// Helper to get API base URL
 fn get_api_base_url(state: &State<'_, crate::AppState>) -> String {
     let config = state.config.lock().unwrap();
@@ -553,6 +572,87 @@ pub async fn list_pipelines() -> Result<Vec<PipelineInfo>, String> {
             name: "nf-core/scrnaseq".to_string(),
             description: "Single-cell RNA-seq analysis pipeline".to_string(),
             version: "2.5.1".to_string(),
+        },
+    ])
+}
+
+/// Get detailed pipeline templates with parameters
+#[tauri::command]
+pub async fn get_pipeline_templates() -> Result<Vec<PipelineTemplate>, String> {
+    Ok(vec![
+        PipelineTemplate {
+            name: "nf-core/rnaseq".to_string(),
+            description: "RNA sequencing analysis pipeline".to_string(),
+            version: "3.14.0".to_string(),
+            parameters: vec![
+                ParameterDefinition {
+                    name: "genome".to_string(),
+                    label: "Reference Genome".to_string(),
+                    r#type: "select".to_string(),
+                    required: true,
+                    default: Some("GRCh38".to_string()),
+                    options: Some(vec![
+                        "GRCh38".to_string(),
+                        "GRCh37".to_string(),
+                        "GRCm39".to_string(),
+                        "GRCm38".to_string(),
+                        "R64-1-1".to_string(),
+                        "WBcel235".to_string(),
+                        "BDGP6".to_string(),
+                        "TAIR10".to_string(),
+                        "GRCz11".to_string(),
+                        "Rnor_6.0".to_string(),
+                        "CanFam3.1".to_string(),
+                        "Sscrofa11.1".to_string(),
+                        "UMD3.1".to_string(),
+                    ]),
+                    description: Some(
+                        "The reference genome to use for alignment and quantification.".to_string(),
+                    ),
+                },
+                ParameterDefinition {
+                    name: "aligner".to_string(),
+                    label: "Aligner".to_string(),
+                    r#type: "select".to_string(),
+                    required: true,
+                    default: Some("star_salmon".to_string()),
+                    options: Some(vec![
+                        "star_salmon".to_string(),
+                        "star_rsem".to_string(),
+                        "hisat2".to_string(),
+                    ]),
+                    description: Some("The alignment tool to use.".to_string()),
+                },
+            ],
+        },
+        PipelineTemplate {
+            name: "nf-core/scrnaseq".to_string(),
+            description: "Single-cell RNA-seq analysis pipeline".to_string(),
+            version: "2.5.1".to_string(),
+            parameters: vec![
+                ParameterDefinition {
+                    name: "genome".to_string(),
+                    label: "Reference Genome".to_string(),
+                    r#type: "select".to_string(),
+                    required: true,
+                    default: Some("GRCh38".to_string()),
+                    options: Some(vec!["GRCh38".to_string(), "GRCm39".to_string()]),
+                    description: Some("Reference genome for single-cell alignment.".to_string()),
+                },
+                ParameterDefinition {
+                    name: "protocol".to_string(),
+                    label: "Protocol".to_string(),
+                    r#type: "select".to_string(),
+                    required: true,
+                    default: Some("10XV3".to_string()),
+                    options: Some(vec![
+                        "10XV2".to_string(),
+                        "10XV3".to_string(),
+                        "drop-seq".to_string(),
+                    ]),
+                    description: Some("Single-cell sequencing protocol.".to_string()),
+                },
+            ],
         },
     ])
 }

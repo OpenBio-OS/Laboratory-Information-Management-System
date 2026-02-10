@@ -880,6 +880,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -906,6 +907,8 @@ pub fn run() {
             commands::cancel_pipeline,
             commands::list_pipelines,
             commands::list_pipeline_runs,
+            commands::delete_pipeline_run,
+            commands::get_pipeline_templates,
             // Pipeline environment commands
             commands::check_pipeline_environment,
             commands::check_docker_installed,
@@ -915,6 +918,7 @@ pub fn run() {
             commands::get_nextflow_path,
             commands::verify_pipeline_environment,
             // Insight commands
+            commands::list_experiments,
             commands::get_experiment_files,
             commands::stream_file_chunk,
             commands::load_coordinates,

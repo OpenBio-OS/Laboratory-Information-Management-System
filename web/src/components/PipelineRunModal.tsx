@@ -1,7 +1,8 @@
 // New Pipeline Run Dialog - Select experiment and configure pipeline
 // Enhanced with folder tree view and custom styled selects
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { experimentsApi, Experiment, ExperimentFolder } from '../lib/api';
 import { CustomSelect, SelectOption } from './CustomSelect';
@@ -859,6 +860,119 @@ export function PipelineRunModal({ onClose, onSuccess }: PipelineRunModalProps) 
   );
 }
 
+// Specialized Select for Parameter Type selection in the AddPipelineModal
+function ParameterTypeSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const options = [
+    { value: 'text', label: 'Text' },
+    { value: 'number', label: 'Number' },
+    { value: 'select', label: 'Dropdown' },
+    { value: 'boolean', label: 'Toggle' },
+  ];
+
+  const selectedOption = options.find((o) => o.value === value);
+
+  const getPosition = () => {
+    if (!buttonRef.current) return { top: 0, left: 0, width: 0, maxHeight: 200 };
+    const rect = buttonRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const spacing = 4;
+    const maxDropdownHeight = 200;
+
+    const spaceBelow = viewportHeight - rect.bottom - spacing;
+    const spaceAbove = rect.top - spacing;
+
+    const openUpward = spaceBelow < 120 && spaceAbove > spaceBelow;
+    const maxHeight = Math.min(maxDropdownHeight, openUpward ? spaceAbove : spaceBelow);
+
+    return {
+      top: openUpward ? undefined : rect.bottom + spacing,
+      bottom: openUpward ? viewportHeight - rect.top + spacing : undefined,
+      left: rect.left,
+      width: rect.width,
+      maxHeight,
+    };
+  };
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isOpen]);
+
+  const position = isOpen ? getPosition() : { top: 0, left: 0, width: 0, maxHeight: 200 };
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-black/30 border border-white/10 rounded-lg text-sm text-left transition-all hover:border-white/20 focus:outline-none focus:border-brand-primary/50"
+      >
+        <span className="text-white truncate">{selectedOption?.label || 'Type'}</span>
+        <ChevronDown
+          size={14}
+          className={`text-white/40 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {isOpen &&
+        createPortal(
+          <div
+            ref={dropdownRef}
+            className="fixed z-[9999] bg-neutral-900 border border-white/10 rounded-lg shadow-2xl overflow-hidden"
+            style={{
+              top: position.top,
+              bottom: position.bottom,
+              left: position.left,
+              width: position.width,
+              maxHeight: position.maxHeight,
+            }}
+          >
+            <div className="overflow-auto max-h-[190px] py-1">
+              {options.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => {
+                    onChange(option.value);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-1.5 text-sm text-left transition-colors ${value === option.value ? 'bg-brand-primary/20 text-brand-primary' : 'text-white/80 hover:bg-white/5'
+                    }`}
+                >
+                  {option.label}
+                  {value === option.value && <Check size={14} />}
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
 // Add Pipeline Modal Component
 function AddPipelineModal({
   onClose,
@@ -1073,29 +1187,43 @@ function AddPipelineModal({
                     </button>
                   </div>
                   <div className="flex gap-2">
-                    <CustomSelect
-                      value={param.type}
-                      onChange={(value) =>
-                        updateParameter(index, { type: value as ParameterDefinition['type'] })
-                      }
-                      options={[
-                        { value: 'text', label: 'Text' },
-                        { value: 'number', label: 'Number' },
-                        { value: 'select', label: 'Dropdown' },
-                        { value: 'boolean', label: 'Toggle' },
-                      ]}
-                      className="flex-1"
-                    />
-                    <label className="flex items-center gap-2 text-xs text-white/60">
+                    <div className="flex-1">
+                      <ParameterTypeSelect
+                        value={param.type}
+                        onChange={(value) =>
+                          updateParameter(index, { type: value as ParameterDefinition['type'] })
+                        }
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-white/60 cursor-pointer pt-1">
                       <input
                         type="checkbox"
                         checked={param.required}
                         onChange={(e) => updateParameter(index, { required: e.target.checked })}
-                        className="rounded border-white/20"
+                        className="rounded border-white/20 bg-black/30 text-brand-primary focus:ring-brand-primary/50"
                       />
                       Required
                     </label>
                   </div>
+
+                  {param.type === 'select' && (
+                    <div className="pt-1">
+                      <label className="block text-[10px] font-medium text-white/40 mb-1 ml-1 uppercase tracking-wider">
+                        Dropdown Options (comma separated)
+                      </label>
+                      <input
+                        type="text"
+                        value={param.options?.join(', ') || ''}
+                        onChange={(e) =>
+                          updateParameter(index, {
+                            options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+                          })
+                        }
+                        placeholder="Option 1, Option 2, Option 3"
+                        className="w-full px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50"
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
 

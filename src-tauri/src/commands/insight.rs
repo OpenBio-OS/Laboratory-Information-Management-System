@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::State;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Experiment {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExperimentFiles {
@@ -233,4 +239,23 @@ pub async fn get_experiment_metadata(
         "samples": json["samples"],
         "equipment": json["equipment"],
     }))
+}
+
+/// List all experiments from the server
+#[tauri::command]
+pub async fn list_experiments(
+    state: State<'_, crate::AppState>,
+) -> Result<Vec<Experiment>, String> {
+    let api_base = get_api_base_url(&state);
+    let url = format!("{}/experiments", api_base);
+
+    let client = reqwest::Client::new();
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Server returned {}", resp.status()));
+    }
+
+    let experiments: Vec<Experiment> = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(experiments)
 }

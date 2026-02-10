@@ -63,7 +63,8 @@ export function CustomSelect({
     const maxHeight = Math.min(maxDropdownHeight, openUpward ? spaceAbove : spaceBelow);
 
     return {
-      top: openUpward ? rect.top - maxHeight - spacing : rect.bottom + spacing,
+      top: openUpward ? undefined : rect.bottom + spacing,
+      bottom: openUpward ? viewportHeight - rect.top + spacing : undefined,
       left: rect.left,
       width: rect.width,
       maxHeight,

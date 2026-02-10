@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { X, Loader2 } from 'lucide-react';
+import { CustomSelect } from './CustomSelect';
 
 interface PipelineConfigModalProps {
   experimentId: string;
@@ -167,18 +168,15 @@ export function PipelineConfigModal({ experimentId, onClose, onSubmit }: Pipelin
                 <label className="block text-sm font-medium text-white/60 mb-2">
                   Pipeline Type *
                 </label>
-                <select
+                <CustomSelect
                   value={selectedPipeline}
-                  onChange={(e) => handlePipelineChange(e.target.value)}
-                  className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all font-medium appearance-none"
-                  required
-                >
-                  {availablePipelines.map((pipeline) => (
-                    <option key={pipeline.name} value={pipeline.name} className="bg-neutral-900">
-                      {pipeline.name} - {pipeline.description} (v{pipeline.version})
-                    </option>
-                  ))}
-                </select>
+                  onChange={handlePipelineChange}
+                  options={availablePipelines.map((p) => ({
+                    value: p.name,
+                    label: p.name,
+                    description: `${p.description} (v${p.version})`,
+                  }))}
+                />
               </div>
 
               {/* Pipeline Parameters */}
@@ -198,19 +196,15 @@ export function PipelineConfigModal({ experimentId, onClose, onSubmit }: Pipelin
                       )}
 
                       {param.type === 'select' && (
-                        <select
+                        <CustomSelect
                           value={parameters[param.name] || ''}
-                          onChange={(e) => handleParameterChange(param.name, e.target.value)}
-                          className="w-full bg-black/30 border border-white/10 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all text-sm appearance-none"
-                          required={param.required}
-                        >
-                          {!param.default && <option value="" className="bg-neutral-900">Select {param.label}</option>}
-                          {param.options?.map((option) => (
-                            <option key={option} value={option} className="bg-neutral-900">
-                              {option}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(value) => handleParameterChange(param.name, value)}
+                          options={param.options?.map((option) => ({
+                            value: option,
+                            label: option,
+                          })) || []}
+                          placeholder={`Select ${param.label}`}
+                        />
                       )}
 
                       {param.type === 'text' && (

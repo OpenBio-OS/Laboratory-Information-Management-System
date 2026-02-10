@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { X, Play, Search, FlaskConical, Clock, Loader2, Upload, FileText, BarChart2 } from 'lucide-react';
+import { open } from '@tauri-apps/plugin-dialog';
+import { X, Play, Search, FlaskConical, Clock, Loader2, Upload, FileText, BarChart2, Folder, ChevronDown } from 'lucide-react';
 import { useNavigation } from '../App';
 
 interface PipelineRun {
@@ -74,6 +75,21 @@ export function VisualizationModal({ onClose }: VisualizationModalProps) {
     onClose();
   };
 
+  const handleSelectFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Select Data Folder'
+      });
+      if (selected) {
+        setManualPath(selected as string);
+      }
+    } catch (err) {
+      console.error('Failed to open folder selector:', err);
+    }
+  };
+
   const handleManualRegister = async () => {
     if (!manualName || !manualPath) return;
 
@@ -108,7 +124,7 @@ export function VisualizationModal({ onClose }: VisualizationModalProps) {
         <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/5">
           <div>
             <h2 className="text-xl text-white">Visualization</h2>
-            <p className="text-xs text-white/40 uppercase tracking-widest">Register or create a data visualization</p>
+            <p className="text-xs text-white/40">Register or create a data visualization</p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <X size={20} />
@@ -120,7 +136,7 @@ export function VisualizationModal({ onClose }: VisualizationModalProps) {
           <button
             onClick={() => setActiveTab('pipeline')}
             className={`flex-1 py-3 text-sm flex items-center justify-center gap-2 transition-all ${activeTab === 'pipeline'
-              ? 'text-brand-primary border-b-2 border-brand-primary bg-brand-primary/5'
+              ? 'text-brand-primary border-b-2 border-brand-primary bg-brand-primary/5 font-medium'
               : 'text-white/40 hover:text-white hover:bg-white/5'
               }`}
           >
@@ -130,7 +146,7 @@ export function VisualizationModal({ onClose }: VisualizationModalProps) {
           <button
             onClick={() => setActiveTab('manual')}
             className={`flex-1 py-3 text-sm flex items-center justify-center gap-2 transition-all ${activeTab === 'manual'
-              ? 'text-brand-primary border-b-2 border-brand-primary bg-brand-primary/5'
+              ? 'text-brand-primary border-b-2 border-brand-primary bg-brand-primary/5 font-medium'
               : 'text-white/40 hover:text-white hover:bg-white/5'
               }`}
           >
@@ -210,64 +226,73 @@ export function VisualizationModal({ onClose }: VisualizationModalProps) {
           <div className="p-8 space-y-6 flex-1 overflow-y-auto">
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-xs text-white/40 uppercase tracking-widest">Visualization Name</label>
+                <label className="block text-sm font-medium text-white/60 mb-1.5">Visualization Name</label>
                 <input
                   type="text"
                   value={manualName}
                   onChange={(e) => setManualName(e.target.value)}
                   placeholder="e.g. My SC Analysis"
-                  className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all font-medium"
+                  className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all text-sm"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-xs text-white/40 uppercase tracking-widest">Analysis Type</label>
-                  <select
-                    value={manualType}
-                    onChange={(e) => setManualType(e.target.value)}
-                    className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all appearance-none font-medium"
-                  >
-                    <option value="scRNA-seq">scRNA-seq</option>
-                    <option value="ATAC-seq">ATAC-seq</option>
-                    <option value="Spatial">Spatial</option>
-                    <option value="Bulk RNA-seq">Bulk RNA-seq</option>
-                  </select>
+                  <label className="block text-sm font-medium text-white/60 mb-1.5">Analysis Type</label>
+                  <div className="relative">
+                    <select
+                      value={manualType}
+                      onChange={(e) => setManualType(e.target.value)}
+                      className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all appearance-none text-sm pr-10"
+                    >
+                      <option value="scRNA-seq">scRNA-seq</option>
+                      <option value="ATAC-seq">ATAC-seq</option>
+                      <option value="Spatial">Spatial</option>
+                      <option value="Bulk RNA-seq">Bulk RNA-seq</option>
+                    </select>
+                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs text-white/40 uppercase tracking-widest">Associate Experiment</label>
-                  <select
-                    value={manualExperimentId}
-                    onChange={(e) => setManualExperimentId(e.target.value)}
-                    className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all appearance-none font-medium text-sm"
-                  >
-                    <option value="">None (Standalone)</option>
-                    {experiments.map(exp => (
-                      <option key={exp.id} value={exp.id}>{exp.name}</option>
-                    ))}
-                  </select>
+                  <label className="block text-sm font-medium text-white/60 mb-1.5">Associate Experiment</label>
+                  <div className="relative">
+                    <select
+                      value={manualExperimentId}
+                      onChange={(e) => setManualExperimentId(e.target.value)}
+                      className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all appearance-none text-sm pr-10"
+                    >
+                      <option value="">None (Standalone)</option>
+                      {experiments.map(exp => (
+                        <option key={exp.id} value={exp.id}>{exp.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+                  </div>
                 </div>
               </div>
 
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <label className="text-xs text-white/40 uppercase tracking-widest">Local Data Path</label>
+                  <label className="block text-sm font-medium text-white/60 mb-1.5">Local Data Path</label>
                 </div>
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={manualPath}
-                    onChange={(e) => setManualPath(e.target.value)}
-                    placeholder="/path/to/analysis/outputs"
-                    className="flex-1 bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-all text-sm font-mono"
-                  />
+                  <div className="flex-1 bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-white/60 text-sm overflow-hidden truncate">
+                    {manualPath || <span className="text-white/20">No folder selected</span>}
+                  </div>
+                  <button
+                    onClick={handleSelectFolder}
+                    className="px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white hover:bg-white/10 transition-all flex items-center gap-2 group"
+                  >
+                    <Folder size={18} className="text-brand-primary group-hover:scale-110 transition-transform" />
+                    <span className="text-sm">Select</span>
+                  </button>
                 </div>
                 <p className="text-[10px] text-white/30 italic">Must contain valid matrix files or reports</p>
               </div>
             </div>
 
-            <div className="bg-brand-primary/5 border border-brand-primary/10 rounded-xl p-4 flex gap-4 mt-auto">
+            {/* <div className="bg-brand-primary/5 border border-brand-primary/10 rounded-xl p-4 flex gap-4 mt-auto">
               <div className="p-2 bg-brand-primary/10 rounded-lg h-fit text-brand-primary">
                 <FileText size={20} />
               </div>
@@ -278,7 +303,7 @@ export function VisualizationModal({ onClose }: VisualizationModalProps) {
                   Unlike pipeline outputs, this data won't be moved or modified.
                 </p>
               </div>
-            </div>
+            </div> */}
           </div>
         )}
 
