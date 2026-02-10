@@ -697,7 +697,7 @@ This creates:
 - Update endpoint in `tauri.conf.json`:
   ```json
   "endpoints": [
-    "https://github.com/YOUR_USERNAME/openbio-os/releases/latest/download/latest.json"
+    "https://github.com/openbio-os/laboratory-information-management-system/releases/latest/download/latest.json"
   ]
   ```
 
