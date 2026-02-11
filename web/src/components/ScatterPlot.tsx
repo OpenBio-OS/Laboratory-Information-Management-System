@@ -30,6 +30,7 @@ export function ScatterPlot({
   const [isDrawing, setIsDrawing] = useState(false);
   const lassoPoints = useRef<number[]>([]);
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number, y: number, label: string } | null>(null);
+  const [contextReady, setContextReady] = useState(false);
 
   // Initialize WebGL Shaders
   useEffect(() => {
@@ -48,42 +49,37 @@ export function ScatterPlot({
     if (program) {
       programRef.current = program;
     }
+    setContextReady(true);
   }, []);
 
   // Handle resolution and sizing
   useEffect(() => {
+    if (!contextReady) return;
+
     const dpr = window.devicePixelRatio || 1;
     const glCanvas = glCanvasRef.current;
     const lassoCanvas = lassoCanvasRef.current;
-    if (!glCanvas || !lassoCanvas || width <= 0 || height <= 0) return;
+    const gl = glRef.current;
+
+    if (!glCanvas || !lassoCanvas || !gl || width <= 0 || height <= 0) return;
 
     // Set internal buffer sizes (Retina/High-DPI)
-    // We set these directly on the element to avoid fighting with React attributes
     glCanvas.width = width * dpr;
     glCanvas.height = height * dpr;
     lassoCanvas.width = width * dpr;
     lassoCanvas.height = height * dpr;
 
-    // Set CSS sizes explicitly to match props - this prevents "inch away" desync
-    // by ensuring logical CSS pixels on the canvas match the props exactly.
-    glCanvas.style.width = `${width}px`;
-    glCanvas.style.height = `${height}px`;
-    lassoCanvas.style.width = `${width}px`;
-    lassoCanvas.style.height = `${height}px`;
+    gl.viewport(0, 0, glCanvas.width, glCanvas.height);
 
-    if (glRef.current) {
-      glRef.current.viewport(0, 0, glCanvas.width, glCanvas.height);
-
-      if (programRef.current) {
-        const gl = glRef.current;
-        gl.useProgram(programRef.current);
-        const uAspect = gl.getUniformLocation(programRef.current, 'u_aspect');
-        gl.uniform1f(uAspect, width / height || 1.0);
-      }
+    if (programRef.current) {
+      gl.useProgram(programRef.current);
+      // We still update u_aspect just in case, but shader might not use it anymore
+      const uAspect = gl.getUniformLocation(programRef.current, 'u_aspect');
+      if (uAspect) gl.uniform1f(uAspect, width / height || 1.0);
     }
 
     drawUI();
-  }, [width, height]);
+  }, [contextReady, width, height]);
 
   // Update WebGL data and start render loop
   useEffect(() => {
@@ -166,16 +162,10 @@ export function ScatterPlot({
       // Use the actual rendered size for math
       const renderedWidth = rect.width || width || 1;
       const renderedHeight = rect.height || height || 1;
-      const aspect = renderedWidth / renderedHeight;
 
-      let mouseX, mouseY;
-      if (aspect > 1.0) {
-        mouseX = ((x / renderedWidth) * 2 - 1) * aspect;
-        mouseY = 1 - (y / renderedHeight) * 2;
-      } else {
-        mouseX = (x / renderedWidth) * 2 - 1;
-        mouseY = (1 - (y / renderedHeight) * 2) / aspect;
-      }
+      // Removed aspect ratio adjustments to match "fill" behavior and spread dots out
+      const mouseX = (x / renderedWidth) * 2 - 1;
+      const mouseY = 1 - (y / renderedHeight) * 2;
 
       const coords = new Float32Array(coordsBuffer);
       let closestIdx = -1;
@@ -206,17 +196,11 @@ export function ScatterPlot({
       const rect = lassoCanvasRef.current?.getBoundingClientRect();
       const renWidth = rect?.width || width || 1;
       const renHeight = rect?.height || height || 1;
-      const aspect = renWidth / renHeight;
 
       const normalizedPoints = new Float32Array(lassoPoints.current.length);
       for (let i = 0; i < lassoPoints.current.length; i += 2) {
-        if (aspect > 1.0) {
-          normalizedPoints[i] = ((lassoPoints.current[i] / renWidth) * 2 - 1) * aspect;
-          normalizedPoints[i + 1] = 1 - (lassoPoints.current[i + 1] / renHeight) * 2;
-        } else {
-          normalizedPoints[i] = (lassoPoints.current[i] / renWidth) * 2 - 1;
-          normalizedPoints[i + 1] = (1 - (lassoPoints.current[i + 1] / renHeight) * 2) / aspect;
-        }
+        normalizedPoints[i] = (lassoPoints.current[i] / renWidth) * 2 - 1;
+        normalizedPoints[i + 1] = 1 - (lassoPoints.current[i + 1] / renHeight) * 2;
       }
 
       onLassoComplete?.(normalizedPoints);
@@ -355,15 +339,8 @@ function initializeShaders(gl: WebGLRenderingContext): WebGLProgram | null {
     varying float v_selected;
     
     void main() {
-      // Fit a square area into the center of the available viewport
-      if (u_aspect > 1.0) {
-        // Wide: squeeze X
-        gl_Position = vec4(a_position.x / u_aspect, a_position.y, 0.0, 1.0);
-      } else {
-        // Tall: squeeze Y
-        gl_Position = vec4(a_position.x, a_position.y * u_aspect, 0.0, 1.0);
-      }
-      
+      // Direct mapping to fill the available space
+      gl_Position = vec4(a_position, 0.0, 1.0);
       gl_PointSize = 18.0; 
       v_selected = a_selected;
     }
