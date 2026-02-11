@@ -944,6 +944,8 @@ pub fn run() {
             commands::register_visualization,
             commands::get_experiment_report_url,
             commands::get_experiment_assets,
+            commands::upload_visualization_zip,
+            commands::upload_visualization_folder,
         ])
         .setup(move |app| {
             // Check if running in Agent mode

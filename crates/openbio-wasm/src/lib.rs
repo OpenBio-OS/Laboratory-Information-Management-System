@@ -1,20 +1,20 @@
 //! OpenBio WASM Engine
-//! 
+//!
 //! WebAssembly module for single-cell data analysis and visualization.
 //! Runs in Web Worker for non-blocking computation with SharedArrayBuffer.
 
-mod matrix;
 mod gating;
+mod matrix;
 mod stats;
 mod utils;
 
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
 
 // Re-export modules
-pub use matrix::{MatrixData, parse_mtx};
-pub use gating::{Point, Polygon, point_in_polygon, gate_cells};
-pub use stats::{mann_whitney_u, differential_expression};
+pub use gating::{gate_cells, point_in_polygon, Point, Polygon};
+pub use matrix::{parse_mtx, MatrixData};
+pub use stats::{differential_expression, mann_whitney_u};
 
 /// Initialize the WASM module (call once on load)
 #[wasm_bindgen(start)]
@@ -60,6 +60,24 @@ impl WasmEngine {
     pub fn load_matrix(&mut self, data: &[u8]) -> Result<(), JsValue> {
         self.matrix = Some(parse_mtx(data)?);
         self.cells = Vec::new(); // Will be populated during UMAP calculation
+        Ok(())
+    }
+
+    /// Initialize access to SharedArrayBuffer from JavaScript
+    /// ptr: Pointer to the shared memory buffer
+    /// size: Size of the buffer in bytes
+    pub fn init_shared_buffer(&mut self, ptr: *mut u8, size: usize) -> Result<(), JsValue> {
+        // In a real implementation, we would reconstruct the slice from raw parts
+        // and potentially use it for zero-copy parsing.
+        // For now, we'll store this reference or use it to parse the matrix.
+
+        // SAFETY: The JS side must ensure the buffer is valid and pinned.
+        // We are just taking a view into it.
+        let data = unsafe { std::slice::from_raw_parts(ptr, size) };
+
+        // Parse the matrix directly from this shared memory
+        self.matrix = Some(parse_mtx(data)?);
+        self.cells = Vec::new();
         Ok(())
     }
 
@@ -110,7 +128,10 @@ impl WasmEngine {
         let mut count = 0;
 
         for (i, cell) in self.cells.iter_mut().enumerate() {
-            let point = Point { x: cell.x, y: cell.y };
+            let point = Point {
+                x: cell.x,
+                y: cell.y,
+            };
             let inside = point_in_polygon(&point, &poly);
             self.selection_mask[i] = inside;
             cell.selected = inside;
@@ -143,7 +164,7 @@ impl WasmEngine {
 
         // Run differential expression analysis
         // TODO: Implement actual statistics
-        
+
         Ok(format!("{} cells selected", selected.len()))
     }
 
@@ -166,4 +187,3 @@ impl Default for WasmEngine {
         Self::new()
     }
 }
-

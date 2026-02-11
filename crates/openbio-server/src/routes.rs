@@ -1,7 +1,7 @@
 //! API route handlers
 use crate::db::prisma::{
     self, container, digital_asset, equipment, equipment_location, experiment, experiment_entry,
-    experiment_folder, experiment_mention, library, paper, pipeline_run, sample,
+    experiment_folder, experiment_mention, library, paper, sample,
 };
 use crate::AppState;
 use axum::{
@@ -80,6 +80,11 @@ fn visualization_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_visualizations).post(register_visualization))
         .route("/{id}", get(get_visualization).delete(delete_visualization))
+        .route(
+            "/upload",
+            axum::routing::post(upload_standalone_visualization),
+        )
+        .route("/{id}/files", get(get_visualization_files))
 }
 
 // Pipeline Handlers
@@ -607,6 +612,11 @@ fn experiment_routes() -> Router<AppState> {
         )
         .route("/{id}/upload", axum::routing::post(upload_experiment_file))
         .route("/{id}/files", get(list_experiment_files))
+        .route("/{id}/analysis-files", get(get_analysis_files))
+        .route(
+            "/{id}/visualizations/upload",
+            axum::routing::post(upload_visualization_output),
+        )
         .route(
             "/{id}/files/{asset_id}",
             axum::routing::delete(delete_experiment_file),
@@ -1047,6 +1057,144 @@ async fn delete_experiment(State(state): State<AppState>, Path(id): Path<String>
         .await
         .expect("Failed to delete experiment");
     Json(())
+}
+
+#[derive(Serialize)]
+pub struct ExperimentFile {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+    pub mime_type: String,
+    pub url: String,
+    pub visualization_id: Option<String>,
+}
+
+// Recursive function to find relevant analysis files
+fn find_analysis_files(
+    dir_path: &std::path::Path,
+    base_url: &str,
+    relative_root: &str,
+) -> Vec<ExperimentFile> {
+    let mut results = Vec::new();
+    let relevant_extensions = vec!["mtx", "tsv", "csv", "rds", "h5ad", "json"];
+
+    if let Ok(entries) = std::fs::read_dir(dir_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file_name = entry.file_name().to_string_lossy().to_string();
+
+            if path.is_dir() {
+                let new_relative = if relative_root.is_empty() {
+                    file_name.clone()
+                } else {
+                    format!("{}/{}", relative_root, file_name)
+                };
+                results.extend(find_analysis_files(&path, base_url, &new_relative));
+            } else {
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if relevant_extensions.contains(&ext.to_lowercase().as_str()) {
+                        let relative_path = if relative_root.is_empty() {
+                            file_name.clone()
+                        } else {
+                            format!("{}/{}", relative_root, file_name)
+                        };
+
+                        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                        let mime = mime_guess::from_path(&path)
+                            .first_or_octet_stream()
+                            .to_string();
+
+                        // Construct URL: /assets/{asset_id}/files/{relative_path}
+                        let url = format!("{}/{}", base_url, relative_path);
+
+                        results.push(ExperimentFile {
+                            path: relative_path,
+                            name: file_name,
+                            size,
+                            mime_type: mime,
+                            url,
+                            visualization_id: None, // Populated by caller
+                        });
+                    }
+                }
+            }
+        }
+    }
+    results
+}
+
+async fn get_analysis_files(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<Vec<ExperimentFile>> {
+    // 1. Fetch assets directly linked to experiment
+    let mut assets = state
+        .db
+        .digital_asset()
+        .find_many(vec![digital_asset::experiment_id::equals(Some(id.clone()))])
+        .exec()
+        .await
+        .unwrap_or(vec![]);
+
+    // 2. Fetch assets linked via VISUALIZATIONS (User confirmation: this is where analysis files live)
+    // Find assets where the associated visualization is linked to this experiment
+    let viz_assets = state
+        .db
+        .digital_asset()
+        .find_many(vec![digital_asset::visualization::is(vec![
+            crate::db::prisma::visualization::experiment_id::equals(Some(id.clone())),
+        ])])
+        .exec()
+        .await
+        .unwrap_or_default();
+
+    assets.extend(viz_assets);
+
+    // Deduplicate by ID
+    assets.sort_by(|a, b| a.id.cmp(&b.id));
+    assets.dedup_by(|a, b| a.id == b.id);
+
+    let mut files = Vec::new();
+
+    for asset in assets {
+        // Look for Directory Assets (common for pipeline outputs)
+        let is_dir = asset.mime_type.as_deref() == Some("application/x-directory")
+            || asset.filename.ends_with("_output");
+
+        if is_dir {
+            let storage_path = if std::path::Path::new(&asset.storage_key).is_absolute() {
+                std::path::PathBuf::from(&asset.storage_key)
+            } else {
+                state.storage_path.join(&asset.storage_key)
+            };
+
+            let base_url = format!("/assets/{}/files", asset.id);
+
+            if storage_path.exists() {
+                let mut found_files = find_analysis_files(&storage_path, &base_url, "");
+
+                // Populate visualization_id if available
+                let viz_id = asset.visualization_id.clone().or_else(|| {
+                    asset
+                        .visualization
+                        .as_ref()
+                        .and_then(|v| v.as_ref())
+                        .map(|v| v.id.clone())
+                });
+                if let Some(id) = viz_id {
+                    for file in &mut found_files {
+                        file.visualization_id = Some(id.clone());
+                    }
+                }
+
+                files.extend(found_files);
+            }
+        }
+    }
+
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+
+    Json(files)
 }
 
 // Experiment Entries
@@ -2878,6 +3026,8 @@ async fn ingest_pipeline_output(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?; // extraction error
 
     // 5. Create ONE DigitalAsset for the Directory
+    use crate::db::prisma::{experiment, pipeline_run, visualization};
+
     let asset_params = vec![
         digital_asset::mime_type::set(Some("application/x-directory".to_string())),
         digital_asset::size_bytes::set(None), // Size is complex for dirs, leave null or calcluate
@@ -2893,10 +3043,377 @@ async fn ingest_pipeline_output(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    // 6. AUTO-CREATE / LINK VISUALIZATION
+    // Check if any asset for this run already has a visualization attached
+    let existing_asset_with_viz = state
+        .db
+        .digital_asset()
+        .find_first(vec![
+            digital_asset::pipeline_run_id::equals(Some(run_id.clone())),
+            digital_asset::visualization::is(vec![]), // Checks if relation exists
+        ])
+        .with(digital_asset::visualization::fetch())
+        .exec()
+        .await
+        .unwrap_or(None);
+
+    let viz_id = if let Some(asset) = &existing_asset_with_viz {
+        asset
+            .visualization
+            .as_ref()
+            .and_then(|v| v.as_ref())
+            .map(|v| v.id.clone())
+            .unwrap_or_else(|| "".to_string())
+    } else {
+        String::new()
+    };
+
+    let viz_id = if !viz_id.is_empty() {
+        viz_id
+    } else {
+        // Create new Visualization
+        let viz_type =
+            if run.pipeline_type.contains("scrna") || run.pipeline_type.contains("scanpy") {
+                "SCANVAS"
+            } else if run.pipeline_type.contains("rnaseq") || run.pipeline_type.contains("bulk") {
+                "BULK_DASHBOARD"
+            } else {
+                "REPORT"
+            };
+
+        let viz_name = format!(
+            "Analysis: {} ({})",
+            run.pipeline_type,
+            run_id.chars().take(8).collect::<String>()
+        );
+
+        let mut viz_params = vec![visualization::experiment::connect(experiment::id::equals(
+            experiment_id.clone(),
+        ))];
+
+        if let Some(snap) = run.metadata_snapshot {
+            viz_params.push(visualization::metadata_snapshot::set(Some(snap)));
+        }
+
+        let new_viz = state
+            .db
+            .visualization()
+            .create(viz_name, viz_type.to_string(), viz_params)
+            .exec()
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to create visualization: {}", e),
+                )
+            })?;
+
+        new_viz.id
+    };
+
+    // Link Asset to Visualization
+    let _ = state
+        .db
+        .digital_asset()
+        .update(
+            digital_asset::id::equals(asset.id.clone()),
+            vec![digital_asset::visualization_id::set(Some(viz_id))],
+        )
+        .exec()
+        .await;
+
     Ok(Json(serde_json::json!({
         "success": true,
         "asset": asset
     })))
+}
+
+// Manual Upload Workflow: Create Visualization from Zip
+async fn upload_visualization_output(
+    State(state): State<AppState>,
+    Path(experiment_id): Path<String>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    use crate::db::prisma::{digital_asset, experiment, visualization};
+
+    // 1. Process the uploaded ZIP file
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+        .ok_or((StatusCode::BAD_REQUEST, "No file in request".to_string()))?;
+
+    let filename = field.file_name().unwrap_or("upload.zip").to_string();
+    let data = field
+        .bytes()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    // 2. Define Storage Paths
+    // Use timestamp to ensure uniqueness
+    let timestamp = chrono::Utc::now().timestamp();
+    let output_dirname = format!("manual_viz_{}_{}", timestamp, filename.replace(".zip", ""));
+    let uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
+    let output_dir = uploads_dir.join(&output_dirname);
+    let storage_key = format!("uploads/{}/{}", experiment_id, output_dirname);
+
+    // Ensure parent uploads dir exists
+    tokio::fs::create_dir_all(&uploads_dir).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create uploads dir: {}", e),
+        )
+    })?;
+
+    // 3. Unzip content
+    tokio::task::spawn_blocking(move || {
+        let cursor = std::io::Cursor::new(data);
+        let mut archive = zip::ZipArchive::new(cursor)
+            .map_err(|e| format!("Failed to read zip archive: {}", e))?;
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+            let outpath = match file.enclosed_name() {
+                Some(path) => output_dir.join(path),
+                None => continue,
+            };
+
+            if (*file.name()).ends_with('/') {
+                std::fs::create_dir_all(&outpath).ok();
+            } else {
+                if let Some(p) = outpath.parent() {
+                    if !p.exists() {
+                        std::fs::create_dir_all(p).ok();
+                    }
+                }
+                let mut outfile = std::fs::File::create(&outpath).map_err(|e| e.to_string())?;
+                std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    // 4. Create Visualization Record
+    let viz_name = format!("Manual Upload: {}", filename);
+    let viz_type = if filename.to_lowercase().contains("scanpy")
+        || filename.to_lowercase().contains("scrna")
+    {
+        "SCANVAS"
+    } else {
+        "BULK_DASHBOARD"
+    };
+
+    let viz = state
+        .db
+        .visualization()
+        .create(
+            viz_name,
+            viz_type.to_string(),
+            vec![visualization::experiment::connect(experiment::id::equals(
+                experiment_id.clone(),
+            ))],
+        )
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // 5. Create DigitalAsset for the Directory
+    let asset_params = vec![
+        digital_asset::mime_type::set(Some("application/x-directory".to_string())),
+        digital_asset::visualization::connect(visualization::id::equals(viz.id.clone())),
+        digital_asset::experiment::connect(experiment::id::equals(experiment_id.clone())),
+    ];
+
+    let asset = state
+        .db
+        .digital_asset()
+        .create(output_dirname, storage_key, asset_params)
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "visualization": viz,
+        "asset": asset
+    })))
+}
+
+// Manual Upload Workflow: Create Standalone Visualization from Zip (No Experiment)
+async fn upload_standalone_visualization(
+    State(state): State<AppState>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    use crate::db::prisma::{digital_asset, visualization};
+
+    // 1. Process the uploaded ZIP file
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+        .ok_or((StatusCode::BAD_REQUEST, "No file in request".to_string()))?;
+
+    let filename = field.file_name().unwrap_or("upload.zip").to_string();
+    let data = field
+        .bytes()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    // 2. Define Storage Paths
+    // Use timestamp to ensure uniqueness. Store in "standalone_uploads"
+    let timestamp = chrono::Utc::now().timestamp();
+    let output_dirname = format!(
+        "standalone_viz_{}_{}",
+        timestamp,
+        filename.replace(".zip", "")
+    );
+    let uploads_dir = state.storage_path.join("standalone_uploads");
+    let output_dir = uploads_dir.join(&output_dirname);
+    let storage_key = format!("standalone_uploads/{}", output_dirname);
+
+    // Ensure parent uploads dir exists
+    tokio::fs::create_dir_all(&uploads_dir).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create uploads dir: {}", e),
+        )
+    })?;
+
+    // 3. Unzip content
+    tokio::task::spawn_blocking(move || {
+        let cursor = std::io::Cursor::new(data);
+        let mut archive = zip::ZipArchive::new(cursor)
+            .map_err(|e| format!("Failed to read zip archive: {}", e))?;
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+            let outpath = match file.enclosed_name() {
+                Some(path) => output_dir.join(path),
+                None => continue,
+            };
+
+            if (*file.name()).ends_with('/') {
+                std::fs::create_dir_all(&outpath).ok();
+            } else {
+                if let Some(p) = outpath.parent() {
+                    if !p.exists() {
+                        std::fs::create_dir_all(p).ok();
+                    }
+                }
+                let mut outfile = std::fs::File::create(&outpath).map_err(|e| e.to_string())?;
+                std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    // 4. Create Visualization Record (No Experiment)
+    let viz_name = format!("Standalone: {}", filename);
+    let viz_type = if filename.to_lowercase().contains("scanpy")
+        || filename.to_lowercase().contains("scrna")
+    {
+        "SCANVAS"
+    } else {
+        "BULK_DASHBOARD"
+    };
+
+    let viz = state
+        .db
+        .visualization()
+        .create(
+            viz_name,
+            viz_type.to_string(),
+            vec![], // No experiment connection
+        )
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // 5. Create DigitalAsset for the Directory
+    let asset_params = vec![
+        digital_asset::mime_type::set(Some("application/x-directory".to_string())),
+        digital_asset::visualization::connect(visualization::id::equals(viz.id.clone())),
+    ];
+
+    let asset = state
+        .db
+        .digital_asset()
+        .create(output_dirname, storage_key, asset_params)
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "visualization": viz,
+        "asset": asset
+    })))
+}
+
+// List files for a specific Visualization (Standalone or Experiment-linked)
+// GET /visualizations/:id/files
+async fn get_visualization_files(
+    State(state): State<AppState>,
+    Path(viz_id): Path<String>,
+) -> Result<Json<Vec<ExperimentFile>>, (StatusCode, String)> {
+    use crate::db::prisma::{digital_asset, visualization};
+
+    // 1. Verify Visualization exists
+    let viz = state
+        .db
+        .visualization()
+        .find_unique(visualization::id::equals(viz_id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Visualization not found".to_string()))?;
+
+    // 2. Find Directory Assets linked to this Visualization
+    let assets = state
+        .db
+        .digital_asset()
+        .find_many(vec![
+            digital_asset::visualization_id::equals(Some(viz_id.clone())),
+            digital_asset::mime_type::equals(Some("application/x-directory".to_string())),
+        ])
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut files = Vec::new();
+
+    for asset in assets {
+        // Construct full path: storage_path/storage_key
+        // Note: storage_key in DB is relative to storage_root
+        // But for local fs, we might need to join with state.storage_path
+
+        // The `storage_key` is usually something like "uploads/exp_id/dir_name"
+        // state.storage_path is the absolute root
+        let storage_path = state.storage_path.join(&asset.storage_key);
+
+        // Base URL for serving files from this asset
+        // We use the generic asset file route: /assets/{asset_id}/files/{relative_path}
+        let base_url = format!("/assets/{}/files", asset.id);
+
+        if storage_path.exists() {
+            let mut found_files = find_analysis_files(&storage_path, &base_url, "");
+
+            // Populate visualization_id
+            for file in &mut found_files {
+                file.visualization_id = Some(viz.id.clone());
+            }
+
+            files.extend(found_files);
+        }
+    }
+
+    Ok(Json(files))
 }
 
 // List files within a Directory Asset

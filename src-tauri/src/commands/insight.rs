@@ -1,6 +1,7 @@
 // Tauri commands for Insight module - file streaming and data loading
 
 use serde::{Deserialize, Serialize};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use tauri::State;
 
@@ -46,35 +47,62 @@ pub async fn get_experiment_files(
     state: State<'_, crate::AppState>,
 ) -> Result<ExperimentFiles, String> {
     let api_base = get_api_base_url(&state);
-    let url = format!("{}/experiments/{}/files", api_base, experiment_id);
-
-    // Fetch files from API
     let client = reqwest::Client::new();
-    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
 
+    // 1. Try fetching as a visualization first
+    let viz_url = format!("{}/visualizations/{}/files", api_base, experiment_id);
+    let mut resp = client
+        .get(&viz_url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 2. Fallback to experiment if visualization not found
     if !resp.status().is_success() {
-        return Err(format!("Server returned {}", resp.status()));
+        let exp_url = format!("{}/experiments/{}/files", api_base, experiment_id);
+        resp = client
+            .get(&exp_url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("Server returned {}", resp.status()));
+        }
     }
 
     let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let files = json
-        .get("files")
-        .and_then(|f| f.as_array())
-        .ok_or("No files field in response")?;
 
-    // Find specific assets by assetType
-    let find_path = |type_: &str| -> Option<String> {
+    // Handle both array (visualizations) and object with "files" key (experiments)
+    let files = if let Some(arr) = json.as_array() {
+        arr
+    } else if let Some(obj) = json.as_object() {
+        obj.get("files")
+            .and_then(|f| f.as_array())
+            .ok_or("No files field in response")?
+    } else {
+        return Err("Invalid response format".to_string());
+    };
+
+    // Find specific assets by assetType OR name/path extension
+    let find_path = |type_: &str, ext: &str| -> Option<String> {
         files
             .iter()
-            .find(|f| f["assetType"].as_str() == Some(type_))
+            .find(|f| {
+                f["assetType"].as_str() == Some(type_)
+                    || f["name"]
+                        .as_str()
+                        .map(|n| n.to_lowercase().ends_with(ext))
+                        .unwrap_or(false)
+            })
             .and_then(|f| f["path"].as_str())
             .map(|s| s.to_string())
     };
 
-    let relative_matrix = find_path("MATRIX");
-    let relative_coords = find_path("COORDS"); // Assumes we might add this later
-    let relative_report = find_path("REPORT");
-    let relative_counts = find_path("COUNTS");
+    let relative_matrix = find_path("MATRIX", ".mtx");
+    let relative_coords = find_path("COORDS", "coords.csv");
+    let relative_report = find_path("REPORT", ".html");
+    let relative_counts = find_path("COUNTS", "counts.tsv");
 
     // Construct detailed paths
     // If local, prepend app_data_dir to get absolute path for reading
@@ -324,4 +352,147 @@ pub async fn get_experiment_assets(
         .clone();
 
     Ok(files)
+}
+
+/// Upload a visualization zip file
+#[tauri::command]
+pub async fn upload_visualization_zip(
+    path: String,
+    experiment_id: Option<String>,
+    state: State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    use std::path::Path;
+    use tokio::fs::File;
+    use tokio_util::codec::{BytesCodec, FramedRead};
+
+    let api_base = get_api_base_url(&state);
+
+    // Determine target URL
+    let url = if let Some(exp_id) = &experiment_id {
+        if exp_id.trim().is_empty() {
+            format!("{}/visualizations/upload", api_base)
+        } else {
+            // Note: Use the standalone endpoint if exp_id is invalid or if the backend route logic differs
+            // But we implemented /{id}/visualizations/upload on backend
+            format!("{}/experiments/{}/visualizations/upload", api_base, exp_id)
+        }
+    } else {
+        format!("{}/visualizations/upload", api_base)
+    };
+
+    let file_path = Path::new(&path);
+    if !file_path.exists() {
+        return Err(format!("File not found: {}", path));
+    }
+
+    let file = File::open(file_path).await.map_err(|e| e.to_string())?;
+    let stream = FramedRead::new(file, BytesCodec::new());
+    let file_body = reqwest::Body::wrap_stream(stream);
+
+    let filename = file_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let part = reqwest::multipart::Part::stream(file_body)
+        .file_name(filename)
+        .mime_str("application/zip")
+        .map_err(|e| e.to_string())?;
+
+    let form = reqwest::multipart::Form::new().part("file", part);
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Upload failed: {} - {}", status, text));
+    }
+
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(json)
+}
+
+/// Helper to zip a directory recursively
+fn zip_dir<W: std::io::Write + std::io::Seek>(
+    it: &mut walkdir::IntoIter,
+    prefix: &std::path::Path,
+    writer: &mut zip::ZipWriter<W>,
+) -> Result<(), String> {
+    let options = zip::write::FileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o755);
+
+    let mut buffer = Vec::new();
+    for entry in it {
+        let entry = entry.map_err(|e: walkdir::Error| e.to_string())?;
+        let path = entry.path();
+        let name = path
+            .strip_prefix(prefix)
+            .map_err(|e: std::path::StripPrefixError| e.to_string())?;
+
+        if path.is_file() {
+            #[allow(deprecated)]
+            writer
+                .start_file_from_path(name, options)
+                .map_err(|e| e.to_string())?;
+            let mut f = std::fs::File::open(path).map_err(|e| e.to_string())?;
+            use std::io::Read;
+            f.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
+            writer.write_all(&buffer).map_err(|e| e.to_string())?;
+            buffer.clear();
+        } else if !name.as_os_str().is_empty() {
+            #[allow(deprecated)]
+            writer
+                .add_directory_from_path(name, options)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Upload a visualization folder (zips it locally first)
+#[tauri::command]
+pub async fn upload_visualization_folder(
+    path: String,
+    experiment_id: Option<String>,
+    state: State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    use std::fs::File;
+    use std::io::Write;
+    use std::path::Path;
+
+    let src_dir = Path::new(&path);
+    if !src_dir.exists() || !src_dir.is_dir() {
+        return Err(format!("Folder not found or not a directory: {}", path));
+    }
+
+    // Create a temporary zip file
+    let temp_dir = std::env::temp_dir();
+    let zip_filename = format!("upload_{}.zip", uuid::Uuid::new_v4());
+    let zip_path = temp_dir.join(zip_filename);
+
+    let file = File::create(&zip_path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+
+    let mut walk = walkdir::WalkDir::new(src_dir).into_iter();
+    zip_dir(&mut walk, src_dir, &mut zip)?;
+    zip.finish().map_err(|e| e.to_string())?;
+
+    // Use the existing zip upload logic
+    let result =
+        upload_visualization_zip(zip_path.to_string_lossy().to_string(), experiment_id, state)
+            .await;
+
+    // Cleanup temp file
+    let _ = std::fs::remove_file(zip_path);
+
+    result
 }
