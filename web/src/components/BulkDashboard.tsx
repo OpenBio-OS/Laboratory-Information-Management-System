@@ -134,7 +134,7 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
         </div>
       </div>
 
-      <div className="flex-1 p-8 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {isLoading ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center">
@@ -147,10 +147,10 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
             {error}
           </div>
         ) : (
-          <div className="h-full bg-surface/30 backdrop-blur-md rounded-2xl border border-white/10 flex flex-col overflow-hidden">
+          <div className="h-full bg-surface/30 flex flex-col overflow-hidden">
 
             {/* Scrollable Content Inside Card */}
-            <div className="flex-1 overflow-y-auto pl-8 py-8 pr-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            <div className="flex-1 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
               {activeTab === 'overview' && (
                 <div className="space-y-8">
                   {/* Reports Section */}

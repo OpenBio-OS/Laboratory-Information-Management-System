@@ -81,7 +81,7 @@ export function ExperimentMetadataView({ experimentId }: ExperimentMetadataViewP
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
+    <div className="space-y-6 max-w-5xl mx-auto pb-12 pt-6">
       {/* General Info Card */}
       <div className="bg-white/5 border border-white/10 rounded-xl p-6">
         <h3 className="text-lg text-white font-medium mb-4 flex items-center gap-2">
@@ -223,32 +223,58 @@ export function ExperimentMetadataView({ experimentId }: ExperimentMetadataViewP
         </div>
 
         {/* Experiment Notebook Content */}
-        {metadata.content && metadata.content !== "" && (
-          <div className="bg-white/5 border border-white/10 rounded-xl flex flex-col md:col-span-2">
-            <div className="p-4 border-b border-white/5 flex justify-between items-center">
-              <h3 className="text-white font-medium flex items-center gap-2">
-                <FileText size={18} className="text-green-400" />
-                Experiment Notebook
-              </h3>
-            </div>
-            <div className="p-6">
-              <div className="prose prose-invert max-w-none">
-                {/* 
+
+        <div className="bg-white/5 border border-white/10 rounded-xl flex flex-col md:col-span-2">
+          <div className="p-4 border-b border-white/5 flex justify-between items-center">
+            <h3 className="text-white font-medium flex items-center gap-2">
+              <FileText size={18} className="text-green-400" />
+              Experiment Notebook
+            </h3>
+          </div>
+          <div className="p-6">
+            <div className="prose prose-invert max-w-none">
+              {/* 
                   TODO: Render Rich Text JSON properly. 
                   For now we attempt to display it, or if it's JSON, show a placeholder.
                   Since we don't have the Tiptap renderer here, we might just show raw text if simple,
                   or a message.
                 */}
+              {(metadata.content && metadata.content !== "") ? (
                 <pre className="whitespace-pre-wrap font-mono text-xs text-white/70 bg-black/40 p-4 rounded-lg overflow-x-auto">
-                  {metadata.content.startsWith('{') ? "Rich text content (JSON)" : metadata.content}
+                  {(() => {
+                    if (!metadata.content) return null;
+                    try {
+                      if (metadata.content.trim().startsWith('{')) {
+                        const json = JSON.parse(metadata.content);
+                        const extractText = (node: any): string => {
+                          if (!node) return '';
+                          if (Array.isArray(node)) return node.map(extractText).join('');
+                          if (node.type === 'text' && node.text) return node.text;
+                          if (node.content) {
+                            const childText = extractText(node.content);
+                            if (['paragraph', 'heading', 'codeBlock', 'bulletList', 'orderedList', 'listItem', 'blockquote'].includes(node.type)) {
+                              return childText + '\n\n';
+                            }
+                            return childText;
+                          }
+                          return '';
+                        };
+                        const text = extractText(json);
+                        return text || "Empty notebook.";
+                      }
+                      return metadata.content;
+                    } catch (e) {
+                      return metadata.content;
+                    }
+                  })()}
                 </pre>
-                {metadata.content.startsWith('{') && (
-                  <p className="text-xs text-white/30 mt-2 italic">Full notebook rendering requires the Editor component.</p>
-                )}
-              </div>
+              ) : (
+                <p className="text-white/30 text-center py-8 text-sm">No notebook content.</p>
+              )}
             </div>
           </div>
-        )}
+        </div>
+
       </div>
     </div>
   );
