@@ -55,31 +55,30 @@ export function ScatterPlot({
     const dpr = window.devicePixelRatio || 1;
     const glCanvas = glCanvasRef.current;
     const lassoCanvas = lassoCanvasRef.current;
-    if (!glCanvas || !lassoCanvas) return;
+    if (!glCanvas || !lassoCanvas || width <= 0 || height <= 0) return;
 
-    // Set internal buffer sizes
-    const pixelWidth = width * dpr;
-    const pixelHeight = height * dpr;
+    // Set internal buffer sizes (Retina/High-DPI)
+    // We set these directly on the element to avoid fighting with React attributes
+    glCanvas.width = width * dpr;
+    glCanvas.height = height * dpr;
+    lassoCanvas.width = width * dpr;
+    lassoCanvas.height = height * dpr;
 
-    glCanvas.width = pixelWidth;
-    glCanvas.height = pixelHeight;
-    lassoCanvas.width = pixelWidth;
-    lassoCanvas.height = pixelHeight;
-
-    // Set CSS sizes
+    // Set CSS sizes explicitly to match props - this prevents "inch away" desync
+    // by ensuring logical CSS pixels on the canvas match the props exactly.
     glCanvas.style.width = `${width}px`;
     glCanvas.style.height = `${height}px`;
     lassoCanvas.style.width = `${width}px`;
     lassoCanvas.style.height = `${height}px`;
 
     if (glRef.current) {
-      glRef.current.viewport(0, 0, pixelWidth, pixelHeight);
+      glRef.current.viewport(0, 0, glCanvas.width, glCanvas.height);
 
       if (programRef.current) {
         const gl = glRef.current;
         gl.useProgram(programRef.current);
         const uAspect = gl.getUniformLocation(programRef.current, 'u_aspect');
-        gl.uniform1f(uAspect, width / height);
+        gl.uniform1f(uAspect, width / height || 1.0);
       }
     }
 
@@ -148,7 +147,7 @@ export function ScatterPlot({
     if (rect) {
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      lassoPoints.current.push(x, y);
+      lassoPoints.current = [x, y];
     }
   };
 
@@ -164,20 +163,31 @@ export function ScatterPlot({
       drawLasso();
     } else if (points && coordsBuffer) {
       // Hover detection
-      const mouseX = (x / width) * 2 - 1;
-      const mouseY = 1 - (y / height) * 2;
+      // Use the actual rendered size for math
+      const renderedWidth = rect.width || width || 1;
+      const renderedHeight = rect.height || height || 1;
+      const aspect = renderedWidth / renderedHeight;
+
+      let mouseX, mouseY;
+      if (aspect > 1.0) {
+        mouseX = ((x / renderedWidth) * 2 - 1) * aspect;
+        mouseY = 1 - (y / renderedHeight) * 2;
+      } else {
+        mouseX = (x / renderedWidth) * 2 - 1;
+        mouseY = (1 - (y / renderedHeight) * 2) / aspect;
+      }
 
       const coords = new Float32Array(coordsBuffer);
       let closestIdx = -1;
-      let minDocs = 0.08; // Higher threshold for easier selection
+      let minDocs = 0.08; // Hit threshold (can adjust)
 
       for (let i = 0; i < pointsCount; i++) {
         const dx = coords[i * 2] - mouseX;
         const dy = coords[i * 2 + 1] - mouseY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        const distSq = dx * dx + dy * dy;
 
-        if (dist < minDocs) {
-          minDocs = dist;
+        if (distSq < minDocs * minDocs) {
+          minDocs = Math.sqrt(distSq);
           closestIdx = i;
         }
       }
@@ -193,12 +203,20 @@ export function ScatterPlot({
   const handleMouseUp = () => {
     if (isDrawing && lassoPoints.current.length > 2) {
       setIsDrawing(false);
+      const rect = lassoCanvasRef.current?.getBoundingClientRect();
+      const renWidth = rect?.width || width || 1;
+      const renHeight = rect?.height || height || 1;
+      const aspect = renWidth / renHeight;
 
-      // Convert CSS pixels to pure NDC (-1 to 1)
       const normalizedPoints = new Float32Array(lassoPoints.current.length);
       for (let i = 0; i < lassoPoints.current.length; i += 2) {
-        normalizedPoints[i] = (lassoPoints.current[i] / width) * 2 - 1;
-        normalizedPoints[i + 1] = 1 - (lassoPoints.current[i + 1] / height) * 2;
+        if (aspect > 1.0) {
+          normalizedPoints[i] = ((lassoPoints.current[i] / renWidth) * 2 - 1) * aspect;
+          normalizedPoints[i + 1] = 1 - (lassoPoints.current[i + 1] / renHeight) * 2;
+        } else {
+          normalizedPoints[i] = (lassoPoints.current[i] / renWidth) * 2 - 1;
+          normalizedPoints[i + 1] = (1 - (lassoPoints.current[i + 1] / renHeight) * 2) / aspect;
+        }
       }
 
       onLassoComplete?.(normalizedPoints);
@@ -225,11 +243,11 @@ export function ScatterPlot({
     ctx.scale(dpr, dpr);
 
     // 1. Draw Axis Lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-    ctx.setLineDash([4, 4]);
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.setLineDash([6, 4]);
+    ctx.lineWidth = 1.5;
 
-    // CENTER OF THE DRAWING AREA
+    // Use derived midpoints from the props
     const midX = width / 2;
     const midY = height / 2;
 
@@ -291,16 +309,12 @@ export function ScatterPlot({
       {/* WebGL Layer - Points */}
       <canvas
         ref={glCanvasRef}
-        width={width}
-        height={height}
         className="absolute inset-0 z-0 w-full h-full"
       />
 
       {/* 2D Layer - Lasso Drawing */}
       <canvas
         ref={lassoCanvasRef}
-        width={width}
-        height={height}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -336,13 +350,21 @@ function initializeShaders(gl: WebGLRenderingContext): WebGLProgram | null {
   const vertexShaderSource = `
     attribute vec2 a_position;
     attribute float a_selected;
+    uniform float u_aspect;
     
     varying float v_selected;
     
     void main() {
-      // Logic space is [-0.9, 0.9], draw directly to NDC
-      gl_Position = vec4(a_position, 0.0, 1.0);
-      gl_PointSize = 18.0; // Larger points for visibility
+      // Fit a square area into the center of the available viewport
+      if (u_aspect > 1.0) {
+        // Wide: squeeze X
+        gl_Position = vec4(a_position.x / u_aspect, a_position.y, 0.0, 1.0);
+      } else {
+        // Tall: squeeze Y
+        gl_Position = vec4(a_position.x, a_position.y * u_aspect, 0.0, 1.0);
+      }
+      
+      gl_PointSize = 18.0; 
       v_selected = a_selected;
     }
   `;

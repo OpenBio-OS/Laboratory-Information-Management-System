@@ -1534,10 +1534,16 @@ pub async fn open_pipeline_report(
                 .and_then(|n| n.as_str())
                 .unwrap_or("report.html");
 
-            // URL from server is relative e.g. /assets/...
-            // We need to prepend api_base if it is not absolute.
+            // URL from server is relative e.g. /api/assets/... or /assets/...
+            // We need to ensure we don't double up on the /api prefix if it's already in the base
             let clean_base = api_base.trim_end_matches('/');
-            let full_url = format!("{}{}", clean_base, url);
+            let clean_url = if url.starts_with("/api/") && clean_base.ends_with("/api") {
+                &url[4..]
+            } else {
+                url
+            };
+
+            let full_url = format!("{}{}", clean_base, clean_url);
             (full_url, name.to_string())
         } else {
             return Err("No HTML report found in directory asset.".to_string());
