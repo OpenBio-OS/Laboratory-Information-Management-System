@@ -38,10 +38,7 @@ export function ScatterPlot({
     if (!canvas) return;
 
     const gl = canvas.getContext('webgl', { antialias: true, alpha: true });
-    if (!gl) {
-      console.error('WebGL not supported');
-      return;
-    }
+    if (!gl) return;
 
     glRef.current = gl;
 
@@ -52,31 +49,31 @@ export function ScatterPlot({
     setContextReady(true);
   }, []);
 
-  // Handle resolution and sizing
+  // Handle resolution, sizing and viewport calibration
   useEffect(() => {
     if (!contextReady) return;
 
-    const dpr = window.devicePixelRatio || 1;
     const glCanvas = glCanvasRef.current;
     const lassoCanvas = lassoCanvasRef.current;
     const gl = glRef.current;
+    if (!glCanvas || !lassoCanvas || !gl) return;
 
-    if (!glCanvas || !lassoCanvas || !gl || width <= 0 || height <= 0) return;
+    const dpr = window.devicePixelRatio || 1;
 
-    // Set internal buffer sizes (Retina/High-DPI)
-    glCanvas.width = width * dpr;
-    glCanvas.height = height * dpr;
-    lassoCanvas.width = width * dpr;
-    lassoCanvas.height = height * dpr;
+    // THE SOURCE OF TRUTH: Actual element size in logical pixels
+    const rect = glCanvas.getBoundingClientRect();
+    const w = rect.width || width || 1;
+    const h = rect.height || height || 1;
 
+    // Set internal buffer resolutions (High-DPI)
+    // We prioritize the element size over props to ensure perfection
+    glCanvas.width = w * dpr;
+    glCanvas.height = h * dpr;
+    lassoCanvas.width = w * dpr;
+    lassoCanvas.height = h * dpr;
+
+    // Calibration: Match viewport to physical pixels
     gl.viewport(0, 0, glCanvas.width, glCanvas.height);
-
-    if (programRef.current) {
-      gl.useProgram(programRef.current);
-      // We still update u_aspect just in case, but shader might not use it anymore
-      const uAspect = gl.getUniformLocation(programRef.current, 'u_aspect');
-      if (uAspect) gl.uniform1f(uAspect, width / height || 1.0);
-    }
 
     drawUI();
   }, [contextReady, width, height]);
@@ -92,11 +89,7 @@ export function ScatterPlot({
 
     gl.useProgram(program);
 
-    // Initial u_aspect set
-    const uAspect = gl.getUniformLocation(program, 'u_aspect');
-    gl.uniform1f(uAspect, width / height || 1.0);
-
-    // Position buffer
+    // Dynamic Position buffer setup
     const posBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(coordsBuffer), gl.STATIC_DRAW);
@@ -105,7 +98,7 @@ export function ScatterPlot({
     gl.enableVertexAttribArray(aPosition);
     gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
 
-    // Selection buffer
+    // Dynamic Selection buffer setup
     const selBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, selBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(selectionBuffer), gl.DYNAMIC_DRAW);
@@ -115,9 +108,11 @@ export function ScatterPlot({
     gl.vertexAttribPointer(aSelected, 1, gl.FLOAT, false, 0, 0);
 
     const render = () => {
-      gl.clearColor(0.02, 0.02, 0.05, 1.0);
+      // Background matches UI palette
+      gl.clearColor(0.02, 0.02, 0.05, 0.0); // Transparent to show parent bg
       gl.clear(gl.COLOR_BUFFER_BIT);
 
+      // Sync selection mask in real-time
       gl.bindBuffer(gl.ARRAY_BUFFER, selBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(selectionBuffer), gl.DYNAMIC_DRAW);
 
@@ -132,19 +127,17 @@ export function ScatterPlot({
       gl.deleteBuffer(posBuffer);
       gl.deleteBuffer(selBuffer);
     };
-  }, [width, height, pointsCount, coordsBuffer, selectionBuffer]);
+  }, [pointsCount, coordsBuffer, selectionBuffer]);
 
-  // Handle lasso drawing
+  // Handle interaction events
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    setIsDrawing(true);
-    lassoPoints.current = [];
-
     const rect = lassoCanvasRef.current?.getBoundingClientRect();
-    if (rect) {
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      lassoPoints.current = [x, y];
-    }
+    if (!rect) return;
+
+    setIsDrawing(true);
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    lassoPoints.current = [x, y];
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -156,20 +149,19 @@ export function ScatterPlot({
 
     if (isDrawing) {
       lassoPoints.current.push(x, y);
-      drawLasso();
+      drawUI();
     } else if (points && coordsBuffer) {
-      // Hover detection
-      // Use the actual rendered size for math
-      const renderedWidth = rect.width || width || 1;
-      const renderedHeight = rect.height || height || 1;
+      // Hover detection mapping
+      const renWidth = rect.width || 1;
+      const renHeight = rect.height || 1;
 
-      // Removed aspect ratio adjustments to match "fill" behavior and spread dots out
-      const mouseX = (x / renderedWidth) * 2 - 1;
-      const mouseY = 1 - (y / renderedHeight) * 2;
+      // Direct Stretch mapping (Direct-Fill mode)
+      const mouseX = (x / renWidth) * 2 - 1;
+      const mouseY = 1 - (y / renHeight) * 2;
 
       const coords = new Float32Array(coordsBuffer);
       let closestIdx = -1;
-      let minDocs = 0.08; // Hit threshold (can adjust)
+      let minDocs = 0.08;
 
       for (let i = 0; i < pointsCount; i++) {
         const dx = coords[i * 2] - mouseX;
@@ -194,16 +186,17 @@ export function ScatterPlot({
     if (isDrawing && lassoPoints.current.length > 2) {
       setIsDrawing(false);
       const rect = lassoCanvasRef.current?.getBoundingClientRect();
-      const renWidth = rect?.width || width || 1;
-      const renHeight = rect?.height || height || 1;
+      if (rect) {
+        const renWidth = rect.width || 1;
+        const renHeight = rect.height || 1;
 
-      const normalizedPoints = new Float32Array(lassoPoints.current.length);
-      for (let i = 0; i < lassoPoints.current.length; i += 2) {
-        normalizedPoints[i] = (lassoPoints.current[i] / renWidth) * 2 - 1;
-        normalizedPoints[i + 1] = 1 - (lassoPoints.current[i + 1] / renHeight) * 2;
+        const normalizedPoints = new Float32Array(lassoPoints.current.length);
+        for (let i = 0; i < lassoPoints.current.length; i += 2) {
+          normalizedPoints[i] = (lassoPoints.current[i] / renWidth) * 2 - 1;
+          normalizedPoints[i + 1] = 1 - (lassoPoints.current[i + 1] / renHeight) * 2;
+        }
+        onLassoComplete?.(normalizedPoints);
       }
-
-      onLassoComplete?.(normalizedPoints);
     }
 
     setIsDrawing(false);
@@ -212,59 +205,58 @@ export function ScatterPlot({
   };
 
   const drawUI = useCallback(() => {
-    const dpr = window.devicePixelRatio || 1;
     const canvas = lassoCanvasRef.current;
-    if (!canvas || width <= 0 || height <= 0) return;
+    if (!canvas) return;
 
+    const dpr = window.devicePixelRatio || 1;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Reset transform to identity and clear the ACTUAL pixel buffer
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+
+    // Reset and clear with scaling
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Apply scaling for Retina
     ctx.scale(dpr, dpr);
 
-    // 1. Draw Axis Lines
+    // Axis Lines Calibration
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
     ctx.setLineDash([6, 4]);
     ctx.lineWidth = 1.5;
 
-    // Use derived midpoints from the props
-    const midX = width / 2;
-    const midY = height / 2;
+    const midX = w / 2;
+    const midY = h / 2;
 
     // X-Axis
     ctx.beginPath();
     ctx.moveTo(0, midY);
-    ctx.lineTo(width, midY);
+    ctx.lineTo(w, midY);
     ctx.stroke();
 
     // Y-Axis
     ctx.beginPath();
     ctx.moveTo(midX, 0);
-    ctx.lineTo(midX, height);
+    ctx.lineTo(midX, h);
     ctx.stroke();
 
-    // 2. Draw Labels
+    // Labels Calibration
     ctx.setLineDash([]);
     ctx.font = 'bold 11px Inter, system-ui, sans-serif';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
 
-    // PC1 Label
     ctx.textAlign = 'right';
-    ctx.fillText('PC1 (Variance) →', width - 20, midY - 12);
+    ctx.fillText('PC1 (Variance) \u2192', w - 20, midY - 12);
 
-    // PC2 Label 
     ctx.save();
     ctx.translate(midX + 12, 30);
     ctx.rotate(-Math.PI / 2);
     ctx.textAlign = 'right';
-    ctx.fillText('← PC2 (Variance)', 0, 0);
+    ctx.fillText('\u2190 PC2 (Variance)', 0, 0);
     ctx.restore();
 
-    // 3. Draw Lasso if drawing
+    // Lasso Calibration
     if (isDrawing && lassoPoints.current.length >= 2) {
       ctx.strokeStyle = '#22c55e';
       ctx.lineWidth = 2;
@@ -277,26 +269,16 @@ export function ScatterPlot({
       }
       ctx.stroke();
     }
-  }, [width, height, isDrawing]);
+  }, [isDrawing]);
 
-  // Initial draw and update on dimension change
+  // Initial draw
   useEffect(() => {
     drawUI();
   }, [drawUI, width, height]);
 
-  const drawLasso = () => {
-    drawUI();
-  };
-
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black/20 rounded-xl overflow-hidden shadow-inner">
-      {/* WebGL Layer - Points */}
-      <canvas
-        ref={glCanvasRef}
-        className="absolute inset-0 z-0 w-full h-full"
-      />
-
-      {/* 2D Layer - Lasso Drawing */}
+      <canvas ref={glCanvasRef} className="absolute inset-0 z-0 w-full h-full" />
       <canvas
         ref={lassoCanvasRef}
         onMouseDown={handleMouseDown}
@@ -330,23 +312,20 @@ export function ScatterPlot({
 }
 
 function initializeShaders(gl: WebGLRenderingContext): WebGLProgram | null {
-  // Vertex shader
   const vertexShaderSource = `
     attribute vec2 a_position;
     attribute float a_selected;
-    uniform float u_aspect;
     
     varying float v_selected;
     
     void main() {
-      // Direct mapping to fill the available space
+      // Direct mapping to fill the available space (No aspect-ratio clumping)
       gl_Position = vec4(a_position, 0.0, 1.0);
       gl_PointSize = 18.0; 
       v_selected = a_selected;
     }
   `;
 
-  // Fragment shader
   const fragmentShaderSource = `
     precision mediump float;
     varying float v_selected;
@@ -360,9 +339,9 @@ function initializeShaders(gl: WebGLRenderingContext): WebGLProgram | null {
       float alpha = 1.0 - smoothstep(0.40, 0.5, dist);
       
       if (v_selected > 0.5) {
-        gl_FragColor = vec4(1.0, 0.3, 0.3, alpha); // Bright Red
+        gl_FragColor = vec4(1.0, 0.3, 0.3, alpha); 
       } else {
-        gl_FragColor = vec4(0.0, 0.8, 1.0, alpha); // Electric Cyan
+        gl_FragColor = vec4(0.0, 0.8, 1.0, alpha);
       }
     }
   `;
@@ -370,60 +349,38 @@ function initializeShaders(gl: WebGLRenderingContext): WebGLProgram | null {
   const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
   const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
 
-  if (!vertexShader || !fragmentShader) {
-    console.error('Failed to create shaders');
-    return null;
-  }
+  if (!vertexShader || !fragmentShader) return null;
 
   const program = createProgram(gl, vertexShader, fragmentShader);
-  if (!program) {
-    console.error('Failed to create program');
-    return null;
-  }
+  if (!program) return null;
 
   gl.useProgram(program);
   return program;
-
-  // TODO: Set up vertex buffers from SharedArrayBuffer
 }
 
-function createShader(
-  gl: WebGLRenderingContext,
-  type: number,
-  source: string
-): WebGLShader | null {
+function createShader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader | null {
   const shader = gl.createShader(type);
   if (!shader) return null;
-
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
-
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
     console.error('Shader compile error:', gl.getShaderInfoLog(shader));
     gl.deleteShader(shader);
     return null;
   }
-
   return shader;
 }
 
-function createProgram(
-  gl: WebGLRenderingContext,
-  vertexShader: WebGLShader,
-  fragmentShader: WebGLShader
-): WebGLProgram | null {
+function createProgram(gl: WebGLRenderingContext, vertexShader: WebGLShader, fragmentShader: WebGLShader): WebGLProgram | null {
   const program = gl.createProgram();
   if (!program) return null;
-
   gl.attachShader(program, vertexShader);
   gl.attachShader(program, fragmentShader);
   gl.linkProgram(program);
-
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
     console.error('Program link error:', gl.getProgramInfoLog(program));
     gl.deleteProgram(program);
     return null;
   }
-
   return program;
 }
