@@ -180,9 +180,9 @@ export function PipelineManager() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-main">
+    <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="bg-surface/30 backdrop-blur-md border-b border-white/5 px-6 py-4">
+      <div className="bg-brand-surface/50 backdrop-blur-md border-b border-white/5 px-6 py-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex-1">
             <p className="text-sm text-white/60 my-auto">Manage and monitor bioinformatics pipelines</p>
@@ -235,7 +235,7 @@ export function PipelineManager() {
       </div>
 
       {/* Pipeline Runs List */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-6  bg-[#0d0d0d]">
         {filteredRuns.length === 0 ? (
           <div className="text-center py-12  text-white/30">
             <div className="w-16 h-16 mb-4 flex justify-center rounded-xl bg-white/5 items-center mx-auto">

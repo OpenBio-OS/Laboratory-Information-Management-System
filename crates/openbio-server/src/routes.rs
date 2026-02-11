@@ -935,7 +935,7 @@ async fn create_experiment(
 async fn get_experiment(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<experiment::Data>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let start = std::time::Instant::now();
     let experiment = state
         .db
@@ -948,13 +948,53 @@ async fn get_experiment(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "Experiment not found".to_string()))?;
+
+    // Convert to JSON Value to extend it
+    let mut json = serde_json::to_value(&experiment)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Fetch linked papers via mentions
+    let mentions = state
+        .db
+        .experiment_mention()
+        .find_many(vec![
+            experiment_mention::experiment_id::equals(id.clone()),
+            experiment_mention::entity_type::equals("paper".to_string()),
+        ])
+        .exec()
+        .await
+        .unwrap_or(vec![]);
+
+    let paper_ids: Vec<String> = mentions.into_iter().map(|m| m.entity_id).collect();
+
+    if !paper_ids.is_empty() {
+        let papers = state
+            .db
+            .paper()
+            .find_many(vec![paper::id::in_vec(paper_ids)])
+            .exec()
+            .await
+            .unwrap_or(vec![]);
+
+        if let Some(obj) = json.as_object_mut() {
+            obj.insert(
+                "linkedPapers".to_string(),
+                serde_json::to_value(papers).unwrap_or(serde_json::json!([])),
+            );
+        }
+    } else {
+        if let Some(obj) = json.as_object_mut() {
+            obj.insert("linkedPapers".to_string(), serde_json::json!([]));
+        }
+    }
+
     println!(
         "[server] get_experiment ({}): assets={}, in {:?}",
         id,
         experiment.assets.as_ref().map(|a| a.len()).unwrap_or(0),
         start.elapsed()
     );
-    Ok(Json(experiment))
+    Ok(Json(json))
 }
 
 #[derive(Deserialize)]

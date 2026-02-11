@@ -271,6 +271,9 @@ pub async fn get_experiment_metadata(
     Ok(serde_json::json!({
         "experiment_id": json["id"],
         "name": json["name"],
+        "description": json["description"],
+        "content": json["content"],
+        "linked_papers": json["linkedPapers"],
         "pipeline_type": pipeline_type,
         "status": json["status"],
         "samples": json["samples"],

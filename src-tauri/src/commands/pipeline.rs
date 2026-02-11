@@ -1451,10 +1451,16 @@ pub async fn open_pipeline_report(
         .map_err(|e| format!("Invalid assets JSON: {}", e))?;
 
     // Check for Directory Asset (New Strategy)
-    // Look for mimeType = "application/x-directory" (camelCase from Prisma usually) or snake_case
+    // Look for mimeType = "application/x-directory" OR name ending in "_output"
     let dir_asset = assets.iter().find(|a| {
-        a.get("mimeType").and_then(|s| s.as_str()) == Some("application/x-directory")
-            || a.get("mime_type").and_then(|s| s.as_str()) == Some("application/x-directory")
+        let is_dir_mime = a.get("mimeType").and_then(|s| s.as_str())
+            == Some("application/x-directory")
+            || a.get("mime_type").and_then(|s| s.as_str()) == Some("application/x-directory");
+
+        let name = a.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        let is_output_dir = name.ends_with("_output");
+
+        is_dir_mime || is_output_dir
     });
 
     let (report_url, report_filename) = if let Some(dir_asset) = dir_asset {
@@ -1485,12 +1491,11 @@ pub async fn open_pipeline_report(
         // Priority: multiqc_report.html -> any .html (excluding execution/timeline)
         let mut found_file = None;
 
-        // 1. MultiQC
+        // 1. MultiQC (search for strict match OR ends_with for nested)
         if let Some(f) = files.iter().find(|f| {
-            f.get("name")
-                .and_then(|n| n.as_str())
-                .map(|n| n.to_lowercase())
-                == Some("multiqc_report.html".to_string())
+            let name = f.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            let path = f.get("path").and_then(|n| n.as_str()).unwrap_or(name);
+            path.to_lowercase().ends_with("multiqc_report.html")
         }) {
             found_file = Some(f);
         }

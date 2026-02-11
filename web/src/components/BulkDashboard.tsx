@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, FileText, Download, BarChart2 } from 'lucide-react';
+import { ArrowLeft, FileText, Download, BarChart2, Database } from 'lucide-react';
 import { useNavigation } from '../App';
 import { invoke } from '@tauri-apps/api/core';
+import { ExperimentMetadataView } from './ExperimentMetadataView';
 
 interface BulkDashboardProps {
   experimentId: string;
@@ -18,7 +19,7 @@ interface Asset {
 
 export function BulkDashboard({ experimentId }: BulkDashboardProps) {
   const { navigateTo } = useNavigation();
-  const [activeTab, setActiveTab] = useState<'overview' | 'pca' | 'heatmap' | 'de'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'pca' | 'heatmap' | 'de' | 'metadata'>('overview');
   const [assets, setAssets] = useState<Asset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +120,16 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
               }`}
           >
             Diff. Expr.
+          </button>
+          <button
+            onClick={() => setActiveTab('metadata')}
+            className={`px-6 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-2 ${activeTab === 'metadata'
+              ? 'bg-white/10 text-white shadow-lg border border-white/10'
+              : 'text-white/40 hover:text-white hover:bg-white/5'
+              }`}
+          >
+            <Database size={14} />
+            Metadata
           </button>
         </div>
       </div>
@@ -258,6 +269,12 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
                       <p className="text-white/40 py-8 text-center">No Differential Expression results found.</p>
                     )}
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'metadata' && (
+                <div className="h-full flex flex-col">
+                  <ExperimentMetadataView experimentId={experimentId} />
                 </div>
               )}
             </div>
