@@ -1060,12 +1060,16 @@ async fn delete_experiment(State(state): State<AppState>, Path(id): Path<String>
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExperimentFile {
+    pub id: String,
     pub path: String,
     pub name: String,
-    pub size: u64,
+    pub size_bytes: u64,
     pub mime_type: String,
     pub url: String,
+    pub asset_type: String,
+    pub created_at: String,
     pub visualization_id: Option<String>,
 }
 
@@ -1074,9 +1078,14 @@ fn find_analysis_files(
     dir_path: &std::path::Path,
     base_url: &str,
     relative_root: &str,
+    parent_asset_id: &str,
+    created_at: &str,
 ) -> Vec<ExperimentFile> {
+    println!("[server] find_analysis_files PRE-SCAN: {:?}", dir_path);
     let mut results = Vec::new();
-    let relevant_extensions = vec!["mtx", "tsv", "csv", "rds", "h5ad", "json"];
+    let relevant_extensions = vec![
+        "mtx", "tsv", "csv", "rds", "h5ad", "json", "html", "png", "jpg", "pdf", "txt", "rdata",
+    ];
 
     if let Ok(entries) = std::fs::read_dir(dir_path) {
         for entry in entries.flatten() {
@@ -1089,10 +1098,17 @@ fn find_analysis_files(
                 } else {
                     format!("{}/{}", relative_root, file_name)
                 };
-                results.extend(find_analysis_files(&path, base_url, &new_relative));
+                results.extend(find_analysis_files(
+                    &path,
+                    base_url,
+                    &new_relative,
+                    parent_asset_id,
+                    created_at,
+                ));
             } else {
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                    if relevant_extensions.contains(&ext.to_lowercase().as_str()) {
+                    let ext_lower = ext.to_lowercase();
+                    if relevant_extensions.contains(&ext_lower.as_str()) {
                         let relative_path = if relative_root.is_empty() {
                             file_name.clone()
                         } else {
@@ -1104,22 +1120,52 @@ fn find_analysis_files(
                             .first_or_octet_stream()
                             .to_string();
 
+                        let file_name_lower = file_name.to_lowercase();
+
+                        // Map content/extension to assetType
+                        let asset_type = if file_name_lower.contains("pca") {
+                            "IMAGE" // We treat PCA as IMAGE/PLOTS for categorization
+                        } else if file_name_lower.contains("deseq")
+                            || file_name_lower.contains("diff")
+                        {
+                            "COUNTS" // DE results are often counts-based or tables
+                        } else if file_name_lower.contains("heatmap") {
+                            "IMAGE"
+                        } else {
+                            match ext_lower.as_str() {
+                                "html" => "REPORT",
+                                "png" | "jpg" | "pdf" => "IMAGE",
+                                "mtx" => "MATRIX",
+                                "tsv" | "csv" | "counts" => "COUNTS",
+                                "txt" => "DATA",
+                                _ => "DATA",
+                            }
+                        };
+
                         // Construct URL: /assets/{asset_id}/files/{relative_path}
                         let url = format!("{}/{}", base_url, relative_path);
 
                         results.push(ExperimentFile {
+                            id: format!("{}:{}", parent_asset_id, relative_path),
                             path: relative_path,
                             name: file_name,
-                            size,
+                            size_bytes: size,
                             mime_type: mime,
                             url,
-                            visualization_id: None, // Populated by caller
+                            asset_type: asset_type.to_string(),
+                            created_at: created_at.to_string(),
+                            visualization_id: None,
                         });
                     }
                 }
             }
         }
     }
+    println!(
+        "[server] find_analysis_files POST-SCAN: {} files in {:?}",
+        results.len(),
+        dir_path
+    );
     results
 }
 
@@ -1127,6 +1173,7 @@ async fn get_analysis_files(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Json<Vec<ExperimentFile>> {
+    println!("[v6.3] get_analysis_files entry id={}", id);
     // 1. Fetch assets directly linked to experiment
     let mut assets = state
         .db
@@ -1136,8 +1183,7 @@ async fn get_analysis_files(
         .await
         .unwrap_or(vec![]);
 
-    // 2. Fetch assets linked via VISUALIZATIONS (User confirmation: this is where analysis files live)
-    // Find assets where the associated visualization is linked to this experiment
+    // 2. Fetch assets linked via VISUALIZATIONS (if ID is an Experiment ID)
     let viz_assets = state
         .db
         .digital_asset()
@@ -1148,7 +1194,26 @@ async fn get_analysis_files(
         .await
         .unwrap_or_default();
 
+    // 3. Fetch assets directly linked to this ID as a VISUALIZATION ID
+    let viz_direct_assets = state
+        .db
+        .digital_asset()
+        .find_many(vec![digital_asset::visualization_id::equals(Some(
+            id.clone(),
+        ))])
+        .exec()
+        .await
+        .unwrap_or_default();
+
+    println!(
+        "[server] get_analysis_files id={}: found {} direct (exp), {} linked (via viz), {} direct (viz)",
+        id,
+        assets.len(),
+        viz_assets.len(),
+        viz_direct_assets.len()
+    );
     assets.extend(viz_assets);
+    assets.extend(viz_direct_assets);
 
     // Deduplicate by ID
     assets.sort_by(|a, b| a.id.cmp(&b.id));
@@ -1171,7 +1236,9 @@ async fn get_analysis_files(
             let base_url = format!("/assets/{}/files", asset.id);
 
             if storage_path.exists() {
-                let mut found_files = find_analysis_files(&storage_path, &base_url, "");
+                let created_at_str = asset.created_at.to_rfc3339();
+                let mut found_files =
+                    find_analysis_files(&storage_path, &base_url, "", &asset.id, &created_at_str);
 
                 // Populate visualization_id if available
                 let viz_id = asset.visualization_id.clone().or_else(|| {
@@ -1192,8 +1259,10 @@ async fn get_analysis_files(
         }
     }
 
-    files.sort_by(|a, b| a.name.cmp(&b.name));
-
+    println!(
+        "[server] get_analysis_files result: returning {} files",
+        files.len()
+    );
     Json(files)
 }
 
@@ -3374,14 +3443,13 @@ async fn get_visualization_files(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "Visualization not found".to_string()))?;
 
-    // 2. Find Directory Assets linked to this Visualization
+    // 2. Find Assets linked to this Visualization
     let assets = state
         .db
         .digital_asset()
-        .find_many(vec![
-            digital_asset::visualization_id::equals(Some(viz_id.clone())),
-            digital_asset::mime_type::equals(Some("application/x-directory".to_string())),
-        ])
+        .find_many(vec![digital_asset::visualization_id::equals(Some(
+            viz_id.clone(),
+        ))])
         .exec()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -3389,30 +3457,45 @@ async fn get_visualization_files(
     let mut files = Vec::new();
 
     for asset in assets {
-        // Construct full path: storage_path/storage_key
-        // Note: storage_key in DB is relative to storage_root
-        // But for local fs, we might need to join with state.storage_path
+        // Look for Directory Assets (match discovery logic in get_analysis_files)
+        let is_dir = asset.mime_type.as_deref() == Some("application/x-directory")
+            || asset.filename.ends_with("_output");
 
-        // The `storage_key` is usually something like "uploads/exp_id/dir_name"
-        // state.storage_path is the absolute root
-        let storage_path = state.storage_path.join(&asset.storage_key);
+        if is_dir {
+            let storage_path = state.storage_path.join(&asset.storage_key);
+            let base_url = format!("/assets/{}/files", asset.id);
+            println!(
+                "[server] visualization fallback: checking asset {:?} at path {:?}",
+                asset.filename, storage_path
+            );
 
-        // Base URL for serving files from this asset
-        // We use the generic asset file route: /assets/{asset_id}/files/{relative_path}
-        let base_url = format!("/assets/{}/files", asset.id);
+            if storage_path.exists() {
+                let created_at_str = asset.created_at.to_rfc3339();
+                let mut found_files =
+                    find_analysis_files(&storage_path, &base_url, "", &asset.id, &created_at_str);
 
-        if storage_path.exists() {
-            let mut found_files = find_analysis_files(&storage_path, &base_url, "");
+                for file in &mut found_files {
+                    file.visualization_id = Some(viz.id.clone());
+                }
 
-            // Populate visualization_id
-            for file in &mut found_files {
-                file.visualization_id = Some(viz.id.clone());
+                println!(
+                    "[server] visualization fallback: found {} files in asset",
+                    found_files.len()
+                );
+                files.extend(found_files);
+            } else {
+                println!(
+                    "[server] visualization fallback: path DOES NOT EXIST {:?}",
+                    storage_path
+                );
             }
-
-            files.extend(found_files);
         }
     }
 
+    println!(
+        "[server] get_visualization_files result: returning {} files",
+        files.len()
+    );
     Ok(Json(files))
 }
 
@@ -3480,7 +3563,7 @@ async fn list_directory_asset_files(
                     "name": filename,
                     "size": size,
                     "mimeType": mime,
-                    "url": format!("/assets/{}/files/{}", asset_id_clone, relative_path)
+                    "url": format!("/api/assets/{}/files/{}", asset_id_clone, relative_path)
                 }));
             }
         }
@@ -3507,8 +3590,11 @@ async fn serve_directory_asset_file(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or((StatusCode::NOT_FOUND, "Asset not found".to_string()))?;
 
-    // Verify it is a directory
-    if asset.mime_type.as_deref() != Some("application/x-directory") {
+    // Verify it is a directory (match discovery logic in get_analysis_files)
+    let is_dir = asset.mime_type.as_deref() == Some("application/x-directory")
+        || asset.filename.ends_with("_output");
+
+    if !is_dir {
         return Err((
             StatusCode::BAD_REQUEST,
             "Asset is not a directory".to_string(),

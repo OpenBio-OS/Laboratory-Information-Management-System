@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useWasmWorker } from '../hooks/useWasmWorker';
 import { ScatterPlot } from '../components/ScatterPlot';
 import { invoke } from '@tauri-apps/api/core';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useNavigation } from '../App';
 import { dataCache } from '../utils/DataCache';
 
@@ -24,8 +24,11 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
     setCoordinates,
     applyGate,
     analyzeSelection,
+    coordsBuffer,
+    selectionBuffer,
   } = useWasmWorker();
 
+  const [pointsCount, setPointsCount] = useState(0);
   const [selectedCount, setSelectedCount] = useState(0);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState('Initializing...');
@@ -41,11 +44,6 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
     try {
       setLoadingStatus('Fetching file paths...');
 
-      // Get file URLs from API
-      // API returns either:
-      // - Solo: Local path (absolute)
-      // - Hub: HTTP URL to server
-      // - Enterprise: Presigned S3 URL
       const response = await invoke<{ matrixPath: string | null; coordsPath: string | null }>(
         'get_experiment_files',
         { experimentId }
@@ -119,7 +117,9 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
   const loadCoordinatesData = async (url: string) => {
     // Load coordinates (much smaller file)
     const coords = await invoke<number[]>('load_coordinates', { url });
-    setCoordinates(new Float32Array(coords));
+    const floatCoords = new Float32Array(coords);
+    setCoordinates(floatCoords);
+    setPointsCount(floatCoords.length / 2);
   };
 
   const handleLassoComplete = (polygon: Float32Array) => {
@@ -127,8 +127,6 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
     applyGate(polygon, (count, _mask) => {
       setSelectedCount(count);
       console.log('Selected cells:', count);
-
-      // TODO: Update visualization with selection mask
     });
   };
 
@@ -183,7 +181,7 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
           <div className="absolute inset-0 flex items-center justify-center bg-main z-20">
             <div className="text-center">
               <div className="relative mb-6">
-                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-brand-primary mx-auto" />
+                <Loader2 size={64} className="animate-spin text-brand-primary mx-auto" />
                 <div className="absolute inset-0 animate-pulse rounded-full h-16 w-16 border border-brand-primary/20 mx-auto" />
               </div>
               <p className="text-white font-semibold tracking-tight text-lg mb-1">
@@ -196,10 +194,13 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
           <div className="h-full flex flex-row">
             {/* Visualization Panel */}
             <div className="flex-1 p-6 overflow-hidden">
-              <div className="bg-surface/30 backdrop-blur-sm rounded-2xl border border-white/10 p-4 h-full">
+              <div className="bg-surface/30 backdrop-blur-sm rounded-2xl border border-white/10 p-4 h-full relative">
                 <ScatterPlot
                   width={800}
                   height={600}
+                  pointsCount={pointsCount}
+                  coordsBuffer={coordsBuffer}
+                  selectionBuffer={selectionBuffer}
                   onLassoComplete={handleLassoComplete}
                 />
               </div>

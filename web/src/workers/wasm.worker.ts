@@ -2,10 +2,10 @@
 // Runs computationally intensive tasks without blocking the UI
 
 // TODO: Build WASM module first with: cd crates/openbio-wasm && wasm-pack build --target web
-// import init, { WasmEngine } from '../wasm/openbio_wasm';
+import init, { WasmEngine } from '../wasm/openbio_wasm';
 
-let engine: any | null = null;
-let sharedBuffer: SharedArrayBuffer | null = null;
+let engine: WasmEngine | null = null;
+let sharedBuffer: ArrayBuffer | null = null;
 
 // Message types from main thread
 interface WorkerMessage {
@@ -16,9 +16,8 @@ interface WorkerMessage {
 // Initialize WASM module
 async function initializeWasm() {
   try {
-    // TODO: Uncomment when WASM is built
-    // await init();
-    // engine = new WasmEngine();
+    await init();
+    engine = new WasmEngine();
     postMessage({ type: 'initialized' });
   } catch (error) {
     postMessage({ type: 'error', error: String(error) });
@@ -36,26 +35,37 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         break;
 
       case 'setSharedBuffer':
-        // Zone B Step 3: Store reference to SharedArrayBuffer
+        // Zone B Step 3: Store reference to ArrayBuffer (Shared or Regular)
         sharedBuffer = payload.buffer;
+        const selectionBuffer = payload.selectionBuffer;
+        const coordsBuffer = payload.coordsBuffer;
+
+        if (engine) {
+          if (selectionBuffer) {
+            // @ts-ignore - set_selection_buffer exists on our custom WasmEngine
+            engine.set_selection_buffer(selectionBuffer);
+          }
+          if (coordsBuffer) {
+            // @ts-ignore - set_coords_buffer exists on our custom WasmEngine
+            engine.set_coords_buffer(coordsBuffer);
+          }
+        }
+
         postMessage({ type: 'bufferSet' });
         break;
 
       case 'loadData':
-        // Zone B: Receive data chunks from Rust backend via Tauri IPC
-        // Zone C Step 3: Write data into SharedArrayBuffer
         if (!engine) {
           throw new Error('Engine not initialized');
         }
         if (!sharedBuffer) {
-          throw new Error('Shared buffer not set');
+          throw new Error('Buffer not set');
         }
 
-        // Convert SharedArrayBuffer to Uint8Array for WASM
         const dataView = new Uint8Array(sharedBuffer);
         const chunk = new Uint8Array(payload.chunk);
-        
-        // Write chunk into shared buffer at offset
+
+        // Write chunk into buffer at offset
         dataView.set(chunk, payload.offset || 0);
 
         // Parse matrix when all data is loaded
@@ -66,7 +76,6 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         break;
 
       case 'setCoordinates':
-        // Set cell coordinates from UMAP/t-SNE
         if (!engine) {
           throw new Error('Engine not initialized');
         }
@@ -75,43 +84,62 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         break;
 
       case 'applyGate':
-        // Zone C Step 1: Receive lasso coordinates from React
-        // Zone C Step 2: Run point-in-polygon algorithm on SAB data
         if (!engine) {
           throw new Error('Engine not initialized');
         }
-        
+
         const polygon = new Float32Array(payload.polygon);
         const count = engine.apply_gate(polygon);
-        
-        // Zone C Step 3: Update selection bitmask (another SAB)
+
+        // Update selection bitmask
         const selectionMask = engine.get_selection_mask();
-        
-        postMessage({ 
-          type: 'gateApplied', 
+
+        postMessage({
+          type: 'gateApplied',
           count,
           selectionMask: Array.from(selectionMask)
         });
         break;
 
       case 'analyzeSelection':
-        // Run differential expression on selected cells
         if (!engine) {
           throw new Error('Engine not initialized');
         }
-        
+
         const result = engine.analyze_selection();
         postMessage({ type: 'analysisComplete', result });
         break;
 
       case 'getCells':
-        // Get cell data for rendering
         if (!engine) {
           throw new Error('Engine not initialized');
         }
-        
+
         const cellsJson = engine.get_cells_json();
         postMessage({ type: 'cellsData', data: JSON.parse(cellsJson) });
+        break;
+
+      case 'loadPca':
+        if (!engine) {
+          throw new Error('Engine not initialized');
+        }
+
+        const pcaData = new Uint8Array(payload.data);
+        const delimiter = payload.delimiter || 44;
+
+        // @ts-ignore - load_pca exists on our custom WasmEngine
+        engine.load_pca(pcaData, delimiter);
+        postMessage({ type: 'pcaLoaded' });
+        break;
+
+      case 'getPcaData':
+        if (!engine) {
+          throw new Error('Engine not initialized');
+        }
+
+        // @ts-ignore - get_pca_json exists on our custom WasmEngine
+        const pcaJson = engine.get_pca_json();
+        postMessage({ type: 'pcaData', data: JSON.parse(pcaJson) });
         break;
 
       default:
@@ -122,5 +150,4 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   }
 };
 
-// Export type for main thread
-export {};
+export { };

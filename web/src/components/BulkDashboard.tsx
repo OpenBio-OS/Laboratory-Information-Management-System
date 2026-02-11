@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, FileText, Download, BarChart2, Database } from 'lucide-react';
+import { ArrowLeft, FileText, Download, BarChart2, Database, Table } from 'lucide-react';
 import { useNavigation } from '../App';
 import { invoke } from '@tauri-apps/api/core';
 import { ExperimentMetadataView } from './ExperimentMetadataView';
+import { PCAViewer } from './PCAViewer';
+import { TableView } from './TableView';
 
 interface BulkDashboardProps {
   experimentId: string;
@@ -15,6 +17,7 @@ interface Asset {
   assetType: string;
   createdAt: string;
   sizeBytes?: string;
+  url?: string; // Derived URL for fetching
 }
 
 export function BulkDashboard({ experimentId }: BulkDashboardProps) {
@@ -30,19 +33,31 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
 
   const loadAssets = async () => {
     setIsLoading(true);
+    console.log("[ui] loadAssets: starting for experiment", experimentId);
     try {
+      // This now returns a flattened list of files from directory assets (PIPE-23)
       const data = await invoke<Asset[]>('get_experiment_assets', { experimentId });
-      setAssets(data);
+      console.log("[ui] loadAssets: received", data?.length, "assets", data);
+      setAssets(data || []);
     } catch (err) {
-      console.error('Failed to load assets:', err);
-      setError('Failed to load analysis results.');
+      console.error('[ui] Failed to load assets:', err);
+      setError('Failed to load analysis results. Make sure the pipeline output was uploaded correctly.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const getAssetsByType = (type: string) => assets.filter(a => a?.assetType === type);
-  const getAssetsByName = (pattern: string) => assets.filter(a => a?.name && a.name.toLowerCase().includes(pattern.toLowerCase()));
+  const getAssetsByType = (type: string) => {
+    const filtered = assets.filter(a => a?.assetType === type);
+    console.log(`[ui] getAssetsByType(${type}): found`, filtered.length);
+    return filtered;
+  };
+
+  const getAssetsByName = (pattern: string) => {
+    const filtered = assets.filter(a => a?.name && a.name.toLowerCase().includes(pattern.toLowerCase()));
+    console.log(`[ui] getAssetsByName(${pattern}): found`, filtered.length, filtered);
+    return filtered;
+  };
 
   const openAsset = async (asset: Asset) => {
     if (!asset || !asset.id) return;
@@ -149,10 +164,10 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
         ) : (
           <div className="h-full bg-surface/30 flex flex-col overflow-hidden">
 
-            {/* Scrollable Content Inside Card */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            {/* Content Area - Scrolling handled per tab */}
+            <div className="flex-1 min-h-0 px-4 py-4">
               {activeTab === 'overview' && (
-                <div className="space-y-8">
+                <div className="space-y-8 h-full overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pr-2">
                   {/* Reports Section */}
                   {getAssetsByType('REPORT').length > 0 && (
                     <div>
@@ -228,22 +243,33 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
               )}
 
               {activeTab === 'pca' && (
-                <div className="h-full flex flex-col">
-                  {/* <h3 className="text-lg text-white font-medium mb-4 px-1">PCA Analysis</h3> */}
-                  <div className="flex-1 overflow-y-auto space-y-2">
-                    {getAssetsByName('pca').length > 0 ? (
-                      getAssetsByName('pca').map(a => (
-                        <AssetCard key={a.id} asset={a} onClick={() => openAsset(a)} />
-                      ))
-                    ) : (
-                      <p className="text-white/40 py-8 text-center">No PCA files found.</p>
-                    )}
-                  </div>
+                <div className="h-full">
+                  {getAssetsByName('pca').length > 0 ? (
+                    <PCAViewer
+                      pcaAsset={
+                        getAssetsByName('pca').find(a =>
+                          a.name.toLowerCase().endsWith('.txt') ||
+                          a.name.toLowerCase().endsWith('.tsv') ||
+                          a.name.toLowerCase().endsWith('.csv')
+                        ) || getAssetsByName('pca')[0]
+                      }
+                    />
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center bg-black/20 rounded-2xl border border-white/5 p-12 text-center">
+                      <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
+                        <BarChart2 className="text-white/20" size={32} />
+                      </div>
+                      <p className="text-white font-medium mb-1">No PCA results found</p>
+                      <p className="text-white/40 text-sm max-w-xs">
+                        This experiment doesn't seem to have PCA output. Ensure the pipeline has completed successfully.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
               {activeTab === 'heatmap' && (
-                <div className="h-full flex flex-col">
+                <div className="h-full flex flex-col overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pr-2">
                   {/* <h3 className="text-lg text-white font-medium mb-4 px-1">Heatmaps & Expression</h3> */}
                   <div className="flex-1 overflow-y-auto space-y-2">
                     {getAssetsByName('heatmap').concat(getAssetsByName('counts')).concat(getAssetsByName('tpm')).length > 0 ? (
@@ -258,22 +284,40 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
               )}
 
               {activeTab === 'de' && (
-                <div className="h-full flex flex-col">
-                  {/* <h3 className="text-lg text-white font-medium mb-4 px-1">Differential Expression</h3> */}
-                  <div className="flex-1 overflow-y-auto space-y-2">
-                    {getAssetsByName('deseq').concat(getAssetsByName('diff')).length > 0 ? (
-                      getAssetsByName('deseq').concat(getAssetsByName('diff')).map(a => (
-                        <AssetCard key={a.id} asset={a} onClick={() => openAsset(a)} />
-                      ))
-                    ) : (
-                      <p className="text-white/40 py-8 text-center">No Differential Expression results found.</p>
-                    )}
-                  </div>
+                <div className="h-full">
+                  {getAssetsByName('deseq').concat(getAssetsByName('diff')).length > 0 ? (
+                    <div className="h-full flex flex-col gap-4">
+                      {/* We'll just show the first one for now as a table, others below it as cards */}
+                      <div className="flex-1 min-h-0">
+                        <TableView
+                          title="Differential Expression Results"
+                          data={[]} // TODO: Fetch and parse the data
+                          onDownload={() => openAsset((getAssetsByName('deseq').concat(getAssetsByName('diff')))[0])}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="text-xs text-white/20 uppercase tracking-widest font-bold px-1">Alternative Result Sets</h4>
+                        {getAssetsByName('deseq').concat(getAssetsByName('diff')).slice(1).map(a => (
+                          <AssetCard key={a.id} asset={a} onClick={() => openAsset(a)} compact />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center bg-black/20 rounded-2xl border border-white/5 p-12 text-center">
+                      <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
+                        <Table className="text-white/20" size={32} />
+                      </div>
+                      <p className="text-white font-medium mb-1">No DE results found</p>
+                      <p className="text-white/40 text-sm max-w-xs">
+                        Differential expression analysis results (DESeq2/EdgeR) were not detected in current assets.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
               {activeTab === 'metadata' && (
-                <div className="h-full flex flex-col">
+                <div className="h-full flex flex-col overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pr-2">
                   <ExperimentMetadataView experimentId={experimentId} />
                 </div>
               )}

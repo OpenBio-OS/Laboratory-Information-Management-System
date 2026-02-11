@@ -33,7 +33,6 @@ import {
   Search,
   AlertTriangle,
   Microscope,
-  LayoutGrid,
   Check,
   Calendar as CalendarIcon,
   PocketKnife,

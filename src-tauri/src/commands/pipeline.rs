@@ -551,13 +551,18 @@ async fn run_nextflow_pipeline(
                     println!("[pipeline] Output detection and upload completed");
 
                     // Auto-cleanup: Remove temp directories to save space
+                    // Use tokio::fs for async cleanup
                     println!("[pipeline] Cleaning up temp directories...");
-                    if let Err(e) = std::fs::remove_dir_all(&out_dir) {
-                        eprintln!("[pipeline] [WARN] Failed to remove out_dir: {}", e);
-                    }
-                    if let Err(e) = std::fs::remove_dir_all(&work_dir) {
-                        eprintln!("[pipeline] [WARN] Failed to remove work_dir: {}", e);
-                    }
+                    let out_dir_clone = out_dir.clone();
+                    let work_dir_clone = work_dir.clone();
+                    tokio::spawn(async move {
+                        if out_dir_clone.exists() {
+                            let _ = tokio::fs::remove_dir_all(&out_dir_clone).await;
+                        }
+                        if work_dir_clone.exists() {
+                            let _ = tokio::fs::remove_dir_all(&work_dir_clone).await;
+                        }
+                    });
                 }
 
                 update_run_status(&api_base, &run_id, "COMPLETED", None).await;

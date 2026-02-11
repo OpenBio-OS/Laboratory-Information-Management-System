@@ -22,7 +22,7 @@ export function InventoryPage() {
   const { pendingItemId, clearPendingItem } = useNavigation();
 
   // Fetch samples
-  const { data: samples = [], isLoading: samplesLoading } = useQuery({
+  const { data: samples = [] } = useQuery({
     queryKey: ['samples'],
     queryFn: inventoryApi.listSamples
   });

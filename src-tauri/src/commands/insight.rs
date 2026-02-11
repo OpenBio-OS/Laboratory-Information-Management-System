@@ -86,17 +86,22 @@ pub async fn get_experiment_files(
 
     // Find specific assets by assetType OR name/path extension
     let find_path = |type_: &str, ext: &str| -> Option<String> {
-        files
-            .iter()
-            .find(|f| {
-                f["assetType"].as_str() == Some(type_)
-                    || f["name"]
-                        .as_str()
-                        .map(|n| n.to_lowercase().ends_with(ext))
-                        .unwrap_or(false)
-            })
-            .and_then(|f| f["path"].as_str())
-            .map(|s| s.to_string())
+        let found = files.iter().find(|f| {
+            f["assetType"].as_str() == Some(type_)
+                || f["name"]
+                    .as_str()
+                    .map(|n| n.to_lowercase().ends_with(ext))
+                    .unwrap_or(false)
+        });
+
+        if let Some(f) = found {
+            let path = f["path"].as_str().map(|s| s.to_string());
+            println!("Found asset {} at path: {:?}", type_, path);
+            path
+        } else {
+            println!("Asset {} not found (ext: {})", type_, ext);
+            None
+        }
     };
 
     let relative_matrix = find_path("MATRIX", ".mtx");
@@ -335,22 +340,73 @@ pub async fn get_experiment_assets(
     state: State<'_, crate::AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let api_base = get_api_base_url(&state);
-    let url = format!("{}/experiments/{}/files", api_base, experiment_id);
+    let server_root = api_base.trim_end_matches("/api").to_string();
+
+    // 1. Try analysis-files for experiment first
+    let url = format!("{}/experiments/{}/analysis-files", api_base, experiment_id);
+    println!("[tauri] get_experiment_assets: trying {}", url);
 
     let client = reqwest::Client::new();
-    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    let mut resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
 
+    // 2. Fallback to visualizations if not found
     if !resp.status().is_success() {
-        return Err(format!("Server returned {}", resp.status()));
+        println!(
+            "[tauri] get_experiment_assets: first tier failed ({}), trying fallback",
+            resp.status()
+        );
+        let viz_url = format!("{}/visualizations/{}/files", api_base, experiment_id);
+        resp = client
+            .get(&viz_url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            println!(
+                "[tauri] get_experiment_assets: fallback ALSO failed ({})",
+                resp.status()
+            );
+            return Err(format!(
+                "Server returned {} for both experiment and visualization",
+                resp.status()
+            ));
+        }
     }
 
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let files = json
-        .get("files")
-        .and_then(|f| f.as_array())
-        .ok_or("No files field in response")?
-        .clone();
+    let status = resp.status();
+    let mut files_json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
 
+    // 3. Post-process URLs to be absolute (essential for Tauri-React cross-origin)
+    if let Some(files_array) = files_json.as_array_mut() {
+        for file in files_array {
+            if let Some(url_val) = file.get_mut("url") {
+                if let Some(url_str) = url_val.as_str() {
+                    if url_str.starts_with("/") {
+                        let relative_path = if url_str.starts_with("/api/") {
+                            url_str.to_string()
+                        } else {
+                            format!("/api{}", url_str)
+                        };
+                        *url_val =
+                            serde_json::Value::String(format!("{}{}", server_root, relative_path));
+                    }
+                }
+            }
+        }
+    }
+
+    let files: Vec<serde_json::Value> = if let Some(arr) = files_json.as_array() {
+        arr.clone()
+    } else {
+        vec![]
+    };
+
+    println!(
+        "[tauri] get_experiment_assets: success ({}), found {} items",
+        status,
+        files.len()
+    );
     Ok(files)
 }
 

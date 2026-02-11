@@ -8,7 +8,7 @@ import {
   getApiBaseUrl,
 } from "../../lib/api";
 import { useNavigation } from "../../App";
-import { Plus, Search, X, Pin, ExternalLink, FileText, ChevronDown, Check, Trash, Upload, AlertTriangle, Trash2, Folder, BookText } from "lucide-react";
+import { Plus, Search, X, Pin, ExternalLink, FileText, ChevronDown, Check, Trash, Upload, AlertTriangle, Trash2, BookText } from "lucide-react";
 import { RichTextEditor } from "../../components/editor/RichTextEditor";
 
 // Portal-based dropdown that escapes modal overflow
