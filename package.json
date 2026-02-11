@@ -25,6 +25,7 @@
     "@tiptap/starter-kit": "^3.17.1",
     "@tiptap/suggestion": "^3.17.1",
     "ansi-to-react": "^6.2.6",
+    "idb": "^8.0.3",
     "lucide-react": "^0.563.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

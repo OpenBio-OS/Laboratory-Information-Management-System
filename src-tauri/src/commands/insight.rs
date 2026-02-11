@@ -205,17 +205,55 @@ pub async fn load_coordinates(path: String) -> Result<Vec<f32>, String> {
 /// Get metadata for an experiment (used in tooltips)
 #[tauri::command]
 pub async fn get_experiment_metadata(
-    experiment_id: String,
+    id: String, // Can be experiment_id OR visualization_id
     state: State<'_, crate::AppState>,
 ) -> Result<serde_json::Value, String> {
     let api_base = get_api_base_url(&state);
-    let url = format!("{}/experiments/{}", api_base, experiment_id); // This calls existing get_experiment which I updated to include pipelineRuns
-
     let client = reqwest::Client::new();
-    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+
+    // 1. Try fetching as a visualization first
+    let viz_url = format!("{}/visualizations/{}", api_base, id);
+    let viz_resp = client
+        .get(&viz_url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if viz_resp.status().is_success() {
+        let viz: serde_json::Value = viz_resp.json().await.map_err(|e| e.to_string())?;
+
+        // Map visualization type back to pipeline_type for the frontend container
+        let viz_type = viz["type"].as_str().unwrap_or("Analysis");
+        let pipeline_type = match viz_type {
+            "SCANVAS" => "scRNA-seq",
+            "BULK_DASHBOARD" => "Bulk RNA-seq",
+            "REPORT" => "Report",
+            other => other,
+        };
+
+        return Ok(serde_json::json!({
+            "experiment_id": viz["experimentId"],
+            "name": viz["name"],
+            "pipeline_type": pipeline_type,
+            "status": "READY",
+            "samples": [],
+            "equipment": [],
+        }));
+    }
+
+    // 2. Fallback to fetching as an experiment
+    let exp_url = format!("{}/experiments/{}", api_base, id);
+    let resp = client
+        .get(&exp_url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
 
     if !resp.status().is_success() {
-        return Err(format!("Server returned {}", resp.status()));
+        return Err(format!(
+            "Failed to find experiment or visualization with ID {}",
+            id
+        ));
     }
 
     let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
@@ -230,7 +268,6 @@ pub async fn get_experiment_metadata(
         .unwrap_or("unknown")
         .to_string();
 
-    // Construct metadata
     Ok(serde_json::json!({
         "experiment_id": json["id"],
         "name": json["name"],

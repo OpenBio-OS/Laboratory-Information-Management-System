@@ -55,43 +55,6 @@ export function PipelineConfigModal({ experimentId, onClose, onSubmit }: Pipelin
       setIsLoading(false);
     } catch (error) {
       console.error('Failed to load pipeline templates:', error);
-      // Fallback templates
-      const fallback: PipelineTemplate[] = [
-        {
-          name: 'nf-core/rnaseq',
-          description: 'RNA sequencing analysis pipeline',
-          version: '3.14.0',
-          parameters: [
-            { name: 'genome', label: 'Reference Genome', type: 'select', required: true, options: ['GRCh38', 'GRCm39', 'TAIR10'] },
-            { name: 'aligner', label: 'Aligner', type: 'select', required: true, default: 'star_salmon', options: ['star_salmon', 'star_rsem', 'hisat2'] },
-            { name: 'min_mapped_reads', label: 'Min Mapped Reads', type: 'number', required: false, default: '5' },
-            { name: 'trimming', label: 'Enable Trimming', type: 'boolean', required: false, default: 'true' },
-          ],
-        },
-        {
-          name: 'nf-core/scrnaseq',
-          description: 'Single-cell RNA-seq analysis',
-          version: '2.7.1',
-          parameters: [
-            { name: 'genome', label: 'Reference Genome', type: 'select', required: true, options: ['GRCh38', 'GRCm39'] },
-            { name: 'protocol', label: 'Protocol', type: 'select', required: true, options: ['10x', 'smartseq2', 'dropseq'] },
-            { name: 'chemistry', label: 'Chemistry Version', type: 'select', required: false, options: ['V2', 'V3', 'auto'], default: 'auto' },
-          ],
-        },
-        {
-          name: 'nf-core/atacseq',
-          description: 'ATAC-seq peak calling and analysis',
-          version: '2.1.2',
-          parameters: [
-            { name: 'genome', label: 'Reference Genome', type: 'select', required: true, options: ['GRCh38', 'GRCm39', 'TAIR10'] },
-            { name: 'narrow_peak', label: 'Call Narrow Peaks', type: 'boolean', required: false, default: 'true' },
-            { name: 'macs_gsize', label: 'MACS Genome Size', type: 'text', required: false },
-          ],
-        },
-      ];
-      setAvailablePipelines(fallback);
-      setSelectedPipeline(fallback[0].name);
-      initializeParameters(fallback[0]);
       setIsLoading(false);
     }
   };

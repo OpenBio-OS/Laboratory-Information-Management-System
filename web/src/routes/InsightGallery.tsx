@@ -1,251 +1,291 @@
-// Insight Gallery - Browse and open multiple single-cell visualizations
-
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useNavigation } from '../App';
-import { Plus } from 'lucide-react';
+import { Plus, Search, FlaskConical, BarChart2, Trash2, Clock, CheckCircle2, XCircle, AlertCircle, ChevronRight } from 'lucide-react';
 import { VisualizationModal } from '../components/VisualizationModal';
+import { dataCache } from '../utils/DataCache';
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 
-interface InsightInstance {
-  id: string;
+interface InsightItem {
+  id: string; // runId or vizId
   experimentId: string;
   experimentName: string;
   createdAt: string;
   dataType: string;
+  status: 'READY' | 'PROCESSING' | 'FAILED' | 'CANCELLED' | 'UNKNOWN';
   cellCount?: number;
-  geneCount?: number;
-  status: 'READY' | 'PROCESSING' | 'ERROR';
-  thumbnailUrl?: string;
+  isManual?: boolean;
+  type: 'run' | 'viz';
 }
+
+const SquircleIcon = ({ children, color = 'brand-primary', size = '10' }: { children: React.ReactNode, color?: string, size?: string }) => (
+  <div className="relative flex items-center justify-center shrink-0" style={{ width: size === '10' ? '40px' : '32px', height: size === '10' ? '40px' : '32px' }}>
+    <svg viewBox="0 0 100 100" className={`absolute inset-0 w-full h-full fill-${color}/10 stroke-${color}/20`} strokeWidth="4">
+      <path d="M 0,50 C 0,5 5,0 50,0 C 95,0 100,5 100,50 C 100,95 95,100 50,100 C 5,100 0,95 0,50" />
+    </svg>
+    <div className={`relative z-10 text-${color} scale-90`}>
+      {children}
+    </div>
+  </div>
+);
 
 export function InsightGallery() {
   const { navigateTo } = useNavigation();
-  const [instances, setInstances] = useState<InsightInstance[]>([]);
-  const [filter, setFilter] = useState<string>('all');
+  const [items, setItems] = useState<InsightItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showNewDialog, setShowNewDialog] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<InsightItem | null>(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
-    loadInsightInstances();
+    loadAllResults();
 
-    // Listen for refresh events
-    const handleRefresh = () => loadInsightInstances();
+    const handleRefresh = () => loadAllResults();
     window.addEventListener('refresh-insights', handleRefresh);
     return () => window.removeEventListener('refresh-insights', handleRefresh);
   }, []);
 
-  const loadInsightInstances = async () => {
+  const loadAllResults = async () => {
     try {
-      const data = await invoke<InsightInstance[]>('list_insight_instances');
-      setInstances(data);
+      // Fetch both sources with individual error handling
+      const pipelineRunsPromise = invoke<any[]>('list_pipeline_runs').catch(err => {
+        console.error('Failed to load pipeline runs:', err);
+        return [];
+      });
+      const visualizationsPromise = invoke<any[]>('list_insight_instances').catch(err => {
+        console.error('Failed to load insight instances:', err);
+        return [];
+      });
+
+      const [pipelineRuns, visualizations] = await Promise.all([
+        pipelineRunsPromise,
+        visualizationsPromise
+      ]);
+
+      const merged: InsightItem[] = [];
+
+      // 1. Add Visualizations (The persistent source of truth for "Ready" insights)
+      visualizations.forEach(viz => {
+        merged.push({
+          id: viz.id,
+          experimentId: viz.experimentId,
+          experimentName: viz.experimentName,
+          createdAt: viz.createdAt,
+          dataType: viz.dataType || 'Analysis',
+          status: 'READY',
+          isManual: viz.experimentId === 'standalone',
+          type: 'viz'
+        });
+      });
+
+      // 2. Add Pipeline Runs (only if they are NOT COMPLETED or if they don't have a Viz yet)
+      pipelineRuns.forEach(run => {
+        // Skip completed runs if we have a viz naming after it (heuristic: same experiment)
+        // Actually, we want to see COMPLETED runs too IF they aren't somehow matched?
+        // But the requirement says "isolated and detectable".
+        // Let's show non-completed runs to show PROGRESS.
+        if (run.status === 'COMPLETED') return;
+
+        const pipelineType = run.pipelineType || 'unknown';
+        const dataType = pipelineType.includes('scrnaseq') ? 'scRNA-seq' :
+          pipelineType.includes('atac') ? 'ATAC-seq' :
+            pipelineType.includes('spatial') ? 'Spatial' : 'Analysis';
+
+        merged.push({
+          id: run.id,
+          experimentId: run.experimentId,
+          experimentName: run.experimentName,
+          createdAt: run.completedAt || run.startedAt,
+          dataType,
+          status: (run.status === 'RUNNING' || run.status === 'PENDING' || run.status === 'UPLOADING') ? 'PROCESSING' :
+            run.status === 'FAILED' ? 'FAILED' : 'CANCELLED',
+          isManual: false,
+          type: 'run'
+        });
+      });
+
+      // Sort by date desc
+      merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      setItems(merged);
       setIsLoading(false);
     } catch (error) {
-      console.error('Failed to load insight instances:', error);
+      console.error('Failed to load results:', error);
       setIsLoading(false);
     }
   };
 
-  const openInsight = (instance: InsightInstance) => {
-    // For permanent visualizations, we use their own ID if they aren't linked to an experiment
-    // For pipeline refs, we use the experimentId
-    const itemId = instance.id.startsWith('insight-') ? instance.experimentId : instance.id;
-    navigateTo({ tab: 'insight', itemId });
+  const openItem = (item: InsightItem) => {
+    if (item.status === 'FAILED' || item.status === 'CANCELLED') return;
+    // item.id is vizId if type is 'viz', else item.experimentId if type is 'run'
+    navigateTo({ tab: 'insight', itemId: item.type === 'viz' ? item.id : item.experimentId });
   };
 
-  const deleteInsight = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this analysis?')) return;
+  const deleteItem = async (item: InsightItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setItemToDelete(item);
+  };
+
+  const confirmDelete = async () => {
+    if (!itemToDelete) return;
 
     try {
-      await invoke('delete_insight_instance', { id });
-      await loadInsightInstances();
+      if (itemToDelete.type === 'viz') {
+        await invoke('delete_insight_instance', { id: itemToDelete.id });
+        await dataCache.delete(itemToDelete.id);
+      } else {
+        // Deleting a pipeline run reference from here
+        // The user said: "pipelines are isolated and delectable, then the insights are isolated and delectable"
+        // This means deleting the run here should call delete_pipeline_run
+        await invoke('delete_pipeline_run', { runId: itemToDelete.id });
+      }
+      await loadAllResults();
     } catch (error) {
-      console.error('Failed to delete insight instance:', error);
+      console.error('Failed to delete item:', error);
+    } finally {
+      setItemToDelete(null);
     }
   };
 
-  const filteredInstances = instances.filter(instance => {
-    if (filter === 'all') return true;
-    return instance.dataType === filter;
-  });
+  const filteredItems = items.filter(item =>
+    item.experimentName.toLowerCase().includes(search.toLowerCase()) ||
+    item.dataType.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'READY': return <CheckCircle2 size={12} className="text-green-400" />;
+      case 'PROCESSING': return <Clock size={12} className="text-brand-primary animate-spin-slow" />;
+      case 'FAILED': return <XCircle size={12} className="text-red-400" />;
+      case 'CANCELLED': return <AlertCircle size={12} className="text-white/20" />;
+      default: return null;
+    }
+  };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full bg-main">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-primary mx-auto mb-4" />
-          <p className="text-white/60">Loading visualizations...</p>
+      <div className="flex items-center justify-center h-full bg-[#0a0a0a]">
+        <div className="text-center animate-in fade-in duration-500">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-primary mx-auto mb-4" />
+          <p className="text-white/40 text-xs font-semibold tracking-widest uppercase">Fetching Results</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-main">
-      {/* Header */}
-      <div className="bg-surface/30 backdrop-blur-md border-b border-white/5 px-6 py-4">
-        <div className="flex items-center justify-between mb-4">
+    <div className="h-full flex flex-col bg-[#0d0d0d]">
+      {/* Header - Matching PipelinManager/Inventory pattern */}
+      <div className="bg-[#121212] border-b border-white/5 px-6 py-4">
+        <div className="flex items-center justify-between gap-4 mb-2">
           <div>
-            <p className="text-sm text-white/60 my-auto">
-              Interactive data visualizations
-            </p>
+            <p className="text-sm text-white/60 my-auto">Explore analysis outputs and pipeline results</p>
           </div>
           <button
             onClick={() => setShowNewDialog(true)}
             className="flex items-center gap-2 px-3 py-1.5 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
           >
-            <Plus size={16} />
-            Create New Visualization
+            <Plus size={16} strokeWidth={3} />
+            Manual Upload
           </button>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'all'
-              ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
-              : 'text-white/60 hover:bg-white/5 border border-transparent'
-              }`}
-          >
-            All ({instances.length})
-          </button>
-          <button
-            onClick={() => setFilter('scRNA-seq')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'scRNA-seq'
-              ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
-              : 'text-white/60 hover:bg-white/5 border border-transparent'
-              }`}
-          >
-            scRNA-seq
-          </button>
-          <button
-            onClick={() => setFilter('ATAC-seq')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'ATAC-seq'
-              ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
-              : 'text-white/60 hover:bg-white/5 border border-transparent'
-              }`}
-          >
-            ATAC-seq
-          </button>
-          <button
-            onClick={() => setFilter('Spatial')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === 'Spatial'
-              ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20'
-              : 'text-white/60 hover:bg-white/5 border border-transparent'
-              }`}
-          >
-            Spatial
-          </button>
+        {/* Search Bar - Matching Dialog style */}
+        <div className="relative group max-w-2xl">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-brand-primary transition-colors" size={16} />
+          <input
+            type="text"
+            placeholder="Search by experiment, type, or date..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-brand-primary/50 transition-all text-sm shadow-inner"
+          />
         </div>
       </div>
 
-      {/* Gallery Grid */}
-      <div className="flex-1 overflow-auto p-6">
-        {filteredInstances.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-white/20 mb-4">
-              <svg className="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
+      {/* Results List - Professional Density */}
+      <div className="flex-1 overflow-auto">
+        <div className="p-6 space-y-1">
+          {filteredItems.length === 0 ? (
+            <div className="text-center py-20 bg-white/[0.01] rounded-2xl border border-dashed border-white/10 text-white/30">
+
+              <div className="w-16 h-16 mb-4 flex justify-center rounded-xl bg-white/5 items-center mx-auto">
+                <BarChart2 size={40} />
+
+              </div>
+              <h3 className="font-medium text-lg">No results found</h3>
+              <p className="text-sm">Check back once your pipelines are finished, or upload manually</p>
             </div>
-            <h3 className="text-lg font-medium text-white mb-1">
-              No visualizations yet
-            </h3>
-            <p className="text-white/50 mb-4">
-              Create your first single-cell visualization from a completed pipeline run
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredInstances.map((instance) => (
+          ) : (
+            filteredItems.map((item) => (
               <div
-                key={instance.id}
-                className="bg-neutral-800/30 backdrop-blur-sm border border-white/5 rounded-2xl overflow-hidden hover:border-white/10 transition-all cursor-pointer group"
-                onClick={() => openInsight(instance)}
+                key={item.id}
+                onClick={() => openItem(item)}
+                className="group flex items-center gap-4 p-3 rounded-xl bg-white/[0.025] border-white/[0.025] hover:bg-white/[0.04] border hover:border-white/5 transition-all cursor-pointer"
               >
-                {/* Thumbnail */}
-                <div className="h-48 bg-gradient-to-br from-brand-primary/10 to-purple-500/10 flex items-center justify-center relative">
-                  {instance.thumbnailUrl ? (
-                    <img
-                      src={instance.thumbnailUrl}
-                      alt={instance.experimentName}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="text-center">
-                      <svg className="mx-auto h-16 w-16 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                      </svg>
-                    </div>
-                  )}
-                  {instance.status === 'PROCESSING' && (
-                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary" />
-                    </div>
-                  )}
+                <SquircleIcon color={item.status === 'FAILED' ? 'red-400' : 'brand-primary'} size="10">
+                  <BarChart2 size={16} />
+                </SquircleIcon>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-[15px] font-semibold text-white/90 group-hover:text-brand-primary transition-colors truncate">
+                      {item.experimentName}
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.5 bg-white/5 text-white/40 border border-white/10 rounded-md font-bold uppercase tracking-wider">
+                      {item.dataType}
+                    </span>
+                    {item.isManual && (
+                      <span className="text-[9px] px-1.5 py-0.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 rounded-md font-bold uppercase tracking-wider">
+                        Manual
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4 text-[11px] text-white/30 font-medium">
+                    <span className="flex items-center gap-1.5">
+                      <FlaskConical size={12} className="opacity-50" />
+                      {item.experimentId.slice(0, 8)}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Clock size={12} className="opacity-50" />
+                      {new Date(item.createdAt).toLocaleDateString()}
+                    </span>
+                    <span className={`flex items-center gap-1.5 font-bold ${item.status === 'READY' ? 'text-green-500/70' :
+                      item.status === 'FAILED' ? 'text-red-500/70' :
+                        item.status === 'PROCESSING' ? 'text-brand-primary/70' : 'text-white/20'}`}>
+                      {getStatusIcon(item.status)}
+                      {item.status}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Details */}
-                <div className="p-4">
-                  <h3 className="font-semibold text-white mb-1 truncate group-hover:text-brand-primary transition-colors">
-                    {instance.experimentName}
-                  </h3>
-                  <div className="flex items-center gap-2 text-sm text-white/60 mb-3">
-                    <span className="px-2 py-0.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 rounded text-xs font-medium">
-                      {instance.dataType}
-                    </span>
-                    <span className="text-xs">
-                      {new Date(instance.createdAt).toLocaleDateString()}
-                    </span>
-                  </div>
-
-                  {instance.status === 'READY' && (
-                    <div className="grid grid-cols-2 gap-2 text-xs text-white/50 mb-3">
-                      {instance.cellCount && (
-                        <div>
-                          <span className="font-medium text-white/70">Cells:</span> {instance.cellCount.toLocaleString()}
-                        </div>
-                      )}
-                      {instance.geneCount && (
-                        <div>
-                          <span className="font-medium text-white/70">Genes:</span> {instance.geneCount.toLocaleString()}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openInsight(instance);
-                      }}
-                      className="flex-1 px-3 py-1.5 bg-brand-primary text-black font-semibold rounded-lg text-sm hover:bg-brand-secondary transition-all"
-                    >
-                      Open
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteInsight(instance.id);
-                      }}
-                      className="px-3 py-1.5 border border-white/10 text-white/80 rounded-lg text-sm hover:bg-white/5 transition-all"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
+                <div className="flex items-center gap-1 pr-1">
+                  <button
+                    onClick={(e) => deleteItem(item, e)}
+                    className="p-2 text-white/5 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                    title="Archive"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                  <ChevronRight size={16} className="text-white/10 group-hover:text-white/40 group-hover:translate-x-1 transition-all" />
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            ))
+          )}
+        </div>
       </div>
-
       {showNewDialog && (
         <VisualizationModal onClose={() => setShowNewDialog(false)} />
+      )}
+
+      {itemToDelete && (
+        <DeleteConfirmModal
+          onClose={() => setItemToDelete(null)}
+          onConfirm={confirmDelete}
+          title="Delete Analysis"
+          message={`Are you sure you want to delete "${itemToDelete.experimentName}"? This will permanently remove the analysis result. Raw data in the experiment will be preserved.`}
+          confirmWord="DELETE"
+        />
       )}
     </div>
   );

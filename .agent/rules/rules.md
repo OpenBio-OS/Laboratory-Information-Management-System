@@ -100,7 +100,7 @@ DO NOT EDIT THE MIGRATION FILES AFTER THEY'RE CREATED. THE AGENT FILE SAYS NEVER
     a. Editing `database/schema.prisma`.
     b. Running `npx prisma migrate dev --name <name> --schema database/schema.prisma`.
 4. **IMMUTABLE MIGRATIONS**: Never edit existing files in `database/migrations/`.
-5. **FAILING TO FOLLOW THESE RULES CAUSES SERVER PANICS.** If you create an index manually, and then a migration tries to create it again, the server WILL NOT START.
+5. **FAILING TO FOLLOW THESE RULES CAUSES SERVER PANICS.** If you create an index manually, and then a migration tries to create it again, the server WILL NOT START. DO NOT UNDER ANY CIRCUMSTANCES BREAK THESE RULES.
 
 ---
 

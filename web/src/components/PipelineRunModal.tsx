@@ -44,7 +44,7 @@ interface PipelineTemplate {
   version: string;
   parameters: ParameterDefinition[];
   source?: PipelineSource;
-  isCustom?: boolean;
+  is_custom?: boolean;
 }
 
 interface ParameterDefinition {
@@ -269,64 +269,7 @@ export function PipelineRunModal({ onClose, onSuccess }: PipelineRunModalProps) 
       }
     } catch (error) {
       console.error('Failed to load pipeline templates:', error);
-      const fallback: PipelineTemplate[] = [
-        {
-          name: 'nf-core/rnaseq',
-          description: 'RNA sequencing analysis pipeline',
-          version: '3.14.0',
-          parameters: [
-            {
-              name: 'genome',
-              label: 'Reference Genome',
-              type: 'select',
-              required: true,
-              options: [
-                'GRCh38',      // Human
-                'GRCh37',      // Human (legacy)
-                'GRCm39',      // Mouse
-                'GRCm38',      // Mouse (legacy)
-                'R64-1-1',     // Yeast (S. cerevisiae)
-                'WBcel235',    // C. elegans
-                'BDGP6',       // Drosophila
-                'TAIR10',      // Arabidopsis
-                'GRCz11',      // Zebrafish
-                'Rnor_6.0',    // Rat
-                'CanFam3.1',   // Dog
-                'Sscrofa11.1', // Pig
-                'UMD3.1',      // Bovine
-              ]
-            },
-            { name: 'aligner', label: 'Aligner', type: 'select', required: true, default: 'star_salmon', options: ['star_salmon', 'star_rsem', 'hisat2'] },
-          ],
-        },
-        {
-          name: 'nf-core/scrnaseq',
-          description: 'Single-cell RNA-seq analysis',
-          version: '2.7.1',
-          parameters: [
-            {
-              name: 'genome',
-              label: 'Reference Genome',
-              type: 'select',
-              required: true,
-              options: ['GRCh38', 'GRCh37', 'GRCm39', 'GRCm38']
-            },
-            { name: 'protocol', label: 'Protocol', type: 'select', required: true, options: ['10x', 'smartseq2', 'dropseq'] },
-          ],
-        },
-        {
-          name: 'nf-core/atacseq',
-          description: 'ATAC-seq peak calling and analysis',
-          version: '2.1.2',
-          parameters: [
-            { name: 'genome', label: 'Reference Genome', type: 'select', required: true, options: ['GRCh38', 'GRCm39', 'TAIR10'] },
-            { name: 'narrow_peak', label: 'Call Narrow Peaks', type: 'boolean', required: false, default: 'true' },
-          ],
-        },
-      ];
-      setAvailablePipelines(fallback);
-      setSelectedTemplate(fallback[0]);
-      initializeParameters(fallback[0]);
+      setError('Failed to load pipeline templates. Please check your connection.');
     }
   };
 
@@ -690,8 +633,8 @@ export function PipelineRunModal({ onClose, onSuccess }: PipelineRunModalProps) 
               </div>
 
               {/* Pipeline Selection with CustomSelect */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
                   <label className="block text-sm font-medium text-white/60">Pipeline Type *</label>
                   <button
                     onClick={() => setShowAddPipeline(true)}
@@ -708,6 +651,24 @@ export function PipelineRunModal({ onClose, onSuccess }: PipelineRunModalProps) 
                   placeholder="Select a pipeline"
                   searchable={pipelineOptions.length > 5}
                 />
+
+                {selectedTemplate?.description && (
+                  <div className="px-4 py-3 bg-white/5 border border-white/10 rounded-xl">
+                    <p className="text-xs text-white/60 leading-relaxed italic">
+                      {selectedTemplate.description}
+                    </p>
+                    {selectedTemplate.source && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-[10px] px-1.5 py-0.5 bg-brand-primary/10 text-brand-primary rounded uppercase font-bold tracking-wider">
+                          {selectedTemplate.source.type}
+                        </span>
+                        <span className="text-[10px] text-white/30 truncate">
+                          {selectedTemplate.source.location}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Pipeline Parameters */}
@@ -718,12 +679,14 @@ export function PipelineRunModal({ onClose, onSuccess }: PipelineRunModalProps) 
                   </h3>
 
                   {selectedTemplate.parameters.map((param) => (
-                    <div key={param.name}>
-                      <label className="block text-sm font-medium text-white/80 mb-1.5">
+                    <div key={param.name} className="space-y-1.5">
+                      <label className="block text-sm font-medium text-white/80 ml-1">
                         {param.label} {param.required && <span className="text-red-400">*</span>}
                       </label>
                       {param.description && (
-                        <p className="text-xs text-white/40 mb-2">{param.description}</p>
+                        <p className="text-[11px] text-white/40 ml-1 leading-normal">
+                          {param.description}
+                        </p>
                       )}
 
                       {param.type === 'select' && param.options && (
@@ -841,8 +804,8 @@ export function PipelineRunModal({ onClose, onSuccess }: PipelineRunModalProps) 
         {showAddPipeline && (
           <AddPipelineModal
             onClose={() => setShowAddPipeline(false)}
-            onAdd={(pipeline) => {
-              setAvailablePipelines((prev) => [...prev, { ...pipeline, isCustom: true }]);
+            onSuccess={() => {
+              loadPipelineTemplates();
               setShowAddPipeline(false);
             }}
           />
@@ -976,10 +939,10 @@ function ParameterTypeSelect({
 // Add Pipeline Modal Component
 function AddPipelineModal({
   onClose,
-  onAdd,
+  onSuccess,
 }: {
   onClose: () => void;
-  onAdd: (pipeline: PipelineTemplate) => void;
+  onSuccess: () => void;
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -1006,19 +969,37 @@ function AddPipelineModal({
     setParameters((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = () => {
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
     if (!name.trim() || !sourceLocation.trim()) return;
-    onAdd({
-      name: name.trim(),
-      description: description.trim(),
-      version,
-      source: {
-        type: sourceType,
-        location: sourceLocation.trim(),
-        revision: revision.trim() || undefined,
-      },
-      parameters: parameters.filter((p) => p.name.trim() && p.label.trim()),
-    });
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const template: PipelineTemplate = {
+        name: name.trim(),
+        description: description.trim(),
+        version,
+        source: {
+          type: sourceType,
+          location: sourceLocation.trim(),
+          revision: revision.trim() || undefined,
+        },
+        parameters: parameters.filter((p) => p.name.trim() && p.label.trim()),
+        is_custom: true,
+      };
+
+      await invoke('save_pipeline_template', { template });
+      onSuccess();
+    } catch (err: any) {
+      console.error('Failed to save pipeline template:', err);
+      setError(err.toString());
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -1034,6 +1015,13 @@ function AddPipelineModal({
             <X size={18} />
           </button>
         </div>
+
+        {error && (
+          <div className="px-6 py-3 bg-red-500/10 border-b border-red-500/20 flex items-center gap-2 text-red-400 text-xs">
+            <AlertCircle size={14} />
+            {error}
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-6 space-y-4">
@@ -1246,10 +1234,11 @@ function AddPipelineModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!name.trim() || !sourceLocation.trim()}
-            className="px-6 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 shadow-[0_0_20px_rgba(23,185,120,0.2)]"
+            disabled={!name.trim() || !sourceLocation.trim() || isSaving}
+            className="px-6 py-2 bg-brand-primary text-black text-sm font-semibold rounded-lg hover:bg-brand-secondary transition-all disabled:opacity-50 shadow-[0_0_20px_rgba(23,185,120,0.2)] flex items-center gap-2"
           >
-            Add Pipeline
+            {isSaving && <Loader2 size={16} className="animate-spin" />}
+            {isSaving ? 'Saving...' : 'Add Pipeline'}
           </button>
         </div>
       </div>

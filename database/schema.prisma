@@ -335,6 +335,9 @@ model PipelineRun {
   // Config used
   configJson String? // JSON string
 
+  // Snapshot of metadata at time of run (preserves experiment context)
+  metadataSnapshot String?
+
   // Outputs
   outputs DigitalAsset[]
 
@@ -354,6 +357,9 @@ model Visualization {
 
   // Link to specific assets if needed (e.g. manual upload)
   assets DigitalAsset[]
+
+  // Snapshot of metadata at time of visualization creation (preserves context)
+  metadataSnapshot String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

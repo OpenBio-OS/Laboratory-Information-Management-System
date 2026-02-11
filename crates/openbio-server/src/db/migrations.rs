@@ -15,40 +15,8 @@ struct Migration {
 fn get_migrations() -> Vec<Migration> {
     vec![
         Migration {
-            name: "20260127023127_init".to_string(),
-            sql: include_str!("../../../../database/migrations/20260127023127_init/migration.sql"),
-        },
-        Migration {
-            name: "20260128074434_add_notebook_equipment_paper".to_string(),
-            sql: include_str!("../../../../database/migrations/20260128074434_add_notebook_equipment_paper/migration.sql"),
-        },
-        Migration {
-            name: "20260128081537_refactor_experiment_notebook".to_string(),
-            sql: include_str!("../../../../database/migrations/20260128081537_refactor_experiment_notebook/migration.sql"),
-        },
-        Migration {
-            name: "20260205125803_add_library_collections".to_string(),
-            sql: include_str!("../../../../database/migrations/20260205125803_add_library_collections/migration.sql"),
-        },
-        Migration {
-            name: "20260206054604_add_experiment_folders".to_string(),
-            sql: include_str!("../../../../database/migrations/20260206054604_add_experiment_folders/migration.sql"),
-        },
-        Migration {
-            name: "20260207024808_add_equipment_locations_and_maintenance".to_string(),
-            sql: include_str!("../../../../database/migrations/20260207024808_add_equipment_locations_and_maintenance/migration.sql"),
-        },
-        Migration {
-            name: "20260207055759_add_equipment_lock".to_string(),
-            sql: include_str!("../../../../database/migrations/20260207055759_add_equipment_lock/migration.sql"),
-        },
-        Migration {
-            name: "20260209145633_add_visualization_model".to_string(),
-            sql: include_str!("../../../../database/migrations/20260209145633_add_visualization_model/migration.sql"),
-        },
-        Migration {
-            name: "20260210160509_add_asset_indexes".to_string(),
-            sql: include_str!("../../../../database/migrations/20260210160509_add_asset_indexes/migration.sql"),
+            name: "20260211034746_init".to_string(),
+            sql: include_str!("../../../../database/migrations/20260211034746_init/migration.sql"),
         },
     ]
 }

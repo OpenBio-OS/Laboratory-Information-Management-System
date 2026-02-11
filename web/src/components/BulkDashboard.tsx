@@ -209,9 +209,9 @@ export function BulkDashboard({ experimentId }: BulkDashboardProps) {
                   )}
 
                   {assets.length === 0 && (
-                    <div className="text-center py-20">
-                      <p className="text-white/40">No analysis files found.</p>
-                    </div>
+                    <p className="text-white/40 py-8 text-center">
+                      No analysis files found.
+                    </p>
                   )}
                 </div>
               )}

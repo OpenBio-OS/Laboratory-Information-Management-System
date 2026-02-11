@@ -9,7 +9,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub struct StartPipelineRequest {
     pub experiment_id: String,
     pub pipeline_type: String,
@@ -55,7 +55,7 @@ pub struct PipelineInfo {
     pub version: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ParameterDefinition {
     pub name: String,
     pub label: String,
@@ -66,12 +66,21 @@ pub struct ParameterDefinition {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct PipelineTemplate {
     pub name: String,
     pub description: String,
     pub version: String,
+    pub source: Option<PipelineSource>,
     pub parameters: Vec<ParameterDefinition>,
+    pub is_custom: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct PipelineSource {
+    pub r#type: String, // "nf-core" | "github" | "local"
+    pub location: String,
+    pub revision: Option<String>,
 }
 
 /// Helper to get API base URL
@@ -102,6 +111,24 @@ fn get_api_base_url_from_handle(app: &AppHandle) -> String {
             .unwrap_or_else(|| "http://localhost:3000".to_string());
         format!("{}/pipelines", base.trim_end_matches('/'))
     }
+}
+
+// Helper to get persistent pipeline templates file
+fn get_templates_path() -> std::path::PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("software.is-a.openbio")
+        .join("pipelines")
+        .join("templates.json")
+}
+
+// Helper to get custom scripts directory
+fn get_scripts_dir() -> std::path::PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("software.is-a.openbio")
+        .join("pipelines")
+        .join("scripts")
 }
 
 // Helper to get persistent log directory
@@ -720,33 +747,175 @@ pub async fn reset_pipeline_env(app_handle: tauri::AppHandle) -> Result<(), Stri
 /// List available pipeline types
 #[tauri::command]
 pub async fn list_pipelines() -> Result<Vec<PipelineInfo>, String> {
-    Ok(vec![
-        PipelineInfo {
-            name: "nf-core/rnaseq".to_string(),
-            description: "RNA sequencing analysis pipeline".to_string(),
-            version: "3.14.0".to_string(),
-        },
-        PipelineInfo {
-            name: "nf-core/atacseq".to_string(),
-            description: "ATAC-seq analysis pipeline".to_string(),
-            version: "2.1.2".to_string(),
-        },
-        PipelineInfo {
-            name: "nf-core/scrnaseq".to_string(),
-            description: "Single-cell RNA-seq analysis pipeline".to_string(),
-            version: "2.5.1".to_string(),
-        },
-    ])
+    let templates = get_pipeline_templates().await?;
+    Ok(templates
+        .into_iter()
+        .map(|t| PipelineInfo {
+            name: t.name,
+            description: t.description,
+            version: t.version,
+        })
+        .collect())
 }
 
 /// Get detailed pipeline templates with parameters
 #[tauri::command]
 pub async fn get_pipeline_templates() -> Result<Vec<PipelineTemplate>, String> {
-    Ok(vec![
+    let path = get_templates_path();
+
+    let mut templates: Vec<PipelineTemplate> = if path.exists() {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read templates: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse templates: {}", e))?
+    } else {
+        get_default_templates()
+    };
+
+    // Merge in any new default templates or update existing non-custom ones
+    // This ensures users get the latest genome lists/parameter updates
+    let defaults = get_default_templates();
+    let mut changed = !path.exists();
+
+    for d in defaults {
+        if let Some(pos) = templates.iter().position(|t| t.name == d.name) {
+            // If it's a default one (not marked custom), ensure it matches code's latest
+            if templates[pos].is_custom != Some(true) && templates[pos] != d {
+                templates[pos] = d;
+                changed = true;
+            }
+        } else {
+            templates.push(d);
+            changed = true;
+        }
+    }
+
+    // Save back if changed (and not first time)
+    if changed && path.exists() {
+        let json = serde_json::to_string_pretty(&templates)
+            .map_err(|e| format!("Failed to serialize templates: {}", e))?;
+        let _ = std::fs::write(&path, json);
+    }
+
+    Ok(templates)
+}
+
+/// Save a new pipeline template
+#[tauri::command]
+pub async fn save_pipeline_template(mut template: PipelineTemplate) -> Result<(), String> {
+    let path = get_templates_path();
+    let scripts_dir = get_scripts_dir();
+
+    // Ensure scripts directory exists
+    std::fs::create_dir_all(&scripts_dir)
+        .map_err(|e| format!("Failed to create scripts directory: {}", e))?;
+
+    // If source is local, copy the script (directory or file) to our local storage
+    if let Some(ref mut source) = template.source {
+        if source.r#type == "local" {
+            let src_path = std::path::PathBuf::from(&source.location);
+            if src_path.exists() {
+                let dest_name = src_path
+                    .file_name()
+                    .ok_or("Invalid source path file name")?
+                    .to_string_lossy()
+                    .to_string();
+                let dest_path = scripts_dir.join(&dest_name);
+
+                if src_path.is_dir() {
+                    // Simple recursive copy (directory)
+                    copy_dir_recursive(&src_path, &dest_path)?;
+                } else {
+                    // Copy file
+                    std::fs::copy(&src_path, &dest_path)
+                        .map_err(|e| format!("Failed to copy script file: {}", e))?;
+                }
+
+                // Update location to just the name, as it's now in our scripts dir
+                source.location = dest_name;
+            }
+        }
+    }
+
+    let mut templates = if path.exists() {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read templates: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse templates: {}", e))?
+    } else {
+        get_default_templates()
+    };
+
+    // Update or push
+    if let Some(pos) = templates
+        .iter()
+        .position(|t: &PipelineTemplate| t.name == template.name)
+    {
+        templates[pos] = template;
+    } else {
+        templates.push(template);
+    }
+
+    let json = serde_json::to_string_pretty(&templates)
+        .map_err(|e| format!("Failed to serialize templates: {}", e))?;
+
+    std::fs::write(&path, json).map_err(|e| format!("Failed to save templates: {}", e))?;
+
+    Ok(())
+}
+
+/// Delete a pipeline template
+#[tauri::command]
+pub async fn delete_pipeline_template(name: String) -> Result<(), String> {
+    let path = get_templates_path();
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read templates: {}", e))?;
+    let mut templates: Vec<PipelineTemplate> =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse templates: {}", e))?;
+
+    templates.retain(|t| t.name != name);
+
+    let json = serde_json::to_string_pretty(&templates)
+        .map_err(|e| format!("Failed to serialize templates: {}", e))?;
+
+    std::fs::write(&path, json).map_err(|e| format!("Failed to save templates: {}", e))?;
+
+    Ok(())
+}
+
+/// Helper for recursive directory copy
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| format!("Failed to create dest dir: {}", e))?;
+    for entry in std::fs::read_dir(src).map_err(|e| format!("Failed to read src dir: {}", e))? {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let ty = entry
+            .file_type()
+            .map_err(|e| format!("Failed to get file type: {}", e))?;
+        if ty.is_dir() {
+            copy_dir_recursive(&entry.path(), &dst.join(entry.file_name()))?;
+        } else {
+            std::fs::copy(entry.path(), dst.join(entry.file_name()))
+                .map_err(|e| format!("Failed to copy file: {}", e))?;
+        }
+    }
+    Ok(())
+}
+
+/// Helper to get default templates
+fn get_default_templates() -> Vec<PipelineTemplate> {
+    vec![
         PipelineTemplate {
             name: "nf-core/rnaseq".to_string(),
-            description: "RNA sequencing analysis pipeline".to_string(),
+            description: "Bulk RNA-sequencing analysis pipeline. Includes QC, alignment (STAR), and quantification (Salmon/RSEM). Ideal for gene expression studies.".to_string(),
             version: "3.14.0".to_string(),
+            source: Some(PipelineSource {
+                r#type: "nf-core".to_string(),
+                location: "rnaseq".to_string(),
+                revision: Some("3.14.0".to_string()),
+            }),
+            is_custom: Some(false),
             parameters: vec![
                 ParameterDefinition {
                     name: "genome".to_string(),
@@ -756,26 +925,22 @@ pub async fn get_pipeline_templates() -> Result<Vec<PipelineTemplate>, String> {
                     default: Some("GRCh38".to_string()),
                     options: Some(vec![
                         "GRCh38".to_string(),
-                        "GRCh37".to_string(),
                         "GRCm39".to_string(),
-                        "GRCm38".to_string(),
-                        "R64-1-1".to_string(),
-                        "WBcel235".to_string(),
-                        "BDGP6".to_string(),
-                        "TAIR10".to_string(),
                         "GRCz11".to_string(),
                         "Rnor_6.0".to_string(),
-                        "CanFam3.1".to_string(),
-                        "Sscrofa11.1".to_string(),
-                        "UMD3.1".to_string(),
+                        "BDGP6".to_string(),
+                        "WBcel235".to_string(),
+                        "TAIR10".to_string(),
+                        "R64-1-1".to_string(),
+                        "IRGSP-1.0".to_string(),
+                        "hg38".to_string(),
+                        "mm10".to_string(),
                     ]),
-                    description: Some(
-                        "The reference genome to use for alignment and quantification.".to_string(),
-                    ),
+                    description: Some("Common reference genomes from iGenomes. Select the one matching your species.".to_string()),
                 },
                 ParameterDefinition {
                     name: "aligner".to_string(),
-                    label: "Aligner".to_string(),
+                    label: "Alignment Method".to_string(),
                     r#type: "select".to_string(),
                     required: true,
                     default: Some("star_salmon".to_string()),
@@ -784,14 +949,20 @@ pub async fn get_pipeline_templates() -> Result<Vec<PipelineTemplate>, String> {
                         "star_rsem".to_string(),
                         "hisat2".to_string(),
                     ]),
-                    description: Some("The alignment tool to use.".to_string()),
+                    description: Some("STAR-Salmon is the industry standard for high accuracy.".to_string()),
                 },
             ],
         },
         PipelineTemplate {
             name: "nf-core/scrnaseq".to_string(),
-            description: "Single-cell RNA-seq analysis pipeline".to_string(),
+            description: "Single-cell RNA-sequencing analysis. Supports 10x Genomics, Smart-seq2, and more. Performs cell calling and quantification.".to_string(),
             version: "2.5.1".to_string(),
+            source: Some(PipelineSource {
+                r#type: "nf-core".to_string(),
+                location: "scrnaseq".to_string(),
+                revision: Some("2.5.1".to_string()),
+            }),
+            is_custom: Some(false),
             parameters: vec![
                 ParameterDefinition {
                     name: "genome".to_string(),
@@ -799,25 +970,137 @@ pub async fn get_pipeline_templates() -> Result<Vec<PipelineTemplate>, String> {
                     r#type: "select".to_string(),
                     required: true,
                     default: Some("GRCh38".to_string()),
-                    options: Some(vec!["GRCh38".to_string(), "GRCm39".to_string()]),
-                    description: Some("Reference genome for single-cell alignment.".to_string()),
+                    options: Some(vec![
+                        "GRCh38".to_string(),
+                        "GRCm39".to_string(),
+                        "GRCz11".to_string(),
+                        "BDGP6".to_string(),
+                    ]),
+                    description: Some("Reference genome for single-cell alignment (STAR-solo/CellRanger).".to_string()),
                 },
                 ParameterDefinition {
                     name: "protocol".to_string(),
-                    label: "Protocol".to_string(),
+                    label: "Library Protocol".to_string(),
                     r#type: "select".to_string(),
                     required: true,
-                    default: Some("10XV3".to_string()),
-                    options: Some(vec![
-                        "10XV2".to_string(),
-                        "10XV3".to_string(),
-                        "drop-seq".to_string(),
-                    ]),
-                    description: Some("Single-cell sequencing protocol.".to_string()),
+                    default: Some("10xv3".to_string()),
+                    options: Some(vec!["10xv3".to_string(), "10xv2".to_string(), "smartseq2".to_string()]),
+                    description: Some("The experimental protocol used to prepare the libraries.".to_string()),
                 },
             ],
         },
-    ])
+        PipelineTemplate {
+            name: "nf-core/sarek".to_string(),
+            description: "Germline and Somatic variant calling. Used for identifying mutations in cancer or genetic studies.".to_string(),
+            version: "3.4.0".to_string(),
+            source: Some(PipelineSource {
+                r#type: "nf-core".to_string(),
+                location: "sarek".to_string(),
+                revision: Some("3.4.0".to_string()),
+            }),
+            is_custom: Some(false),
+            parameters: vec![
+                ParameterDefinition {
+                    name: "genome".to_string(),
+                    label: "Genome".to_string(),
+                    r#type: "select".to_string(),
+                    required: true,
+                    default: Some("GRCh38".to_string()),
+                    options: Some(vec![
+                        "GRCh38".to_string(),
+                        "GRCm39".to_string(),
+                        "GRCz11".to_string(),
+                        "hg38".to_string(),
+                    ]),
+                    description: Some("Reference genome for variant calling.".to_string()),
+                },
+                ParameterDefinition {
+                    name: "tools".to_string(),
+                    label: "Variant Callers".to_string(),
+                    r#type: "text".to_string(),
+                    required: false,
+                    default: Some("haplotypecaller,strelka".to_string()),
+                    options: None,
+                    description: Some("Comma-separated list of callers (e.g., haplotypecaller, freebayes).".to_string()),
+                },
+            ],
+        },
+        PipelineTemplate {
+            name: "nf-core/atacseq".to_string(),
+            description: "ATAC-seq analysis for chromatin accessibility. Includes peak calling and QC.".to_string(),
+            version: "2.1.2".to_string(),
+            source: Some(PipelineSource {
+                r#type: "nf-core".to_string(),
+                location: "atacseq".to_string(),
+                revision: Some("2.1.2".to_string()),
+            }),
+            is_custom: Some(false),
+            parameters: vec![
+                ParameterDefinition {
+                    name: "genome".to_string(),
+                    label: "Genome".to_string(),
+                    r#type: "select".to_string(),
+                    required: true,
+                    options: Some(vec![
+                        "GRCh38".to_string(),
+                        "GRCm39".to_string(),
+                        "GRCz11".to_string(),
+                        "TAIR10".to_string(),
+                    ]),
+                    default: Some("GRCh38".to_string()),
+                    description: None,
+                },
+            ],
+        },
+        PipelineTemplate {
+            name: "nf-core/chipseq".to_string(),
+            description: "ChIP-seq analysis pipeline for protein-DNA interactions. Supports peak calling and differential binding.".to_string(),
+            version: "2.0.0".to_string(),
+            source: Some(PipelineSource {
+                r#type: "nf-core".to_string(),
+                location: "chipseq".to_string(),
+                revision: Some("2.0.0".to_string()),
+            }),
+            is_custom: Some(false),
+            parameters: vec![],
+        },
+        PipelineTemplate {
+            name: "nf-core/taxprofiler".to_string(),
+            description: "Taxonomic profiling of shotgun metagenomic data. Supports Kraken2, MetaPhlAn, etc.".to_string(),
+            version: "1.1.2".to_string(),
+            source: Some(PipelineSource {
+                r#type: "nf-core".to_string(),
+                location: "taxprofiler".to_string(),
+                revision: Some("1.1.2".to_string()),
+            }),
+            is_custom: Some(false),
+            parameters: vec![],
+        },
+        PipelineTemplate {
+            name: "nf-core/mag".to_string(),
+            description: "Assembly and binning of Metagenome-Assembled Genomes (MAGs).".to_string(),
+            version: "3.2.1".to_string(),
+            source: Some(PipelineSource {
+                r#type: "nf-core".to_string(),
+                location: "mag".to_string(),
+                revision: Some("3.2.1".to_string()),
+            }),
+            is_custom: Some(false),
+            parameters: vec![],
+        },
+        PipelineTemplate {
+            name: "nf-core/differentialabundance".to_string(),
+            description: "Statistical analysis for differential abundance of genes, proteins, or metabolites.".to_string(),
+            version: "1.5.0".to_string(),
+            source: Some(PipelineSource {
+                r#type: "nf-core".to_string(),
+                location: "differentialabundance".to_string(),
+                revision: Some("1.5.0".to_string()),
+            }),
+            is_custom: Some(false),
+            parameters: vec![],
+        },
+    ]
 }
 
 /// Get logs for a pipeline run (reads local files since pipelines run client-side)
@@ -841,9 +1124,14 @@ pub async fn get_pipeline_logs(
     ];
 
     for log_path in &possible_locations {
-        if log_path.exists() {
-            return std::fs::read_to_string(log_path)
-                .map_err(|e| format!("Failed to read log file: {}", e));
+        if tokio::fs::metadata(log_path).await.is_ok() {
+            let content = tokio::fs::read_to_string(log_path)
+                .await
+                .map_err(|e| format!("Failed to read log file: {}", e))?;
+
+            // Filter out problematic ANSI sequences like \x1b(B
+            let filtered = content.replace("\x1b(B", "");
+            return Ok(filtered);
         }
     }
 
@@ -1082,20 +1370,21 @@ pub async fn cleanup_pipeline_temp() -> Result<String, String> {
     // Read directory directly to avoid walkdir dependency if not strictly needed,
     // but we already use walkdir in this file so it's fine.
     // Using read_dir is safer for just one level.
-    if let Ok(entries) = std::fs::read_dir(&temp_dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if let Some(fname) = path.file_name().map(|s| s.to_string_lossy()) {
-                if (fname.starts_with("nf_work_") || fname.starts_with("nf_out_")) && path.is_dir()
-                {
-                    println!("[pipeline] Deleting temp dir: {:?}", path);
-                    if let Err(e) = std::fs::remove_dir_all(&path) {
-                        let err_msg = format!("Failed to delete {:?}: {}", path, e);
-                        eprintln!("[pipeline] {}", err_msg);
-                        errors.push(err_msg);
-                    } else {
-                        count += 1;
-                    }
+    let mut entries = tokio::fs::read_dir(&temp_dir)
+        .await
+        .map_err(|e| format!("Failed to read temp directory: {}", e))?;
+
+    while let Some(entry) = entries.next_entry().await.map_err(|e| e.to_string())? {
+        let path = entry.path();
+        if let Some(fname) = path.file_name().map(|s| s.to_string_lossy()) {
+            if (fname.starts_with("nf_work_") || fname.starts_with("nf_out_")) && path.is_dir() {
+                println!("[pipeline] Deleting temp dir (async): {:?}", path);
+                if let Err(e) = tokio::fs::remove_dir_all(&path).await {
+                    let err_msg = format!("Failed to delete {:?}: {}", path, e);
+                    eprintln!("[pipeline] {}", err_msg);
+                    errors.push(err_msg);
+                } else {
+                    count += 1;
                 }
             }
         }

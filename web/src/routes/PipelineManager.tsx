@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { PipelineSetupWizard } from '../components/PipelineSetupWizard';
 import { PipelineRunModal } from '../components/PipelineRunModal';
 // import { useNavigation } from '../App';
-import { Plus, X, Terminal, Trash2, HeartPulse } from 'lucide-react';
+import { Plus, X, Terminal, Trash2, HeartPulse, RefreshCw } from 'lucide-react';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import Ansi from 'ansi-to-react';
@@ -33,6 +33,22 @@ export function PipelineManager() {
   const [selectedRunForLogs, setSelectedRunForLogs] = useState<string | null>(null);
   const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
   const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
+  const [updateProgress, setUpdateProgress] = useState<{ stage: string; message: string; progress: number } | null>(null);
+
+  useEffect(() => {
+    // @ts-ignore - Tauri global
+    if (window.__TAURI__) {
+      // @ts-ignore
+      const { listen } = window.__TAURI__.event;
+      const unlisten = listen('pipeline-update-progress', (event: any) => {
+        setUpdateProgress(event.payload);
+        if (event.payload.stage === 'complete') {
+          setTimeout(() => setUpdateProgress(null), 3000);
+        }
+      });
+      return () => { unlisten.then((f: any) => f()); };
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,7 +60,11 @@ export function PipelineManager() {
         console.log('[PipelineManager] check result:', initialized);
         if (!cancelled) {
           setNeedsSetup(!initialized);
-          if (initialized) setIsLoading(false);
+          if (initialized) {
+            setIsLoading(false);
+            // Trigger background update check
+            invoke('update_nextflow').catch(e => console.error('Nextflow update failed:', e));
+          }
         }
       } catch (e) {
         console.error('[PipelineManager] check failed:', e);
@@ -164,8 +184,27 @@ export function PipelineManager() {
       {/* Header */}
       <div className="bg-surface/30 backdrop-blur-md border-b border-white/5 px-6 py-4">
         <div className="flex items-center justify-between mb-4">
-          <div>
+          <div className="flex-1">
             <p className="text-sm text-white/60 my-auto">Manage and monitor bioinformatics pipelines</p>
+            {updateProgress && (
+              <div className="mt-3 flex items-center gap-3 animate-fade-in">
+                <div className="flex items-center gap-2 px-2 py-0.5 bg-brand-primary/10 border border-brand-primary/20 rounded-full">
+                  <RefreshCw size={12} className={`text-brand-primary ${updateProgress.stage !== 'complete' ? 'animate-spin' : ''}`} />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-brand-primary">
+                    {updateProgress.stage === 'complete' ? 'Environment Ready' : 'Updating Nextflow'}
+                  </span>
+                </div>
+                <div className="flex-1 max-w-xs h-1 bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-brand-primary transition-all duration-500"
+                    style={{ width: `${updateProgress.progress * 100}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-white/40 font-mono truncate max-w-[200px]">
+                  {updateProgress.message}
+                </span>
+              </div>
+            )}
           </div>
           <button
             onClick={() => setShowNewRunDialog(true)}
@@ -198,25 +237,19 @@ export function PipelineManager() {
       {/* Pipeline Runs List */}
       <div className="flex-1 overflow-auto p-6">
         {filteredRuns.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-white/20 mb-4">
-              <svg className="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          <div className="text-center py-12  text-white/30">
+            <div className="w-16 h-16 mb-4 flex justify-center rounded-xl bg-white/5 items-center mx-auto">
+              <svg className="mx-auto h-10 w-10 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <h3 className="text-lg font-medium text-white mb-1">No pipeline runs yet</h3>
-            <p className="text-white/50 mb-4">
+            <h3 className="font-medium mb-1 text-lg">No pipeline runs yet</h3>
+            <p className="text-sm mb-4">
               {filter === 'all'
                 ? 'Start your first bioinformatics pipeline from an experiment'
                 : `No ${filter} pipeline runs`
               }
             </p>
-            {/* <button
-              onClick={() => setShowNewRunDialog(true)}
-              className="px-4 py-2 bg-brand-primary text-black font-medium rounded-lg hover:bg-brand-secondary transition-all"
-            >
-              Start New Pipeline
-            </button> */}
           </div>
         ) : (
           <div className="space-y-4">
@@ -368,29 +401,41 @@ export function PipelineManager() {
 
 // Pipeline Logs Modal Component
 function PipelineLogsModal({ runId, onClose }: { runId: string; onClose: () => void }) {
-  const [logs, setLogs] = useState<string>('Loading logs...');
+  const [logs, setLogs] = useState<string>('');
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isLive] = useState(true);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
+    let isMounted = true;
 
-    const fetchLogs = async () => {
+    const fetchLogs = async (isFirstLoad: boolean = false) => {
+      if (isFirstLoad) setIsInitialLoading(true);
       try {
         const logText = await invoke<string>('get_pipeline_logs', { runId });
-        setLogs(logText || 'No logs available yet...');
+        if (isMounted) {
+          setLogs(logText || 'No logs available yet...');
+        }
       } catch (err) {
         console.error('Failed to fetch logs:', err);
-        setLogs(`Error fetching logs: ${err}`);
+        if (isMounted) {
+          setLogs(`Error fetching logs: ${err}`);
+        }
+      } finally {
+        if (isMounted && isFirstLoad) {
+          setIsInitialLoading(false);
+        }
       }
     };
 
-    fetchLogs();
+    fetchLogs(true);
     if (isLive) {
-      interval = setInterval(fetchLogs, 500);
+      interval = setInterval(() => fetchLogs(false), 2000);
     }
 
     return () => {
+      isMounted = false;
       if (interval) clearInterval(interval);
     };
   }, [runId, isLive]);
@@ -440,11 +485,18 @@ function PipelineLogsModal({ runId, onClose }: { runId: string; onClose: () => v
 
 
         {/* Logs Content */}
-        <div className="flex-1 overflow-auto p-4 bg-black/50">
-          <div className="font-mono text-xs text-white/80 whitespace-pre-wrap">
-            <Ansi useClasses>{logs}</Ansi>
-            <div ref={logsEndRef} />
-          </div>
+        <div className="flex-1 overflow-auto p-4 bg-black/50 relative">
+          {isInitialLoading ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 backdrop-blur-sm bg-black/20">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary" />
+              <p className="text-white/60 text-sm animate-pulse">Retrieving pipeline logs...</p>
+            </div>
+          ) : (
+            <div className="font-mono text-xs text-white/80 whitespace-pre-wrap">
+              <Ansi useClasses>{logs}</Ansi>
+              <div ref={logsEndRef} />
+            </div>
+          )}
         </div>
 
         {/* Footer */}

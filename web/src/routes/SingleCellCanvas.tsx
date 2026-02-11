@@ -7,6 +7,7 @@ import { ScatterPlot } from '../components/ScatterPlot';
 import { invoke } from '@tauri-apps/api/core';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigation } from '../App';
+import { dataCache } from '../utils/DataCache';
 
 interface SingleCellCanvasProps {
   experimentId: string;
@@ -62,9 +63,8 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
 
       setLoadingStatus('Loading matrix data...');
 
-      // Tauri will handle fetching from local file, HTTP, or S3
-      // Then stream to Web Worker in chunks
-      await streamMatrixData(matrixPath);
+      // Use matrixPath as assetId for caching
+      await streamMatrixData(matrixPath, matrixPath);
 
       if (coordsPath) {
         setLoadingStatus('Loading coordinates...');
@@ -78,12 +78,22 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
     }
   };
 
-  const streamMatrixData = async (url: string) => {
+  const streamMatrixData = async (url: string, assetId: string) => {
+    // Check cache first
+    const cachedBlob = await dataCache.get(assetId);
+    if (cachedBlob) {
+      setLoadingStatus('Loading from local cache...');
+      const buffer = await cachedBlob.arrayBuffer();
+      const chunk = new Uint8Array(buffer);
+      loadData(chunk, 0, true);
+      return;
+    }
+
     // Use Tauri command to fetch and stream file
-    // Works for local files, HTTP URLs, or S3 URLs
     const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
     let offset = 0;
     let complete = false;
+    const collectedChunks: Uint8Array[] = [];
 
     while (!complete) {
       const result = await invoke<{ chunk: number[]; complete: boolean }>(
@@ -93,12 +103,17 @@ export function SingleCellCanvas({ experimentId }: SingleCellCanvasProps) {
 
       const chunk = new Uint8Array(result.chunk);
       loadData(chunk, offset, result.complete);
+      collectedChunks.push(chunk);
 
       offset += chunk.length;
       complete = result.complete;
 
-      setLoadingStatus(`Loading matrix: ${(offset / 1024 / 1024).toFixed(1)} MB`);
+      setLoadingStatus(`Downloading matrix: ${(offset / 1024 / 1024).toFixed(1)} MB`);
     }
+
+    // Save to cache after complete download
+    const finalBlob = new Blob(collectedChunks.map(c => new Uint8Array(c)));
+    await dataCache.put(assetId, finalBlob);
   };
 
   const loadCoordinatesData = async (url: string) => {

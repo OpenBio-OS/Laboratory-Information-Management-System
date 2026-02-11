@@ -14,9 +14,9 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
+use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
 /// Health check response
 #[derive(Serialize)]
@@ -78,8 +78,8 @@ fn pipeline_routes() -> Router<AppState> {
 
 fn visualization_routes() -> Router<AppState> {
     Router::new()
-        .route("/", post(register_visualization))
-        .route("/{id}", delete(delete_visualization))
+        .route("/", get(list_visualizations).post(register_visualization))
+        .route("/{id}", get(get_visualization).delete(delete_visualization))
 }
 
 // Pipeline Handlers
@@ -190,7 +190,19 @@ async fn register_visualization(
         ));
     }
 
-    // Create visualization
+    // Create visualization with metadata snapshot
+    let snapshot_data = if let Some(exp_id) = payload.experiment_id.as_ref() {
+        crate::pipeline::capture_experiment_snapshot(&state.db, exp_id).await
+    } else {
+        None
+    };
+
+    if let Some(snapshot) = snapshot_data {
+        params.push(crate::db::prisma::visualization::metadata_snapshot::set(
+            Some(snapshot),
+        ));
+    }
+
     let visualization = state
         .db
         .visualization()
@@ -241,15 +253,16 @@ async fn register_visualization(
                 let target_path = state.storage_path.join(&storage_key);
 
                 if let Some(parent) = target_path.parent() {
-                    let _ = fs::create_dir_all(parent);
+                    let _ = fs::create_dir_all(parent).await;
                 }
 
-                if let Err(e) = fs::copy(&file_path, &target_path) {
+                if let Err(e) = fs::copy(&file_path, &target_path).await {
                     tracing::error!("Failed to copy file {}: {}", file_path.display(), e);
                     continue;
                 }
 
                 let file_size = fs::metadata(&target_path)
+                    .await
                     .map(|m| m.len() as i32)
                     .unwrap_or(0);
 
@@ -294,6 +307,35 @@ fn get_files_recursive(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf
         }
     }
 }
+async fn list_visualizations(
+    State(state): State<AppState>,
+) -> Json<Vec<crate::db::prisma::visualization::Data>> {
+    let viz = state
+        .db
+        .visualization()
+        .find_many(vec![])
+        .exec()
+        .await
+        .unwrap_or_default();
+    Json(viz)
+}
+
+async fn get_visualization(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<crate::db::prisma::visualization::Data>, (StatusCode, String)> {
+    let viz = state
+        .db
+        .visualization()
+        .find_unique(crate::db::prisma::visualization::id::equals(id.clone()))
+        .exec()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((StatusCode::NOT_FOUND, "Visualization not found".to_string()))?;
+
+    Ok(Json(viz))
+}
+
 async fn delete_visualization(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -350,7 +392,7 @@ async fn delete_visualization(
                     // Truly orphaned - delete file and record
                     let path = state.storage_path.join(&a.storage_key);
                     if path.exists() {
-                        let _ = fs::remove_file(path);
+                        let _ = fs::remove_file(path).await;
                     }
                     let _ = state
                         .db
@@ -416,7 +458,7 @@ async fn upload_pipeline_asset(
 
             // Stream to disk immediately
             let run_dir = state.storage_path.join("pipelines").join(&id);
-            fs::create_dir_all(&run_dir).map_err(|e| {
+            tokio::fs::create_dir_all(&run_dir).await.map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to create storage dir: {}", e),
@@ -424,7 +466,7 @@ async fn upload_pipeline_asset(
             })?;
 
             let target_path = run_dir.join(&filename);
-            let mut file = fs::File::create(&target_path).map_err(|e| {
+            let mut file = tokio::fs::File::create(&target_path).await.map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to create file: {}", e),
@@ -443,7 +485,7 @@ async fn upload_pipeline_asset(
             saved_content_type = content_type;
             saved_filename = filename;
 
-            file.write_all(&data).map_err(|e| {
+            file.write_all(&data).await.map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to write file: {}", e),
@@ -1371,7 +1413,9 @@ async fn upload_experiment_file(
 
     // Ensure directory exists (do NOT wipe it)
     if !uploads_dir.exists() {
-        fs::create_dir_all(&uploads_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        fs::create_dir_all(&uploads_dir)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     }
 
     let mut uploaded_files = vec![];
@@ -1403,9 +1447,11 @@ async fn upload_experiment_file(
         println!("Upload: Read {} bytes", size);
 
         let file_path = uploads_dir.join(&filename);
-        let mut file =
-            fs::File::create(&file_path).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let mut file = fs::File::create(&file_path)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         file.write_all(&data)
+            .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         // Create DigitalAsset record in DB
@@ -1566,7 +1612,7 @@ async fn delete_experiment_file(
     // so joining state.storage_path + asset.storage_key should be correct.
 
     if file_path.exists() {
-        if let Err(e) = fs::remove_file(&file_path) {
+        if let Err(e) = fs::remove_file(&file_path).await {
             tracing::error!("Failed to delete file from disk: {:?} - {}", file_path, e);
             // We continue to delete from DB even if disk fails, to avoid "ghost" assets
         } else {
@@ -1792,7 +1838,7 @@ async fn delete_paper(State(state): State<AppState>, Path(id): Path<String>) -> 
         if let Some(pdf_path) = &paper_data.pdf_path {
             let path = PathBuf::from(pdf_path);
             if path.exists() {
-                if let Err(e) = fs::remove_file(&path) {
+                if let Err(e) = fs::remove_file(&path).await {
                     eprintln!("Warning: Failed to delete PDF file {}: {}", pdf_path, e);
                     // Continue with database deletion even if file deletion fails
                 }
@@ -1925,7 +1971,7 @@ async fn delete_collection(State(state): State<AppState>, Path(id): Path<String>
         if let Some(pdf_path) = &paper_record.pdf_path {
             let path = PathBuf::from(pdf_path);
             if path.exists() {
-                if let Err(e) = fs::remove_file(&path) {
+                if let Err(e) = fs::remove_file(&path).await {
                     eprintln!("Warning: Failed to delete PDF file {}: {}", pdf_path, e);
                 }
             }
@@ -2105,7 +2151,7 @@ async fn upload_paper_pdf(
 
             // 3. Define storage path using app data directory
             let storage_dir = state.storage_path.join("papers");
-            fs::create_dir_all(&storage_dir).map_err(|e| {
+            fs::create_dir_all(&storage_dir).await.map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to create storage dir: {}", e),
@@ -2116,13 +2162,13 @@ async fn upload_paper_pdf(
             let target_path = storage_dir.join(&target_filename);
 
             // 4. Save file
-            let mut file = fs::File::create(&target_path).map_err(|e| {
+            let mut file = fs::File::create(&target_path).await.map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to create file: {}", e),
                 )
             })?;
-            file.write_all(&data).map_err(|e| {
+            file.write_all(&data).await.map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to write file: {}", e),
@@ -2180,7 +2226,7 @@ async fn get_paper_pdf(
     }
 
     // Read file
-    let file_bytes = fs::read(&path).map_err(|e| {
+    let file_bytes = fs::read(&path).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to read file: {}", e),
@@ -2494,7 +2540,7 @@ async fn ingest_equipment_file(
 
     // LOCKED: Upload to experiment folder
     let uploads_dir = state.storage_path.join("uploads").join(&locked_exp_id);
-    fs::create_dir_all(&uploads_dir).map_err(|e| {
+    fs::create_dir_all(&uploads_dir).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to create experiment uploads dir: {}", e),
@@ -2505,7 +2551,7 @@ async fn ingest_equipment_file(
     let storage_key = format!("uploads/{}/{}", locked_exp_id, filename);
 
     // Write file
-    fs::write(&file_path, &data).map_err(|e| {
+    fs::write(&file_path, &data).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to write file to experiment dir: {}", e),
@@ -2735,77 +2781,61 @@ async fn ingest_pipeline_output(
     let storage_key = format!("uploads/{}/{}", experiment_id, output_dirname);
 
     // Ensure parent uploads dir exists
-    fs::create_dir_all(&uploads_dir).map_err(|e| {
+    tokio::fs::create_dir_all(&uploads_dir).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to create uploads dir: {}", e),
         )
     })?;
 
-    // 4. Unzip the content
-    let cursor = std::io::Cursor::new(data);
-    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("Failed to read zip archive: {}", e),
-        )
-    })?;
+    // 4. Unzip the content in a blocking task
+    tokio::task::spawn_blocking(move || {
+        let cursor = std::io::Cursor::new(data);
+        let mut archive = zip::ZipArchive::new(cursor)
+            .map_err(|e| format!("Failed to read zip archive: {}", e))?;
 
-    // Extract everything
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to read file {} from zip: {}", i, e),
-            )
-        })?;
+        // Extract everything
+        for i in 0..archive.len() {
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| format!("Failed to read file {} from zip: {}", i, e))?;
 
-        let outpath = match file.enclosed_name() {
-            Some(path) => output_dir.join(path),
-            None => continue,
-        };
+            let outpath = match file.enclosed_name() {
+                Some(path) => output_dir.join(path),
+                None => continue,
+            };
 
-        if (*file.name()).ends_with('/') {
-            fs::create_dir_all(&outpath).map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to create directory {:?}: {}", outpath, e),
-                )
-            })?;
-        } else {
-            if let Some(p) = outpath.parent() {
-                if !p.exists() {
-                    fs::create_dir_all(p).map_err(|e| {
-                        (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            format!("Failed to create parent directory {:?}: {}", p, e),
-                        )
-                    })?;
+            if (*file.name()).ends_with('/') {
+                std::fs::create_dir_all(&outpath)
+                    .map_err(|e| format!("Failed to create directory {:?}: {}", outpath, e))?;
+            } else {
+                if let Some(p) = outpath.parent() {
+                    if !p.exists() {
+                        std::fs::create_dir_all(p).map_err(|e| {
+                            format!("Failed to create parent directory {:?}: {}", p, e)
+                        })?;
+                    }
+                }
+                let mut outfile = std::fs::File::create(&outpath)
+                    .map_err(|e| format!("Failed to create file {:?}: {}", outpath, e))?;
+                std::io::copy(&mut file, &mut outfile)
+                    .map_err(|e| format!("Failed to copy file {:?}: {}", outpath, e))?;
+            }
+
+            // Set permissions on Unix
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Some(mode) = file.unix_mode() {
+                    std::fs::set_permissions(&outpath, std::fs::Permissions::from_mode(mode)).ok();
                 }
             }
-            let mut outfile = fs::File::create(&outpath).map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to create file {:?}: {}", outpath, e),
-                )
-            })?;
-            std::io::copy(&mut file, &mut outfile).map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to copy file {:?}: {}", outpath, e),
-                )
-            })?;
         }
-
-        // Set permissions on Unix
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Some(mode) = file.unix_mode() {
-                fs::set_permissions(&outpath, fs::Permissions::from_mode(mode)).ok();
-            }
-        }
-    }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))? // spawn_blocking error
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?; // extraction error
 
     // 5. Create ONE DigitalAsset for the Directory
     let asset_params = vec![

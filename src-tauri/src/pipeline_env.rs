@@ -220,6 +220,145 @@ where
     result
 }
 
+/// Update the pipeline environment (specifically Nextflow)
+pub async fn update_environment<F>(
+    app_handle: &AppHandle,
+    progress_callback: F,
+) -> Result<PipelineEnvironment, String>
+where
+    F: Fn(SetupProgress) + Send + 'static,
+{
+    // Prevent concurrent setup/update attempts
+    println!("[pipeline_env] update_environment called");
+    if SETUP_IN_PROGRESS
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        println!("[pipeline_env]   -> BLOCKED: another setup/update is already running");
+        return Err("__ALREADY_IN_PROGRESS__".to_string());
+    }
+
+    let result = do_update(app_handle, &progress_callback).await;
+    SETUP_IN_PROGRESS.store(false, Ordering::SeqCst);
+    result
+}
+
+async fn do_update<F>(
+    app_handle: &AppHandle,
+    progress_callback: &F,
+) -> Result<PipelineEnvironment, String>
+where
+    F: Fn(SetupProgress) + Send + 'static,
+{
+    println!("[pipeline_env] do_update: checking current env...");
+    let env_path = get_env_path(app_handle)?;
+    let root_prefix = env_path.join("micromamba");
+    let env_prefix = get_conda_env_prefix(&env_path);
+    let micromamba_path = get_micromamba_binary_path(app_handle)?;
+
+    if !env_prefix.exists() {
+        return Err("Environment not found. Please bootstrap first.".to_string());
+    }
+
+    progress_callback(SetupProgress {
+        stage: "update".to_string(),
+        message: "Checking for Nextflow updates...".to_string(),
+        progress: 0.1,
+    });
+
+    let cmd_args = [
+        "update",
+        "-y",
+        "-p",
+        env_prefix.to_str().unwrap(),
+        "-c",
+        "conda-forge",
+        "-c",
+        "bioconda",
+        "nextflow",
+    ];
+
+    println!(
+        "[pipeline_env]   running: {:?} {:?}",
+        micromamba_path, cmd_args
+    );
+
+    let mut child = Command::new(&micromamba_path)
+        .args(&cmd_args)
+        .env("MAMBA_ROOT_PREFIX", &root_prefix)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn micromamba: {}", e))?;
+
+    let stdout = child.stdout.take().unwrap();
+    let reader = std::io::BufReader::new(stdout);
+
+    let mut current_progress = 0.2;
+    for line in reader.lines().flatten() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        println!("[micromamba-update] {}", line);
+
+        if current_progress < 0.9 {
+            current_progress += 0.01;
+        }
+
+        progress_callback(SetupProgress {
+            stage: "update".to_string(),
+            message: line.to_string(),
+            progress: current_progress,
+        });
+    }
+
+    let status = child
+        .wait()
+        .map_err(|e| format!("Failed to wait for micromamba: {}", e))?;
+
+    if !status.success() {
+        return Err("Update failed. Check terminal logs for details.".to_string());
+    }
+
+    println!("[pipeline_env]   micromamba update succeeded, now running nextflow self-update...");
+
+    // Attempt nextflow self-update for edge releases
+    let nextflow_bin = if cfg!(windows) {
+        "nextflow.exe"
+    } else {
+        "nextflow"
+    };
+    let nextflow_path = env_prefix.join("bin").join(nextflow_bin);
+    let java_home = env_prefix.join("lib").join("jvm");
+
+    if nextflow_path.exists() {
+        progress_callback(SetupProgress {
+            stage: "update".to_string(),
+            message: "Performing Nextflow self-update...".to_string(),
+            progress: 0.95,
+        });
+
+        let mut self_update_cmd = Command::new(&nextflow_path);
+        self_update_cmd.arg("self-update");
+        self_update_cmd.env("JAVA_HOME", &java_home);
+
+        // Hide terminal output for self-update usually, but let's log it
+        if let Ok(output) = self_update_cmd.output() {
+            if output.status.success() {
+                println!("[pipeline_env]   nextflow self-update succeeded");
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                println!("[pipeline_env]   nextflow self-update failed: {}", stderr);
+            }
+        }
+    }
+
+    println!("[pipeline_env]   update process complete, finalizing...");
+    finalize_environment(app_handle, &env_prefix, &micromamba_path, progress_callback)
+}
+
 async fn do_bootstrap<F>(
     app_handle: &AppHandle,
     progress_callback: &F,

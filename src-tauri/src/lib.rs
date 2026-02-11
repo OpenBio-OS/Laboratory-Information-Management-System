@@ -576,6 +576,7 @@ fn reset_database_and_storage(state: State<AppState>) -> Result<(), String> {
 
     let db_path = database_path();
     let storage_dir = storage_path();
+    let logs_dir = logs_dir();
 
     // Delete database file
     if db_path.exists() {
@@ -585,6 +586,11 @@ fn reset_database_and_storage(state: State<AppState>) -> Result<(), String> {
     // Delete storage directory
     if storage_dir.exists() {
         fs::remove_dir_all(&storage_dir).map_err(|e| format!("Failed to delete storage: {}", e))?;
+    }
+
+    // Delete logs directory
+    if logs_dir.exists() {
+        fs::remove_dir_all(&logs_dir).map_err(|e| format!("Failed to delete logs: {}", e))?;
     }
 
     Ok(())
@@ -916,6 +922,8 @@ pub fn run() {
             commands::pipeline::cleanup_pipeline_temp,
             commands::pipeline::open_pipeline_report,
             commands::pipeline::get_pipeline_templates,
+            commands::pipeline::save_pipeline_template,
+            commands::pipeline::delete_pipeline_template,
             // Pipeline environment commands
             commands::check_pipeline_environment,
             commands::check_docker_installed,
@@ -924,6 +932,7 @@ pub fn run() {
             commands::get_pipeline_environment,
             commands::get_nextflow_path,
             commands::verify_pipeline_environment,
+            commands::update_nextflow,
             // Insight commands
             commands::list_experiments,
             commands::get_experiment_files,

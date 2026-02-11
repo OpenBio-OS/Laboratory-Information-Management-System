@@ -32,118 +32,14 @@ fn get_api_base_url(state: &State<'_, crate::AppState>) -> String {
     }
 }
 
-/// List all insight instances (experiments with completed pipelines)
 #[tauri::command]
 pub async fn list_insight_instances(
     state: State<'_, crate::AppState>,
 ) -> Result<Vec<InsightInstance>, String> {
     let api_base = get_api_base_url(&state);
-    let url = format!("{}/experiments", api_base); // Assuming list_experiments endpoint returns JSON array
-
     let client = reqwest::Client::new();
-    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
 
-    if !resp.status().is_success() {
-        return Err(format!("Server returned {}", resp.status()));
-    }
-
-    let experiments_json: Vec<serde_json::Value> = resp.json().await.map_err(|e| e.to_string())?;
-
-    // Map experiments to InsightInstances
-    // Filter only those with at least one COMPLETED pipeline run
-    // The experiment JSON should contain "pipelineRuns"
-
-    let mut instances = Vec::new();
-
-    for exp in experiments_json {
-        let runs = exp.get("pipelineRuns").and_then(|r| r.as_array());
-
-        if let Some(runs) = runs {
-            // Find the most recent completed run
-            // Assuming strict ordering or check timestamps if provided
-            let completed_run = runs
-                .iter()
-                .find(|r| r.get("status").and_then(|s| s.as_str()) == Some("COMPLETED"));
-
-            if let Some(run) = completed_run {
-                let pipeline_type = run
-                    .get("pipelineType")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-
-                // Determine data type for UI label
-                let data_type = if pipeline_type.contains("scrnaseq") {
-                    "scRNA-seq"
-                } else if pipeline_type.contains("rnaseq") {
-                    "Bulk RNA-seq"
-                } else {
-                    "Analysis"
-                };
-
-                let instance = InsightInstance {
-                    id: format!("insight-{}", exp["id"].as_str().unwrap_or("unknown")),
-                    experiment_id: exp["id"].as_str().unwrap_or("").to_string(),
-                    experiment_name: exp["name"]
-                        .as_str()
-                        .unwrap_or("Unnamed Experiment")
-                        .to_string(),
-                    created_at: run["createdAt"]
-                        .as_str()
-                        .unwrap_or(&Utc::now().to_rfc3339())
-                        .to_string(),
-                    data_type: data_type.to_string(),
-                    cell_count: None, // Could parse from metrics file later
-                    gene_count: None,
-                    status: "READY".to_string(),
-                    thumbnail_url: None, // Could generate if we have images
-                };
-                instances.push(instance);
-            } else {
-                // Check if any run is IN_PROGRESS
-                let running_run = runs.iter().find(|r| {
-                    let s = r.get("status").and_then(|s| s.as_str());
-                    s == Some("RUNNING") || s == Some("PENDING")
-                });
-
-                if let Some(run) = running_run {
-                    // Show actively running pipelines too?
-                    let pipeline_type = run
-                        .get("pipelineType")
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-
-                    let instance = InsightInstance {
-                        id: format!("insight-{}", exp["id"].as_str().unwrap_or("unknown")),
-                        experiment_id: exp["id"].as_str().unwrap_or("").to_string(),
-                        experiment_name: exp["name"]
-                            .as_str()
-                            .unwrap_or("Unnamed Experiment")
-                            .to_string(),
-                        created_at: run["createdAt"]
-                            .as_str()
-                            .unwrap_or(&Utc::now().to_rfc3339())
-                            .to_string(),
-                        data_type: if pipeline_type.contains("scrnaseq") {
-                            "scRNA-seq"
-                        } else {
-                            "Pipeline"
-                        }
-                        .to_string(),
-                        cell_count: None,
-                        gene_count: None,
-                        status: "PROCESSING".to_string(),
-                        thumbnail_url: None,
-                    };
-                    // Optional: decide if we want to show pending runs in Gallery
-                    instances.push(instance);
-                }
-            }
-        }
-    }
-
-    // --- NEW: Fetch permanent visualizations from backend ---
+    // Fetch permanent visualizations from backend
     let viz_url = format!("{}/visualizations", api_base);
     let viz_resp = client
         .get(&viz_url)
@@ -151,11 +47,22 @@ pub async fn list_insight_instances(
         .await
         .map_err(|e| e.to_string())?;
 
+    let mut instances = Vec::new();
+
     if viz_resp.status().is_success() {
         let visualizations: Vec<serde_json::Value> =
             viz_resp.json().await.map_err(|e| e.to_string())?;
 
         for viz in visualizations {
+            let viz_type = viz["type"].as_str().unwrap_or("Analysis");
+            // Map types to human readable
+            let data_type = match viz_type {
+                "SCANVAS" => "scRNA-seq",
+                "BULK_DASHBOARD" => "Bulk RNA-seq",
+                "REPORT" => "Report",
+                other => other,
+            };
+
             let instance = InsightInstance {
                 id: viz["id"].as_str().unwrap_or("unknown").to_string(),
                 experiment_id: viz["experimentId"]
@@ -170,7 +77,7 @@ pub async fn list_insight_instances(
                     .as_str()
                     .unwrap_or(&Utc::now().to_rfc3339())
                     .to_string(),
-                data_type: viz["type"].as_str().unwrap_or("Analysis").to_string(),
+                data_type: data_type.to_string(),
                 cell_count: None,
                 gene_count: None,
                 status: "READY".to_string(),

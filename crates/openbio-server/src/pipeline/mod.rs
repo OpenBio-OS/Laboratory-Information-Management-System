@@ -41,6 +41,56 @@ pub struct PipelineManager {
     db: Arc<PrismaClient>,
 }
 
+/// Helper to capture a full metadata snapshot for an experiment
+pub async fn capture_experiment_snapshot(
+    db: &crate::db::prisma::PrismaClient,
+    experiment_id: &str,
+) -> Option<String> {
+    let experiment = db
+        .experiment()
+        .find_unique(crate::db::prisma::experiment::id::equals(
+            experiment_id.to_string(),
+        ))
+        .with(
+            crate::db::prisma::experiment::samples::fetch(vec![])
+                .with(crate::db::prisma::experiment_sample::sample::fetch()),
+        )
+        .with(crate::db::prisma::experiment::mentions::fetch(vec![]))
+        .exec()
+        .await
+        .ok()
+        .flatten()?;
+
+    let snapshot = serde_json::json!({
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "experiment": {
+            "id": experiment.id,
+            "name": experiment.name,
+            "description": experiment.description,
+            "content": experiment.content,
+        },
+        "samples": experiment.samples().unwrap_or(&vec![]).iter().map(|es| {
+            let s = es.sample().unwrap(); // We fetched it
+            serde_json::json!({
+                "id": s.id,
+                "name": s.name,
+                "type": s.r#type,
+                "metadata": s.metadata,
+                "role": es.role,
+            })
+        }).collect::<Vec<_>>(),
+        "mentions": experiment.mentions().unwrap_or(&vec![]).iter().map(|m| {
+            serde_json::json!({
+                "entityType": m.entity_type,
+                "entityId": m.entity_id,
+                "snapshotData": m.snapshot_data,
+            })
+        }).collect::<Vec<_>>(),
+    });
+
+    serde_json::to_string(&snapshot).ok()
+}
+
 impl PipelineManager {
     pub fn new(db: Arc<PrismaClient>) -> Self {
         Self { db }
@@ -79,6 +129,12 @@ impl PipelineManager {
         let mut params = vec![pipeline_run::status::set("PENDING".to_string())];
         if let Some(json) = config_json {
             params.push(pipeline_run::config_json::set(Some(json)));
+        }
+
+        // Capture metadata snapshot at start of run
+        if let Some(snapshot) = capture_experiment_snapshot(&self.db, &request.experiment_id).await
+        {
+            params.push(pipeline_run::metadata_snapshot::set(Some(snapshot)));
         }
 
         let run = self
@@ -133,6 +189,71 @@ impl PipelineManager {
             .exec()
             .await
             .map_err(|e| ServerError::Database(e.to_string()))?;
+
+        // NEW: Auto-create Visualization (Insight) on completion
+        if status == "COMPLETED" {
+            let run = self
+                .db
+                .pipeline_run()
+                .find_unique(pipeline_run::id::equals(run_id.to_string()))
+                .exec()
+                .await
+                .map_err(|e| ServerError::Database(e.to_string()))?
+                .ok_or_else(|| ServerError::NotFound(format!("Pipeline run {}", run_id)))?;
+
+            use crate::db::prisma::visualization;
+
+            // Create Visualization record
+            // Type mapping: simple heuristic based on pipeline type
+            let viz_type = if run.pipeline_type.contains("scrna")
+                || run.pipeline_type.contains("scanpy")
+            {
+                "SCANVAS"
+            } else if run.pipeline_type.contains("rnaseq") || run.pipeline_type.contains("bulk") {
+                "BULK_DASHBOARD"
+            } else {
+                "REPORT"
+            };
+
+            let viz_name = format!(
+                "Analysis: {} ({})",
+                run.pipeline_type,
+                run_id.chars().take(8).collect::<String>()
+            );
+
+            let mut viz_params = vec![visualization::experiment::connect(
+                crate::db::prisma::experiment::id::equals(run.experiment_id.clone()),
+            )];
+
+            // Copy metadata snapshot from pipeline run to visualization
+            if let Some(snapshot) = run.metadata_snapshot.as_ref() {
+                viz_params.push(visualization::metadata_snapshot::set(Some(
+                    snapshot.clone(),
+                )));
+            }
+
+            let viz = self
+                .db
+                .visualization()
+                .create(viz_name, viz_type.to_string(), viz_params)
+                .exec()
+                .await
+                .map_err(|e| ServerError::Database(e.to_string()))?;
+
+            // Link all assets from this run to the new visualization
+            use crate::db::prisma::digital_asset;
+            self.db
+                .digital_asset()
+                .update_many(
+                    vec![digital_asset::pipeline_run_id::equals(Some(
+                        run_id.to_string(),
+                    ))],
+                    vec![digital_asset::visualization_id::set(Some(viz.id))],
+                )
+                .exec()
+                .await
+                .map_err(|e| ServerError::Database(e.to_string()))?;
+        }
 
         Ok(())
     }
