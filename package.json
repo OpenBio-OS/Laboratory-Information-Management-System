@@ -8,7 +8,8 @@
   "type": "module",
   "scripts": {
     "dev": "cd web && vite",
-    "build": "cd web && tsc && vite build",
+    "build:wasm": "./scripts/build-wasm.sh",
+    "build": "npm run build:wasm && cd web && tsc && vite build",
     "publish": "node ./scripts/bump-version.js",
     "tauri": "tauri",
     "prisma:generate": "cargo run -p prisma-cli -- generate --schema=database/schema.prisma"
