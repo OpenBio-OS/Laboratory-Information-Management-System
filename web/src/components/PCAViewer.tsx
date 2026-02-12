@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { ScatterPlot } from './ScatterPlot';
 import { useWasmWorker } from '../hooks/useWasmWorker';
-import { Loader2, AlertCircle, Maximize2, ZoomIn, Info } from 'lucide-react';
+import { Loader2, AlertCircle, ZoomIn, Info } from 'lucide-react';
 
 interface PCAViewerProps {
   pcaAsset: {
