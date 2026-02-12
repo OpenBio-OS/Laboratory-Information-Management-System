@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run build:wasm && npm run prisma:generate && npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "./scripts/download-micromamba.sh && npm run build",
+    "beforeBuildCommand": "node scripts/download-micromamba.js && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
