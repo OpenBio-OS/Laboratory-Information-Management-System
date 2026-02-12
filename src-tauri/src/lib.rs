@@ -639,9 +639,27 @@ fn update_lab_name(lab_name: String, state: State<AppState>) -> Result<(), Strin
     Ok(())
 }
 
+/// Kill all running local agent processes
+fn kill_all_agents(state: &AppState) {
+    let mut agents = state.local_agents.lock().unwrap();
+    for (equipment_id, child) in agents.iter_mut() {
+        tracing::info!(
+            "Killing agent for equipment {} (pid: {})",
+            equipment_id,
+            child.id()
+        );
+        let _ = child.kill();
+        let _ = child.wait(); // reap zombie process
+    }
+    agents.clear();
+}
+
 /// Exit the application
 #[tauri::command]
 fn exit_app(app: tauri::AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        kill_all_agents(&state);
+    }
     app.exit(0);
 }
 
@@ -1171,6 +1189,13 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    kill_all_agents(&state);
+                }
+            }
+        });
 }
