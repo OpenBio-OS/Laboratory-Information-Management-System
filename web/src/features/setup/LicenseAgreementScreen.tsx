@@ -33,7 +33,7 @@ export function LicenseAgreementScreen({ onAccept, onReject }: LicenseAgreementS
           <div className="inline-flex p-3 rounded-full bg-brand-primary/10 text-brand-primary mb-4 shadow-[0_0_20px_rgba(23,185,120,0.2)]">
             <img src="/logo-transparent-green-text.png" alt="OpenBio Logo" className="w-14 h-14" />
           </div>
-          <h1 className="text-3xl text-white mb-2">Welcome to OpenBio</h1>
+          <h1 className="text-3xl text-white mb-2">Welcome to OpenBio <span className='text-red-400 text-sm align-super opacity-80'>BETA</span></h1>
           <p className="text-white/60 text-lg">Please review and accept the following terms to continue</p>
         </div>
 
@@ -75,8 +75,8 @@ export function LicenseAgreementScreen({ onAccept, onReject }: LicenseAgreementS
             <label className="flex items-center gap-3 cursor-pointer group" onClick={() => setLicenseAccepted(!licenseAccepted)}>
               <div
                 className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${licenseAccepted
-                    ? 'bg-brand-primary border-brand-primary'
-                    : 'border-white/30 group-hover:border-white/50'
+                  ? 'bg-brand-primary border-brand-primary'
+                  : 'border-white/30 group-hover:border-white/50'
                   }`}
               >
                 {licenseAccepted && <Check size={14} className="text-white" />}
@@ -123,8 +123,8 @@ export function LicenseAgreementScreen({ onAccept, onReject }: LicenseAgreementS
             <label className="flex items-center gap-3 cursor-pointer group" onClick={() => setRulesAccepted(!rulesAccepted)}>
               <div
                 className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${rulesAccepted
-                    ? 'bg-brand-primary border-brand-primary'
-                    : 'border-white/30 group-hover:border-white/50'
+                  ? 'bg-brand-primary border-brand-primary'
+                  : 'border-white/30 group-hover:border-white/50'
                   }`}
               >
                 {rulesAccepted && <Check size={14} className="text-white" />}
@@ -147,8 +147,8 @@ export function LicenseAgreementScreen({ onAccept, onReject }: LicenseAgreementS
               onClick={onAccept}
               disabled={!canProceed}
               className={`flex-1 px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${canProceed
-                  ? 'bg-brand-primary text-white hover:bg-brand-secondary shadow-lg hover:shadow-brand-primary/25'
-                  : 'bg-white/10 text-white/40 cursor-not-allowed'
+                ? 'bg-brand-primary text-white hover:bg-brand-secondary shadow-lg hover:shadow-brand-primary/25'
+                : 'bg-white/10 text-white/40 cursor-not-allowed'
                 }`}
             >
               Accept & Continue

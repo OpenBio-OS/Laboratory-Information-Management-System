@@ -40,9 +40,7 @@ model Sample {
   updatedAt DateTime @updatedAt
   createdBy String?
 
-  // Relations
-  experiments ExperimentSample[]
-  assets      DigitalAsset[]
+  assets DigitalAsset[]
 }
 
 /// Container (freezer, shelf, box, rack)
@@ -221,25 +219,11 @@ model Experiment {
   createdBy String?
 
   // Relations
-  samples         ExperimentSample[]
-  mentions        ExperimentMention[]
   entries         ExperimentEntry[]
   assets          DigitalAsset[]
   pipelineRuns    PipelineRun[]
   visualizations  Visualization[]
-  lockedEquipment Equipment[]         @relation("LockedEquipment")
-}
-
-/// Many-to-many: Experiment <-> Sample
-model ExperimentSample {
-  experimentId String
-  sampleId     String
-  role         String? // e.g., "input", "control", "treatment"
-
-  experiment Experiment @relation(fields: [experimentId], references: [id])
-  sample     Sample     @relation(fields: [sampleId], references: [id])
-
-  @@id([experimentId, sampleId])
+  lockedEquipment Equipment[]       @relation("LockedEquipment")
 }
 
 /// Timestamped entry in an experiment (for equipment data imports)
@@ -258,25 +242,6 @@ model ExperimentEntry {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}
-
-/// @mentions in experiments with metadata snapshots
-model ExperimentMention {
-  id           String     @id @default(cuid())
-  experimentId String
-  experiment   Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
-
-  // What was mentioned
-  entityType String // "sample", "equipment", "paper"
-  entityId   String // ID of the referenced entity
-
-  // Snapshot of metadata at time of mention (preserves data if entity is deleted)
-  snapshotData String // JSON snapshot of entity data
-
-  // Position in document (for highlighting/navigation)
-  position Int?
-
-  createdAt DateTime @default(now())
 }
 
 // ============================================

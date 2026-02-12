@@ -208,7 +208,7 @@ export function InventoryPage() {
         {/* View Area */}
         <div className="flex-1 overflow-auto">
           <div className="p-6 min-w-max">
-            <div className="mx-auto m-6">
+            <div className="mx-auto">
               {searchQuery ? (
                 /* Search Results View */
                 <div>
@@ -256,7 +256,14 @@ export function InventoryPage() {
                 <>
                   <div className="mb-6">
                     <h2 className="text-2xl text-white">{selectedContainer.name}</h2>
-                    <p className="text-white/40 text-sm">Box • {filteredSamples.length} of {displayedSamples.length} samples{searchQuery ? ' (filtered)' : ''}</p>
+                    {(() => {
+                      const totalCapacity = (selectedContainer.layoutConfig?.rows || 9) * (selectedContainer.layoutConfig?.cols || 9);
+                      return (
+                        <p className="text-white/40 text-sm">
+                          Box • {filteredSamples.length} sample{filteredSamples.length !== 1 ? 's' : ''} of {totalCapacity} spaces filled{searchQuery ? ' (filtered)' : ''}
+                        </p>
+                      );
+                    })()}
                   </div>
 
                   <div className="flex gap-8 items-start">

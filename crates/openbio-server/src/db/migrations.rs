@@ -18,6 +18,10 @@ fn get_migrations() -> Vec<Migration> {
             name: "20260211034746_init".to_string(),
             sql: include_str!("../../../../database/migrations/20260211034746_init/migration.sql"),
         },
+        Migration {
+            name: "20260212092219_remove_experiment_mention_and_experiment_sample".to_string(),
+            sql: include_str!("../../../../database/migrations/20260212092219_remove_experiment_mention_and_experiment_sample/migration.sql"),
+        },
     ]
 }
 

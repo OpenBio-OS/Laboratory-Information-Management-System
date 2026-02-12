@@ -167,9 +167,9 @@ export function PCAViewer({ pcaAsset }: PCAViewerProps) {
   }
 
   return (
-    <div className="flex flex-col h-full gap-4">
+    <div className="flex flex-col h-full gap-4 py-4">
       {/* Viewer Header */}
-      <div className="flex items-center justify-between px-1">
+      <div className="flex items-center justify-between px-1 mx-4">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-brand-primary/10 rounded-lg">
             <ZoomIn size={18} className="text-brand-primary" />
@@ -186,15 +186,12 @@ export function PCAViewer({ pcaAsset }: PCAViewerProps) {
               {selectionCount} Selected
             </div>
           )}
-          <button className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-all" title="Full Screen">
-            <Maximize2 size={18} />
-          </button>
         </div>
       </div>
 
       <div
         ref={containerRef}
-        className="flex-1 min-h-[400px] relative bg-neutral-900/50 rounded-2xl border border-white/5 overflow-hidden group"
+        className="flex-1 min-h-[400px] relative bg-neutral-900/50 rounded-2xl border border-white/5 overflow-hidden group mx-4"
       >
         <ScatterPlot
           width={dimensions.width}

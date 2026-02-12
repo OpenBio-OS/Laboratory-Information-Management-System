@@ -2185,8 +2185,8 @@ export function ExperimentsPage() {
                       <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-white/5 flex items-center justify-center">
                         <Atom size={32} className="text-white/20" />
                       </div>
-                      <h3 className="text-lg font-semibold text-white">No experiments in this folder yet</h3>
-                      <p className="text-white/40 text-sm mb-6">Add your first paper to get started</p>
+                      <h3 className="text-lg font-medium text-white/30">No experiments in this folder yet</h3>
+                      <p className="text-white/30 text-sm mb-6">Add your first paper to get started</p>
                       {/* <button
                         onClick={() => setShowCreateExperimentModal(true)}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-brand-primary text-black text-sm font-medium rounded-lg hover:bg-brand-secondary transition-colors"

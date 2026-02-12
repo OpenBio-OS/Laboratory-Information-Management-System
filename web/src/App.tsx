@@ -169,6 +169,7 @@ function AppContent() {
       }
     }
 
+    setActiveTab("dashboard");
     setNeedsSetup(false);
   };
 
@@ -284,6 +285,7 @@ import { EquipmentPage } from "./features/equipment/EquipmentPage";
 import { PipelineManager } from "./routes/PipelineManager";
 import { InsightContainer } from "./routes/InsightContainer";
 import { ResetEnvironmentModal } from './components/ResetEnvironmentModal';
+import { dataCache } from "./utils/DataCache";
 
 // Views
 function DashboardView() {
@@ -300,7 +302,7 @@ function DashboardView() {
 
       <Card className="relative overflow-hidden">
         <div className="relative z-10">
-          <h2 className="text-2xl mb-2">Welcome to OpenBio</h2>
+          <h2 className="text-2xl mb-2">Welcome to OpenBio <span className='text-red-400 text-sm align-super opacity-80'>BETA</span></h2>
           <p className="text-white/60 mb-6">
             Your local-first Biological Operating System. Get started by adding samples to your inventory or creating an experiment.
           </p>
@@ -413,9 +415,12 @@ function SettingsView({ onResetSetup }: { onResetSetup: () => void }) {
   const handleResetDatabase = async () => {
     try {
       await invoke('reset_database_and_storage');
-      // Clear all cached data from React Query before reloading
+      // Clear IDB cache
+      await dataCache.clear();
+      // Clear all cached data from React Query
       queryClient.clear();
-      window.location.reload();
+      // Exit app to ensure all caches are fully cleared
+      await invoke('exit_app');
     } catch (err) {
       console.error("Failed to reset database:", err);
       alert(`Failed to reset database: ${err}`);

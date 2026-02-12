@@ -184,16 +184,6 @@ export interface DigitalAsset {
     machineId?: string;
 }
 
-export interface ExperimentMention {
-    id: string;
-    experimentId: string;
-    entityType: 'sample' | 'equipment' | 'paper';
-    entityId: string;
-    snapshotData: string;
-    position?: number;
-    createdAt: string;
-}
-
 export interface SearchResult {
     entityType: 'sample' | 'equipment' | 'paper';
     id: string;
@@ -268,20 +258,6 @@ export const experimentsApi = {
                 content: data.content,
                 author: data.author,
                 attached_asset_id: data.attachedAssetId,
-            }),
-        }),
-
-    // Mentions (for @sample, @equipment, @paper)
-    listMentions: (experimentId: string) =>
-        apiRequest<ExperimentMention[]>(`/api/experiments/${experimentId}/mentions`),
-    createMention: (experimentId: string, data: { entityType: string; entityId: string; snapshotData: string; position?: number }) =>
-        apiRequest<ExperimentMention>(`/api/experiments/${experimentId}/mentions`, {
-            method: 'POST',
-            body: JSON.stringify({
-                entity_type: data.entityType,
-                entity_id: data.entityId,
-                snapshot_data: data.snapshotData,
-                position: data.position,
             }),
         }),
 

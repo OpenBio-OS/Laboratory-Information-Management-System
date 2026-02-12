@@ -20,6 +20,7 @@ interface Sample {
   type: string;
   metadata?: string;
   externalId?: string;
+  location?: string;
 }
 
 interface Equipment {
@@ -124,7 +125,7 @@ export function ExperimentMetadataView({ experimentId }: ExperimentMetadataViewP
           <div className="p-4 border-b border-white/5 flex justify-between items-center">
             <h3 className="text-white font-medium flex items-center gap-2">
               <Thermometer size={18} className="text-blue-400" />
-              Samples
+              Linked Samples
               <span className="bg-white/10 text-white/60 text-xs px-2 py-0.5 rounded-full ml-2">
                 {metadata.samples?.length || 0}
               </span>
@@ -136,10 +137,16 @@ export function ExperimentMetadataView({ experimentId }: ExperimentMetadataViewP
                 <div key={sample.id} className="bg-black/20 rounded-lg p-3 border border-white/5 hover:border-white/10 transition-colors">
                   <div className="flex justify-between items-start mb-1">
                     <p className="text-white font-medium">{sample.name}</p>
-                    <span className="text-xs text-white/40 bg-white/5 px-1.5 py-0.5 rounded uppercase">{sample.type}</span>
+                    {/* <span className="text-xs text-white/40 bg-white/5 px-1.5 py-0.5 rounded uppercase">{sample.type}</span> */}
                   </div>
                   {sample.externalId && (
                     <p className="text-xs text-white/40 font-mono mb-1">REF: {sample.externalId}</p>
+                  )}
+                  {sample.location && (
+                    <div className="flex items-center gap-1.5 text-xs text-brand-primary/80 mb-2 bg-brand-primary/5 px-2 py-1 rounded border border-brand-primary/10">
+                      <Thermometer size={12} />
+                      <span className="truncate">{sample.location}</span>
+                    </div>
                   )}
                   {sample.metadata && (
                     <p className="text-xs text-white/60 line-clamp-2">{sample.metadata}</p>
@@ -198,7 +205,7 @@ export function ExperimentMetadataView({ experimentId }: ExperimentMetadataViewP
           </div>
           <div className="p-4">
             {metadata.linked_papers && metadata.linked_papers.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 {metadata.linked_papers.map(paper => (
                   <div key={paper.id} className="bg-black/20 rounded-lg p-4 border border-white/5 hover:border-white/10 transition-colors">
                     <a href={paper.url || (paper.doi ? `https://doi.org/${paper.doi}` : '#')} target="_blank" rel="noopener noreferrer" className="text-white font-medium hover:text-brand-primary transition-colors mb-2 block truncate">
@@ -210,7 +217,7 @@ export function ExperimentMetadataView({ experimentId }: ExperimentMetadataViewP
                     {paper.notes && (
                       <div className="bg-yellow-500/5 border border-yellow-500/10 rounded p-3 mt-2">
                         <p className="text-xs text-yellow-500/80 uppercase tracking-wider font-semibold mb-1">Paper Notes</p>
-                        <p className="text-sm text-white/70 italic text-pretty">"{paper.notes}"</p>
+                        <div className="text-sm text-white/70 italic text-pretty prose prose-invert prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: paper.notes }} />
                       </div>
                     )}
                   </div>
@@ -228,7 +235,7 @@ export function ExperimentMetadataView({ experimentId }: ExperimentMetadataViewP
           <div className="p-4 border-b border-white/5 flex justify-between items-center">
             <h3 className="text-white font-medium flex items-center gap-2">
               <FileText size={18} className="text-green-400" />
-              Experiment Notebook
+              Linked Notebooks
             </h3>
           </div>
           <div className="p-6">
@@ -240,12 +247,12 @@ export function ExperimentMetadataView({ experimentId }: ExperimentMetadataViewP
                   or a message.
                 */}
               {(metadata.content && metadata.content !== "") ? (
-                <pre className="whitespace-pre-wrap font-mono text-xs text-white/70 bg-black/40 p-4 rounded-lg overflow-x-auto">
+                <div className="bg-black/40 p-6 rounded-xl border border-white/5 overflow-x-auto min-h-[100px]">
                   {(() => {
-                    if (!metadata.content) return null;
-                    try {
-                      if (metadata.content.trim().startsWith('{')) {
-                        const json = JSON.parse(metadata.content);
+                    const content = metadata.content.trim();
+                    if (content.startsWith('{')) {
+                      try {
+                        const json = JSON.parse(content);
                         const extractText = (node: any): string => {
                           if (!node) return '';
                           if (Array.isArray(node)) return node.map(extractText).join('');
@@ -259,15 +266,22 @@ export function ExperimentMetadataView({ experimentId }: ExperimentMetadataViewP
                           }
                           return '';
                         };
-                        const text = extractText(json);
-                        return text || "Empty notebook.";
+                        return <pre className="whitespace-pre-wrap font-mono text-xs text-white/70">{extractText(json) || "Empty notebook."}</pre>;
+                      } catch (e) {
+                        return <pre className="whitespace-pre-wrap font-mono text-xs text-white/70">{content}</pre>;
                       }
-                      return metadata.content;
-                    } catch (e) {
-                      return metadata.content;
+                    } else if (content.startsWith('<')) {
+                      // Render HTML content safely
+                      return (
+                        <div
+                          className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 first:prose-headings:mt-0"
+                          dangerouslySetInnerHTML={{ __html: content }}
+                        />
+                      );
                     }
+                    return <pre className="whitespace-pre-wrap font-mono text-xs text-white/70">{content}</pre>;
                   })()}
-                </pre>
+                </div>
               ) : (
                 <p className="text-white/30 text-center py-8 text-sm">No notebook content.</p>
               )}

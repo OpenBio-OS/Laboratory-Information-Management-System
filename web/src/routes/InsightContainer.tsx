@@ -47,8 +47,36 @@ export function InsightContainer() {
     return <InsightGallery />;
   }
 
-  // 2. Loading State
-  if (isLoading) {
+  // 2. Error State
+  if (error) {
+    return (
+      <div className="h-full flex flex-col bg-main">
+        <div className="px-6 py-4 border-b border-white/5 backdrop-blur-md flex items-center gap-6">
+          <button
+            onClick={() => navigateTo({ tab: 'insight', itemId: undefined })}
+            className="p-2 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors"
+          >
+            <ArrowLeft size={24} />
+          </button>
+          <h1 className="text-xl text-white">Error</h1>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center text-red-400">
+            <p>{error}</p>
+            <button
+              onClick={() => window.location.reload()} // Simple retry
+              className="mt-4 px-4 py-2 bg-white/10 rounded hover:bg-white/20 text-white"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Loading State (Must come after error check)
+  if (isLoading || !metadata) {
     return (
       <div className="h-full flex flex-col bg-main">
         <div className="px-6 py-4 border-b border-white/5 bg-surface/30 backdrop-blur-md flex items-center gap-6">
@@ -64,34 +92,6 @@ export function InsightContainer() {
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-primary mx-auto mb-4" />
             <p className="text-white/60">Loading experiment...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 3. Error State
-  if (error || !metadata) {
-    return (
-      <div className="h-full flex flex-col bg-main">
-        <div className="px-6 py-4 border-b border-white/5 backdrop-blur-md flex items-center gap-6">
-          <button
-            onClick={() => navigateTo({ tab: 'insight', itemId: undefined })}
-            className="p-2 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors"
-          >
-            <ArrowLeft size={24} />
-          </button>
-          <h1 className="text-xl text-white">Error</h1>
-        </div>
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-red-400">
-            <p>{error || "Experiment not found"}</p>
-            <button
-              onClick={() => window.location.reload()} // Simple retry
-              className="mt-4 px-4 py-2 bg-white/10 rounded hover:bg-white/20 text-white"
-            >
-              Retry
-            </button>
           </div>
         </div>
       </div>

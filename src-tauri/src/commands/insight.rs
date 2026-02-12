@@ -1,7 +1,7 @@
 // Tauri commands for Insight module - file streaming and data loading
 
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::PathBuf;
 use tauri::State;
 
@@ -235,6 +235,124 @@ pub async fn load_coordinates(path: String) -> Result<Vec<f32>, String> {
     Ok(coords)
 }
 
+/// Unescape basic HTML entities
+fn html_unescape(s: &str) -> String {
+    s.replace("&quot;", "\"")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&#39;", "'")
+}
+
+/// Extract a single data-attribute value from an HTML tag string
+fn get_html_attr(tag: &str, attr_name: &str) -> Option<String> {
+    let prefix = format!("{}=\"", attr_name);
+    if let Some(start) = tag.find(&prefix) {
+        let val_start = start + prefix.len();
+        if let Some(end_offset) = tag[val_start..].find('"') {
+            return Some(html_unescape(&tag[val_start..val_start + end_offset]));
+        }
+    }
+    None
+}
+
+/// Parse all <span data-type="mention" ...> tags from HTML content and extract entity data
+fn parse_mentions_from_html(
+    html: &str,
+) -> (
+    Vec<serde_json::Value>,
+    Vec<serde_json::Value>,
+    Vec<serde_json::Value>,
+) {
+    let mut samples = Vec::new();
+    let mut equipment = Vec::new();
+    let mut papers = Vec::new();
+    let mut search_from = 0;
+
+    while let Some(pos) = html[search_from..].find("data-type=\"mention\"") {
+        let abs_pos = search_from + pos;
+
+        // Find the enclosing <span ...> tag
+        let span_start = match html[..abs_pos].rfind("<span") {
+            Some(s) => s,
+            None => {
+                search_from = abs_pos + 1;
+                continue;
+            }
+        };
+        let tag_end = match html[abs_pos..].find('>') {
+            Some(e) => abs_pos + e + 1,
+            None => {
+                search_from = abs_pos + 1;
+                continue;
+            }
+        };
+        let tag = &html[span_start..tag_end];
+
+        let entity_type = get_html_attr(tag, "data-entity-type").unwrap_or_default();
+        let entity_id = get_html_attr(tag, "data-id").unwrap_or_default();
+        let name = get_html_attr(tag, "data-name").unwrap_or_default();
+        let notes = get_html_attr(tag, "data-notes");
+        let category = get_html_attr(tag, "data-category");
+        let path_str = get_html_attr(tag, "data-path");
+
+        // Parse the path array to build a location string like "Facility > Bedroom > Freezer1"
+        let location: Option<String> = path_str.and_then(|p| {
+            serde_json::from_str::<Vec<String>>(&p).ok().map(|parts| {
+                // Skip the last element which is the sample name itself
+                let hierarchy: Vec<&String> =
+                    parts.iter().take(parts.len().saturating_sub(1)).collect();
+                if hierarchy.is_empty() {
+                    parts.join(" > ")
+                } else {
+                    hierarchy
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" > ")
+                }
+            })
+        });
+
+        println!(
+            "[tauri] HTML mention parsed: type={}, id={}, name={}, notes={:?}, location={:?}",
+            entity_type, entity_id, name, notes, location
+        );
+
+        match entity_type.as_str() {
+            "sample" => {
+                samples.push(serde_json::json!({
+                    "id": entity_id,
+                    "name": name,
+                    "type": category.unwrap_or_else(|| "Unknown".to_string()),
+                    "metadata": notes,
+                    "role": "Mentioned",
+                    "location": location,
+                }));
+            }
+            "equipment" => {
+                equipment.push(serde_json::json!({
+                    "id": entity_id,
+                    "name": name,
+                    "type": category.unwrap_or_else(|| "Unknown".to_string()),
+                }));
+            }
+            "paper" => {
+                papers.push(serde_json::json!({
+                    "id": entity_id,
+                    "title": name,
+                    "notes": notes,
+                }));
+            }
+            _ => {}
+        }
+
+        search_from = tag_end;
+    }
+
+    (samples, equipment, papers)
+}
+
 /// Get metadata for an experiment (used in tooltips)
 #[tauri::command]
 pub async fn get_experiment_metadata(
@@ -264,13 +382,145 @@ pub async fn get_experiment_metadata(
             other => other,
         };
 
+        // Parse metadata snapshot if available
+        let snapshot_str = viz.get("metadataSnapshot").and_then(|s| s.as_str());
+        let experiment_id_from_viz = viz
+            .get("experimentId")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        println!("=== [tauri] GET_EXPERIMENT_METADATA DEBUG START ===");
+        println!(
+            "[tauri] viz ID={}, experimentId={:?}, snapshot_found={}",
+            id,
+            experiment_id_from_viz,
+            snapshot_str.is_some()
+        );
+
+        let snapshot: serde_json::Value = snapshot_str
+            .and_then(|s| {
+                let parsed = serde_json::from_str(s);
+                if let Err(e) = &parsed {
+                    println!("[tauri] ERROR parsing snapshot JSON: {}", e);
+                }
+                parsed.ok()
+            })
+            .unwrap_or(serde_json::json!({}));
+
+        // Try pre-computed arrays from snapshot
+        let mut samples = snapshot["samples"].as_array().cloned().unwrap_or_default();
+        let mut equipment = snapshot["equipment"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let mut papers = snapshot["linked_papers"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let description = snapshot["experiment"]["description"].clone();
+        let content = snapshot["experiment"]["content"].clone();
+
+        println!(
+            "[tauri] Snapshot arrays: samples={}, equipment={}, papers={}",
+            samples.len(),
+            equipment.len(),
+            papers.len()
+        );
+
+        // FALLBACK: Parse mentions directly from the HTML content in the snapshot
+        // This is where the data actually lives - as data-* attributes on <span> tags
+        if samples.is_empty() && equipment.is_empty() && papers.is_empty() {
+            if let Some(html) = content.as_str() {
+                println!(
+                    "[tauri] Parsing mentions from HTML content ({} chars)...",
+                    html.len()
+                );
+                let (s, e, p) = parse_mentions_from_html(html);
+                println!(
+                    "[tauri] HTML parsing result: samples={}, equipment={}, papers={}",
+                    s.len(),
+                    e.len(),
+                    p.len()
+                );
+                samples = s;
+                equipment = e;
+                papers = p;
+            } else {
+                println!("[tauri] No content string in snapshot to parse");
+            }
+        }
+
+        // FALLBACK 2: If still empty, fetch experiment live and parse its content
+        if samples.is_empty() && equipment.is_empty() && papers.is_empty() {
+            if let Some(ref exp_id) = experiment_id_from_viz {
+                println!(
+                    "[tauri] Still empty, fetching live experiment {} to parse content",
+                    exp_id
+                );
+                let exp_url = format!("{}/experiments/{}", api_base, exp_id);
+                if let Ok(exp_resp) = client.get(&exp_url).send().await {
+                    if exp_resp.status().is_success() {
+                        if let Ok(exp_json) = exp_resp.json::<serde_json::Value>().await {
+                            // Try pre-built arrays from experiment API
+                            if let Some(exp_samples) = exp_json["samples"].as_array() {
+                                if !exp_samples.is_empty() {
+                                    for s in exp_samples {
+                                        samples.push(s.clone());
+                                    }
+                                }
+                            }
+                            if let Some(exp_equip) = exp_json["equipment"].as_array() {
+                                for e in exp_equip {
+                                    equipment.push(e.clone());
+                                }
+                            }
+
+                            // If still empty, parse the experiment's own content HTML
+                            if samples.is_empty() && equipment.is_empty() {
+                                if let Some(exp_content) = exp_json["content"].as_str() {
+                                    println!(
+                                        "[tauri] Parsing live experiment content ({} chars)...",
+                                        exp_content.len()
+                                    );
+                                    let (s, e, p) = parse_mentions_from_html(exp_content);
+                                    samples = s;
+                                    equipment = e;
+                                    if papers.is_empty() {
+                                        papers = p;
+                                    }
+                                }
+                            }
+
+                            println!(
+                                "[tauri] After live fetch: samples={}, equipment={}, papers={}",
+                                samples.len(),
+                                equipment.len(),
+                                papers.len()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        println!(
+            "[tauri] FINAL: samples={}, equipment={}, papers={}",
+            samples.len(),
+            equipment.len(),
+            papers.len()
+        );
+        println!("=== [tauri] GET_EXPERIMENT_METADATA DEBUG END ===");
+
         return Ok(serde_json::json!({
             "experiment_id": viz["experimentId"],
             "name": viz["name"],
             "pipeline_type": pipeline_type,
             "status": "READY",
-            "samples": [],
-            "equipment": [],
+            "samples": samples,
+            "equipment": equipment,
+            "linked_papers": papers,
+            "description": description,
+            "content": content,
         }));
     }
 
@@ -306,7 +556,7 @@ pub async fn get_experiment_metadata(
         "name": json["name"],
         "description": json["description"],
         "content": json["content"],
-        "linked_papers": json["linkedPapers"],
+        "linked_papers": json["linked_papers"], // Matches backend rename
         "pipeline_type": pipeline_type,
         "status": json["status"],
         "samples": json["samples"],
@@ -522,7 +772,6 @@ pub async fn upload_visualization_folder(
     state: State<'_, crate::AppState>,
 ) -> Result<serde_json::Value, String> {
     use std::fs::File;
-    use std::io::Write;
     use std::path::Path;
 
     let src_dir = Path::new(&path);

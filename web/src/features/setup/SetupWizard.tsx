@@ -92,7 +92,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           <div className="inline-flex p-3 rounded-full bg-brand-primary/10 text-brand-primary mb-4 shadow-[0_0_20px_rgba(23,185,120,0.2)]">
             <img src="/logo-transparent-green-text.png" alt="OpenBio Logo" className="w-14 h-14 animate-pulse" />
           </div>
-          <h1 className="text-3xl text-white mb-2">Welcome to OpenBio</h1>
+          <h1 className="text-3xl text-white mb-2">Welcome to OpenBio <span className='text-red-400 text-sm align-super opacity-80'>BETA</span></h1>
           <p className="text-white/60 text-lg">Let's set up your biological operating system</p>
         </div>
 
@@ -158,8 +158,9 @@ function Step1ModeSelection({ onSelect }: { onSelect: (mode: DeploymentMode) => 
         ].map((item) => (
           <button
             key={item.id}
+            disabled={item.id !== 'local'}
             onClick={() => onSelect(item.id as DeploymentMode)}
-            className="group relative p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-brand-primary/50 transition-all duration-300 text-left hover:shadow-[0_0_30px_rgba(0,0,0,0.2)] active:scale-[0.98]"
+            className={`group relative p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-brand-primary/50 transition-all duration-300 text-left hover:shadow-[0_0_30px_rgba(0,0,0,0.2)] active:scale-[0.98] ${item.id !== 'local' ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <div className="mb-4 w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-white/40 group-hover:text-brand-primary group-hover:bg-brand-primary/10 transition-colors">
               <item.icon size={24} />
@@ -177,7 +178,8 @@ function Step1ModeSelection({ onSelect }: { onSelect: (mode: DeploymentMode) => 
       <div className="mt-6 pt-6 border-t border-white/5">
         <button
           onClick={() => onSelect('agent')}
-          className="group w-full p-3 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 hover:border-brand-primary/50 transition-all duration-300 text-left flex items-center gap-3"
+          disabled={true}
+          className={`group w-full p-3 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 hover:border-brand-primary/50 transition-all duration-300 text-left flex items-center gap-3 ${'opacity-50 cursor-not-allowed'}`}
         >
           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/40 group-hover:text-brand-primary group-hover:bg-brand-primary/10 transition-colors flex-shrink-0">
             <Server size={16} />

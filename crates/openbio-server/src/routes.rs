@@ -1,7 +1,7 @@
 //! API route handlers
 use crate::db::prisma::{
     self, container, digital_asset, equipment, equipment_location, experiment, experiment_entry,
-    experiment_folder, experiment_mention, library, paper, sample,
+    experiment_folder, library, paper, sample,
 };
 use crate::AppState;
 use axum::{
@@ -197,7 +197,7 @@ async fn register_visualization(
 
     // Create visualization with metadata snapshot
     let snapshot_data = if let Some(exp_id) = payload.experiment_id.as_ref() {
-        crate::pipeline::capture_experiment_snapshot(&state.db, exp_id).await
+        crate::pipeline::capture_experiment_snapshot(&state.db, vec![exp_id.clone()]).await
     } else {
         None
     };
@@ -606,10 +606,6 @@ fn experiment_routes() -> Router<AppState> {
             "/{id}/entries",
             get(list_experiment_entries).post(create_experiment_entry),
         )
-        .route(
-            "/{id}/mentions",
-            get(list_experiment_mentions).post(create_experiment_mention),
-        )
         .route("/{id}/upload", axum::routing::post(upload_experiment_file))
         .route("/{id}/files", get(list_experiment_files))
         .route("/{id}/analysis-files", get(get_analysis_files))
@@ -951,7 +947,8 @@ async fn get_experiment(
         .db
         .experiment()
         .find_unique(experiment::id::equals(id.clone()))
-        .with(experiment::samples::fetch(vec![]))
+        .with(experiment::equipment::fetch())
+        .with(experiment::locked_equipment::fetch(vec![]))
         .with(experiment::assets::fetch(vec![]))
         .with(experiment::pipeline_runs::fetch(vec![]))
         .exec()
@@ -963,39 +960,20 @@ async fn get_experiment(
     let mut json = serde_json::to_value(&experiment)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Fetch linked papers via mentions
-    let mentions = state
-        .db
-        .experiment_mention()
-        .find_many(vec![
-            experiment_mention::experiment_id::equals(id.clone()),
-            experiment_mention::entity_type::equals("paper".to_string()),
-        ])
-        .exec()
-        .await
-        .unwrap_or(vec![]);
-
-    let paper_ids: Vec<String> = mentions.into_iter().map(|m| m.entity_id).collect();
-
-    if !paper_ids.is_empty() {
-        let papers = state
-            .db
-            .paper()
-            .find_many(vec![paper::id::in_vec(paper_ids)])
-            .exec()
-            .await
-            .unwrap_or(vec![]);
-
-        if let Some(obj) = json.as_object_mut() {
-            obj.insert(
-                "linkedPapers".to_string(),
-                serde_json::to_value(papers).unwrap_or(serde_json::json!([])),
-            );
+    if let Some(obj) = json.as_object_mut() {
+        // 1. Consolidate equipment and locked_equipment
+        let mut equipment_list = vec![];
+        if let Some(e) = obj.get("equipment") {
+            if !e.is_null() {
+                equipment_list.push(e.clone());
+            }
         }
-    } else {
-        if let Some(obj) = json.as_object_mut() {
-            obj.insert("linkedPapers".to_string(), serde_json::json!([]));
+        if let Some(locked) = obj.get("lockedEquipment").and_then(|v| v.as_array()) {
+            for item in locked {
+                equipment_list.push(item.clone());
+            }
         }
+        obj.insert("equipment".to_string(), serde_json::json!(equipment_list));
     }
 
     println!(
@@ -1071,6 +1049,7 @@ pub struct ExperimentFile {
     pub asset_type: String,
     pub created_at: String,
     pub visualization_id: Option<String>,
+    pub absolute_path: Option<String>,
 }
 
 // Recursive function to find relevant analysis files
@@ -1155,6 +1134,7 @@ fn find_analysis_files(
                             asset_type: asset_type.to_string(),
                             created_at: created_at.to_string(),
                             visualization_id: None,
+                            absolute_path: Some(path.to_string_lossy().to_string()),
                         });
                     }
                 }
@@ -1315,58 +1295,6 @@ async fn create_experiment_entry(
         .await
         .expect("Failed to create experiment entry");
     Json(entry)
-}
-
-// Experiment Mentions
-#[derive(Deserialize)]
-pub struct CreateExperimentMentionRequest {
-    pub entity_type: String,
-    pub entity_id: String,
-    pub snapshot_data: String,
-    pub position: Option<i32>,
-}
-
-async fn list_experiment_mentions(
-    State(state): State<AppState>,
-    Path(experiment_id): Path<String>,
-) -> Json<Vec<experiment_mention::Data>> {
-    let mentions = state
-        .db
-        .experiment_mention()
-        .find_many(vec![experiment_mention::experiment_id::equals(
-            experiment_id,
-        )])
-        .exec()
-        .await
-        .unwrap_or_default();
-    Json(mentions)
-}
-
-async fn create_experiment_mention(
-    State(state): State<AppState>,
-    Path(experiment_id): Path<String>,
-    Json(payload): Json<CreateExperimentMentionRequest>,
-) -> Json<experiment_mention::Data> {
-    let mut params: Vec<experiment_mention::SetParam> = vec![];
-
-    if let Some(position) = payload.position {
-        params.push(experiment_mention::position::set(Some(position)));
-    }
-
-    let mention = state
-        .db
-        .experiment_mention()
-        .create(
-            experiment::id::equals(experiment_id),
-            payload.entity_type,
-            payload.entity_id,
-            payload.snapshot_data,
-            params,
-        )
-        .exec()
-        .await
-        .expect("Failed to create experiment mention");
-    Json(mention)
 }
 
 // Search entities for @mentions
@@ -3031,17 +2959,17 @@ async fn ingest_pipeline_output(
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
-    // 3. Define Storage Paths
+    // 3. Define Storage Paths (Decoupled from experiment folder)
     let output_dirname = format!("run_{}_output", run_id);
-    let uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
-    let output_dir = uploads_dir.join(&output_dirname);
-    let storage_key = format!("uploads/{}/{}", experiment_id, output_dirname);
+    let viz_dir = state.storage_path.join("visualizations");
+    let output_dir = viz_dir.join(&output_dirname);
+    let storage_key = format!("visualizations/{}", output_dirname);
 
-    // Ensure parent uploads dir exists
-    tokio::fs::create_dir_all(&uploads_dir).await.map_err(|e| {
+    // Ensure visualizations dir exists
+    tokio::fs::create_dir_all(&viz_dir).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to create uploads dir: {}", e),
+            format!("Failed to create visualizations dir: {}", e),
         )
     })?;
 
@@ -3112,85 +3040,6 @@ async fn ingest_pipeline_output(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // 6. AUTO-CREATE / LINK VISUALIZATION
-    // Check if any asset for this run already has a visualization attached
-    let existing_asset_with_viz = state
-        .db
-        .digital_asset()
-        .find_first(vec![
-            digital_asset::pipeline_run_id::equals(Some(run_id.clone())),
-            digital_asset::visualization::is(vec![]), // Checks if relation exists
-        ])
-        .with(digital_asset::visualization::fetch())
-        .exec()
-        .await
-        .unwrap_or(None);
-
-    let viz_id = if let Some(asset) = &existing_asset_with_viz {
-        asset
-            .visualization
-            .as_ref()
-            .and_then(|v| v.as_ref())
-            .map(|v| v.id.clone())
-            .unwrap_or_else(|| "".to_string())
-    } else {
-        String::new()
-    };
-
-    let viz_id = if !viz_id.is_empty() {
-        viz_id
-    } else {
-        // Create new Visualization
-        let viz_type =
-            if run.pipeline_type.contains("scrna") || run.pipeline_type.contains("scanpy") {
-                "SCANVAS"
-            } else if run.pipeline_type.contains("rnaseq") || run.pipeline_type.contains("bulk") {
-                "BULK_DASHBOARD"
-            } else {
-                "REPORT"
-            };
-
-        let viz_name = format!(
-            "Analysis: {} ({})",
-            run.pipeline_type,
-            run_id.chars().take(8).collect::<String>()
-        );
-
-        let mut viz_params = vec![visualization::experiment::connect(experiment::id::equals(
-            experiment_id.clone(),
-        ))];
-
-        if let Some(snap) = run.metadata_snapshot {
-            viz_params.push(visualization::metadata_snapshot::set(Some(snap)));
-        }
-
-        let new_viz = state
-            .db
-            .visualization()
-            .create(viz_name, viz_type.to_string(), viz_params)
-            .exec()
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to create visualization: {}", e),
-                )
-            })?;
-
-        new_viz.id
-    };
-
-    // Link Asset to Visualization
-    let _ = state
-        .db
-        .digital_asset()
-        .update(
-            digital_asset::id::equals(asset.id.clone()),
-            vec![digital_asset::visualization_id::set(Some(viz_id))],
-        )
-        .exec()
-        .await;
-
     Ok(Json(serde_json::json!({
         "success": true,
         "asset": asset
@@ -3218,19 +3067,18 @@ async fn upload_visualization_output(
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
-    // 2. Define Storage Paths
-    // Use timestamp to ensure uniqueness
+    // 2. Define Storage Paths (Decoupled from experiment folder)
     let timestamp = chrono::Utc::now().timestamp();
     let output_dirname = format!("manual_viz_{}_{}", timestamp, filename.replace(".zip", ""));
-    let uploads_dir = state.storage_path.join("uploads").join(&experiment_id);
-    let output_dir = uploads_dir.join(&output_dirname);
-    let storage_key = format!("uploads/{}/{}", experiment_id, output_dirname);
+    let viz_dir = state.storage_path.join("visualizations");
+    let output_dir = viz_dir.join(&output_dirname);
+    let storage_key = format!("visualizations/{}", output_dirname);
 
-    // Ensure parent uploads dir exists
-    tokio::fs::create_dir_all(&uploads_dir).await.map_err(|e| {
+    // Ensure visualizations dir exists
+    tokio::fs::create_dir_all(&viz_dir).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to create uploads dir: {}", e),
+            format!("Failed to create visualizations dir: {}", e),
         )
     })?;
 
@@ -3275,16 +3123,23 @@ async fn upload_visualization_output(
         "BULK_DASHBOARD"
     };
 
+    // 4. Capture metadata snapshot
+    let snapshot =
+        crate::pipeline::capture_experiment_snapshot(&state.db, vec![experiment_id.clone()]).await;
+
+    // 5. Create Visualization Record
+    let mut viz_params = vec![visualization::experiment::connect(experiment::id::equals(
+        experiment_id.clone(),
+    ))];
+
+    if let Some(s) = snapshot {
+        viz_params.push(visualization::metadata_snapshot::set(Some(s)));
+    }
+
     let viz = state
         .db
         .visualization()
-        .create(
-            viz_name,
-            viz_type.to_string(),
-            vec![visualization::experiment::connect(experiment::id::equals(
-                experiment_id.clone(),
-            ))],
-        )
+        .create(viz_name, viz_type.to_string(), viz_params)
         .exec()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -3331,23 +3186,22 @@ async fn upload_standalone_visualization(
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
-    // 2. Define Storage Paths
-    // Use timestamp to ensure uniqueness. Store in "standalone_uploads"
+    // 2. Define Storage Paths (Unified in visualizations folder)
     let timestamp = chrono::Utc::now().timestamp();
     let output_dirname = format!(
         "standalone_viz_{}_{}",
         timestamp,
         filename.replace(".zip", "")
     );
-    let uploads_dir = state.storage_path.join("standalone_uploads");
-    let output_dir = uploads_dir.join(&output_dirname);
-    let storage_key = format!("standalone_uploads/{}", output_dirname);
+    let viz_dir = state.storage_path.join("visualizations");
+    let output_dir = viz_dir.join(&output_dirname);
+    let storage_key = format!("visualizations/{}", output_dirname);
 
-    // Ensure parent uploads dir exists
-    tokio::fs::create_dir_all(&uploads_dir).await.map_err(|e| {
+    // Ensure visualizations dir exists
+    tokio::fs::create_dir_all(&viz_dir).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to create uploads dir: {}", e),
+            format!("Failed to create visualizations dir: {}", e),
         )
     })?;
 

@@ -277,7 +277,7 @@ export function ScatterPlot({
   }, [drawUI, width, height]);
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center bg-black/20 rounded-xl overflow-hidden shadow-inner">
+    <div className="relative w-full h-full flex items-center justify-center bg-black/40 rounded-xl overflow-hidden shadow-inner">
       <canvas ref={glCanvasRef} className="absolute inset-0 z-0 w-full h-full" />
       <canvas
         ref={lassoCanvasRef}

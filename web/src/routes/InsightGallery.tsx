@@ -177,7 +177,7 @@ export function InsightGallery() {
     <div className="h-full flex flex-col bg-[#0d0d0d]">
       {/* Header - Matching PipelinManager/Inventory pattern */}
       <div className="bg-[#121212] border-b border-white/5 px-6 py-4">
-        <div className="flex items-center justify-between gap-4 mb-2">
+        <div className="flex items-center justify-between gap-4 mb-4">
           <div>
             <p className="text-sm text-white/60 my-auto">Explore analysis outputs and pipeline results</p>
           </div>
@@ -207,7 +207,7 @@ export function InsightGallery() {
       <div className="flex-1 overflow-auto">
         <div className="p-6 space-y-1">
           {filteredItems.length === 0 ? (
-            <div className="text-center py-20 bg-white/[0.01] rounded-2xl border border-dashed border-white/10 text-white/30">
+            <div className="text-center py-10 rounded-2xl text-white/30">
 
               <div className="w-16 h-16 mb-4 flex justify-center rounded-xl bg-white/5 items-center mx-auto">
                 <BarChart2 size={40} />
@@ -248,7 +248,13 @@ export function InsightGallery() {
                     </span>
                     <span className="flex items-center gap-1.5">
                       <Clock size={12} className="opacity-50" />
-                      {new Date(item.createdAt).toLocaleDateString()}
+                      {new Date(item.createdAt).toLocaleString(undefined, {
+                        year: 'numeric',
+                        month: 'numeric',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
                     </span>
                     <span className={`flex items-center gap-1.5 font-bold ${item.status === 'READY' ? 'text-green-500/70' :
                       item.status === 'FAILED' ? 'text-red-500/70' :

@@ -41,51 +41,374 @@ pub struct PipelineManager {
     db: Arc<PrismaClient>,
 }
 
-/// Helper to capture a full metadata snapshot for an experiment
+/// Helper to recursively fetch container hierarchy for a sample
+pub async fn get_sample_location(
+    db: &crate::db::prisma::PrismaClient,
+    container_id: Option<String>,
+    slot: Option<String>,
+) -> Option<String> {
+    let mut current_id = container_id;
+    let mut parts = Vec::new();
+
+    while let Some(id) = current_id {
+        let container = db
+            .container()
+            .find_unique(crate::db::prisma::container::id::equals(id))
+            .with(crate::db::prisma::container::parent::fetch())
+            .exec()
+            .await
+            .ok()
+            .flatten();
+
+        if let Some(c) = container {
+            parts.push(c.name.clone());
+            current_id = c.parent_id;
+        } else {
+            break;
+        }
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+
+    parts.reverse();
+    let mut path = parts.join(" > ");
+    if let Some(s) = slot {
+        path.push_str(&format!(" ({})", s));
+    }
+    Some(path)
+}
+
+/// Unescape basic HTML entities
+fn html_unescape(s: &str) -> String {
+    s.replace("&quot;", "\"")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&#39;", "'")
+}
+
+/// Extract a data-attribute value from an HTML tag
+fn get_html_attr(tag: &str, attr_name: &str) -> Option<String> {
+    let prefix = format!("{}=\"", attr_name);
+    tag.find(&prefix).and_then(|start| {
+        let val_start = start + prefix.len();
+        tag[val_start..]
+            .find('"')
+            .map(|end| html_unescape(&tag[val_start..val_start + end]))
+    })
+}
+
+/// Parse <span data-type="mention" ...> tags from HTML content into samples/equipment/papers
+fn parse_mentions_from_html(
+    html: &str,
+    all_samples: &mut std::collections::HashMap<String, serde_json::Value>,
+    all_equipment: &mut std::collections::HashMap<String, serde_json::Value>,
+    all_papers: &mut std::collections::HashMap<String, serde_json::Value>,
+) {
+    let mut search_from = 0;
+    while let Some(pos) = html[search_from..].find("data-type=\"mention\"") {
+        let abs_pos = search_from + pos;
+        let span_start = match html[..abs_pos].rfind("<span") {
+            Some(s) => s,
+            None => {
+                search_from = abs_pos + 1;
+                continue;
+            }
+        };
+        let tag_end = match html[abs_pos..].find('>') {
+            Some(e) => abs_pos + e + 1,
+            None => {
+                search_from = abs_pos + 1;
+                continue;
+            }
+        };
+        let tag = &html[span_start..tag_end];
+
+        let entity_type = get_html_attr(tag, "data-entity-type").unwrap_or_default();
+        let entity_id = get_html_attr(tag, "data-id").unwrap_or_default();
+        let name = get_html_attr(tag, "data-name").unwrap_or_default();
+        let notes = get_html_attr(tag, "data-notes");
+        let category = get_html_attr(tag, "data-category");
+        let path_str = get_html_attr(tag, "data-path");
+
+        let location: Option<String> = path_str.and_then(|p| {
+            serde_json::from_str::<Vec<String>>(&p).ok().map(|parts| {
+                let hierarchy: Vec<&String> =
+                    parts.iter().take(parts.len().saturating_sub(1)).collect();
+                if hierarchy.is_empty() {
+                    parts.join(" > ")
+                } else {
+                    hierarchy
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" > ")
+                }
+            })
+        });
+
+        println!(
+            "[snapshot] HTML mention: type={}, id={}, name={}, notes={:?}",
+            entity_type, entity_id, name, notes
+        );
+
+        match entity_type.as_str() {
+            "sample" => {
+                all_samples.entry(entity_id.clone()).or_insert_with(|| {
+                    serde_json::json!({
+                        "id": entity_id,
+                        "name": name,
+                        "type": category.unwrap_or_else(|| "Unknown".to_string()),
+                        "metadata": notes,
+                        "role": "Mentioned",
+                        "location": location,
+                    })
+                });
+            }
+            "equipment" => {
+                all_equipment.entry(entity_id.clone()).or_insert_with(|| {
+                    serde_json::json!({
+                        "id": entity_id,
+                        "name": name,
+                        "type": category.unwrap_or_else(|| "Unknown".to_string()),
+                    })
+                });
+            }
+            "paper" => {
+                all_papers.entry(entity_id.clone()).or_insert_with(|| {
+                    serde_json::json!({
+                        "id": entity_id,
+                        "title": name,
+                        "notes": notes,
+                    })
+                });
+            }
+            _ => {}
+        }
+        search_from = tag_end;
+    }
+}
+
+/// Helper to capture a full metadata snapshot for an experiment (or multiple experiments)
 pub async fn capture_experiment_snapshot(
     db: &crate::db::prisma::PrismaClient,
-    experiment_id: &str,
+    experiment_ids: Vec<String>,
 ) -> Option<String> {
-    let experiment = db
-        .experiment()
-        .find_unique(crate::db::prisma::experiment::id::equals(
-            experiment_id.to_string(),
-        ))
-        .with(
-            crate::db::prisma::experiment::samples::fetch(vec![])
-                .with(crate::db::prisma::experiment_sample::sample::fetch()),
-        )
-        .with(crate::db::prisma::experiment::mentions::fetch(vec![]))
-        .exec()
-        .await
-        .ok()
-        .flatten()?;
+    if experiment_ids.is_empty() {
+        return None;
+    }
+
+    let mut all_samples: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    let mut all_equipment: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    let mut all_papers: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    let mut aggregated_notebook_content = String::new();
+
+    for experiment_id in &experiment_ids {
+        let experiment = db
+            .experiment()
+            .find_unique(crate::db::prisma::experiment::id::equals(
+                experiment_id.clone(),
+            ))
+            .with(crate::db::prisma::experiment::entries::fetch(vec![]))
+            .with(crate::db::prisma::experiment::equipment::fetch())
+            .with(crate::db::prisma::experiment::locked_equipment::fetch(
+                vec![],
+            ))
+            .exec()
+            .await
+            .ok()
+            .flatten();
+
+        if experiment.is_none() {
+            println!(
+                "[snapshot] WARNING: Experiment {} not found in database",
+                experiment_id
+            );
+        }
+
+        if let Some(exp) = experiment {
+            // Aggregate notebook content
+            let notebook_header = if experiment_ids.len() > 1 {
+                format!("<h2 style=\"margin-bottom: 8px; color: #17b978; font-size: 1.1rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;\">Experiment: {}</h2>", exp.name)
+            } else {
+                String::new()
+            };
+
+            if !exp.content.is_empty() || exp.description.is_some() {
+                if !aggregated_notebook_content.is_empty() {
+                    aggregated_notebook_content.push_str("<div style=\"margin: 32px 0;\"></div>");
+                }
+                aggregated_notebook_content.push_str(&notebook_header);
+
+                if let Some(desc) = exp.description.as_ref() {
+                    aggregated_notebook_content.push_str(&format!(
+                        "<!-- [DESCRIPTION_START] --> <p style=\"color: rgba(255,255,255,0.6); font-style: italic; margin-bottom: 24px;\">{}</p> <!-- [DESCRIPTION_END] -->",
+                        desc
+                    ));
+                }
+
+                if !exp.content.is_empty() {
+                    aggregated_notebook_content.push_str(&exp.content);
+                }
+
+                // Aggregate Experiment Entries (logs, imports)
+                let empty_entries = vec![];
+                let entries = exp.entries().unwrap_or(&empty_entries);
+                if !entries.is_empty() {
+                    aggregated_notebook_content.push_str("<div style=\"margin: 24px 0;\"></div>");
+                    aggregated_notebook_content.push_str("<h4 style=\"color: rgba(255,255,255,0.4); font-size: 0.9rem; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;\">Recorded Entries</h4>");
+                    for entry in entries {
+                        let author_str = entry
+                            .author
+                            .as_ref()
+                            .map(|a| format!(" by {}", a))
+                            .unwrap_or_default();
+                        aggregated_notebook_content.push_str(&format!(
+                            "<div style=\"border-left: 2px solid rgba(255,255,255,0.1); padding-left: 16px; margin-bottom: 16px;\">
+                                <p style=\"font-size: 0.8rem; color: rgba(255,255,255,0.3); margin-bottom: 4px;\">[{}] {}</p>
+                                <div style=\"font-size: 0.9rem; color: rgba(255,255,255,0.8);\">{}</div>
+                             </div>",
+                            entry.timestamp.to_rfc3339().chars().take(16).collect::<String>().replace("T", " "),
+                            author_str,
+                            entry.content
+                        ));
+                    }
+                }
+            }
+
+            println!(
+                "[snapshot] Processing experiment {}: equipment={}, entries={}",
+                exp.id,
+                exp.equipment().map(|e| e.is_some()).unwrap_or(false) as usize,
+                exp.entries().map(|e| e.len()).unwrap_or(0)
+            );
+
+            // Parse mentions (samples, equipment) from HTML content spans
+            if !exp.content.is_empty() {
+                println!(
+                    "[snapshot] Parsing HTML content ({} chars) for mentions...",
+                    exp.content.len()
+                );
+                parse_mentions_from_html(
+                    &exp.content,
+                    &mut all_samples,
+                    &mut all_equipment,
+                    &mut all_papers,
+                );
+                println!(
+                    "[snapshot] After HTML parsing: samples={}, equipment={}",
+                    all_samples.len(),
+                    all_equipment.len()
+                );
+            }
+
+            // Aggregate equipment from link
+            if let Ok(Some(e)) = exp.equipment() {
+                println!(
+                    "[snapshot] Extracting equipment from experiment linkage: {}",
+                    e.id
+                );
+                all_equipment.insert(
+                    e.id.clone(),
+                    serde_json::json!({
+                        "id": e.id.clone(),
+                        "name": e.name.clone(),
+                        "type": e.r#type.clone(),
+                        "model": e.model.clone(),
+                        "serialNumber": e.serial_number.clone(),
+                    }),
+                );
+            }
+            let empty_locked = vec![];
+            for e in exp.locked_equipment().unwrap_or(&empty_locked) {
+                println!(
+                    "[snapshot] Extracting locked equipment from experiment: {}",
+                    e.id
+                );
+                all_equipment
+                    .entry(e.id.clone())
+                    .or_insert(serde_json::json!({
+                        "id": e.id.clone(),
+                        "name": e.name.clone(),
+                        "type": e.r#type.clone(),
+                        "model": e.model.clone(),
+                        "serialNumber": e.serial_number.clone(),
+                    }));
+            }
+        }
+    }
+
+    // Resolve paper IDs that were found in HTML content - enrich with full DB metadata
+    let paper_ids: Vec<String> = all_papers.keys().cloned().collect();
+
+    println!(
+        "[snapshot] Found {} paper IDs to resolve: {:?}",
+        paper_ids.len(),
+        paper_ids
+    );
+
+    if !paper_ids.is_empty() {
+        if let Ok(p) = db
+            .paper()
+            .find_many(vec![crate::db::prisma::paper::id::in_vec(paper_ids)])
+            .exec()
+            .await
+        {
+            for paper in p {
+                // Overwrite the minimal HTML-derived entry with full DB data
+                all_papers.insert(
+                    paper.id.clone(),
+                    serde_json::json!({
+                        "id": paper.id,
+                        "title": paper.title,
+                        "authors": paper.authors,
+                        "journal": paper.journal,
+                        "year": paper.year,
+                        "doi": paper.doi,
+                        "url": paper.url,
+                        "abstract": paper.r#abstract,
+                        "notes": paper.notes,
+                    }),
+                );
+            }
+        }
+    }
+
+    // Use the first experiment's metadata as the "primary" context if multiple exist
+    let (primary_id, primary_desc) = if let Some(first_id) = experiment_ids.get(0) {
+        // Find the first experiment in the results we fetched
+        let first_exp = db
+            .experiment()
+            .find_unique(crate::db::prisma::experiment::id::equals(first_id.clone()))
+            .exec()
+            .await
+            .ok()
+            .flatten();
+
+        match first_exp {
+            Some(e) => (e.id, e.description),
+            None => (first_id.clone(), None),
+        }
+    } else {
+        ("unknown".to_string(), None)
+    };
 
     let snapshot = serde_json::json!({
         "timestamp": chrono::Utc::now().to_rfc3339(),
+        "experiments": experiment_ids,
         "experiment": {
-            "id": experiment.id,
-            "name": experiment.name,
-            "description": experiment.description,
-            "content": experiment.content,
+            "id": primary_id,
+            "content": aggregated_notebook_content,
+            "description": primary_desc,
         },
-        "samples": experiment.samples().unwrap_or(&vec![]).iter().map(|es| {
-            let s = es.sample().unwrap(); // We fetched it
-            serde_json::json!({
-                "id": s.id,
-                "name": s.name,
-                "type": s.r#type,
-                "metadata": s.metadata,
-                "role": es.role,
-            })
-        }).collect::<Vec<_>>(),
-        "mentions": experiment.mentions().unwrap_or(&vec![]).iter().map(|m| {
-            serde_json::json!({
-                "entityType": m.entity_type,
-                "entityId": m.entity_id,
-                "snapshotData": m.snapshot_data,
-            })
-        }).collect::<Vec<_>>(),
+        "samples": all_samples.into_values().collect::<Vec<_>>(),
+        "equipment": all_equipment.into_values().collect::<Vec<_>>(),
+        "linked_papers": all_papers.into_values().collect::<Vec<_>>(),
     });
 
     serde_json::to_string(&snapshot).ok()
@@ -120,20 +443,32 @@ impl PipelineManager {
         use crate::db::prisma::pipeline_run;
 
         // Serialize custom params to JSON string
-        let config_json = request
-            .custom_params
-            .as_ref()
-            .map(|p| serde_json::to_string(p).ok())
-            .flatten();
+        let config_json = request.custom_params.as_ref();
+
+        let config_json_str = config_json.map(|p| serde_json::to_string(p).ok()).flatten();
 
         let mut params = vec![pipeline_run::status::set("PENDING".to_string())];
-        if let Some(json) = config_json {
+        if let Some(json) = config_json_str {
             params.push(pipeline_run::config_json::set(Some(json)));
         }
 
+        // Aggregate experiment IDs for multi-experiment runs
+        let mut experiment_ids = vec![request.experiment_id.clone()];
+        if let Some(p) = config_json {
+            if let Some(inputs) = p.get("experiment_inputs").and_then(|v| v.as_array()) {
+                for input in inputs {
+                    if let Some(id) = input.get("experiment_id").and_then(|v| v.as_str()) {
+                        let id_str = id.to_string();
+                        if !experiment_ids.contains(&id_str) {
+                            experiment_ids.push(id_str);
+                        }
+                    }
+                }
+            }
+        }
+
         // Capture metadata snapshot at start of run
-        if let Some(snapshot) = capture_experiment_snapshot(&self.db, &request.experiment_id).await
-        {
+        if let Some(snapshot) = capture_experiment_snapshot(&self.db, experiment_ids).await {
             params.push(pipeline_run::metadata_snapshot::set(Some(snapshot)));
         }
 
@@ -227,9 +562,18 @@ impl PipelineManager {
 
             // Copy metadata snapshot from pipeline run to visualization
             if let Some(snapshot) = run.metadata_snapshot.as_ref() {
+                println!(
+                    "[server] update_run_status: Copying snapshot ({} chars) to viz",
+                    snapshot.len()
+                );
                 viz_params.push(visualization::metadata_snapshot::set(Some(
                     snapshot.clone(),
                 )));
+            } else {
+                println!(
+                    "[server] update_run_status: WARNING: No snapshot found on pipeline run {}",
+                    run_id
+                );
             }
 
             let viz = self

@@ -128,6 +128,111 @@ fn write_agent_log(equipment_id: &str, msg: &str) {
     }
 }
 
+/// Open a file locally using the system default application
+#[tauri::command]
+fn open_file_locally(path: String) -> Result<String, String> {
+    println!("[tauri] open_file_locally: entry path={:?}", path);
+    let storage = storage_path();
+    println!("[tauri] open_file_locally: storage_path={:?}", storage);
+
+    // Path joining fix: remove leading slash if it exists
+    let clean_path =
+        if path.starts_with('/') && !path.starts_with("/Users") && !path.starts_with("C:") {
+            &path[1..]
+        } else {
+            &path
+        };
+
+    let abs_path = if clean_path.starts_with('/')
+        || (clean_path.len() > 2 && clean_path.chars().nth(1) == Some(':'))
+    {
+        std::path::PathBuf::from(clean_path)
+    } else {
+        storage.join(clean_path)
+    };
+
+    println!("[tauri] open_file_locally: resolved_path={:?}", abs_path);
+    tracing::info!("[tauri] open_file_locally: resolved_path={:?}", abs_path);
+
+    if !abs_path.exists() {
+        let msg = format!(
+            "FAILURE: File does not exist at resolved path: {:?}",
+            abs_path
+        );
+        println!("[tauri] {}", msg);
+        return Err(msg);
+    }
+
+    if abs_path.is_dir() {
+        println!("[tauri] WARNING: Path is a directory, not a file. Opening directory.");
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        println!("[tauri] macos: spawning 'open {:?}'", abs_path);
+        let status = Command::new("open").arg(&abs_path).status().map_err(|e| {
+            format!(
+                "CRITICAL: Failed to run 'open': {}. Path: {:?}",
+                e, abs_path
+            )
+        })?;
+
+        println!("[tauri] macos: 'open' command exit status: {:?}", status);
+        if !status.success() {
+            return Err(format!("'open' command failed with status: {:?}", status));
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        println!("[tauri] windows: spawning 'cmd /c start {:?}'", abs_path);
+        let status = Command::new("cmd")
+            .arg("/c")
+            .arg("start")
+            .arg("")
+            .arg(&abs_path)
+            .status()
+            .map_err(|e| {
+                format!(
+                    "CRITICAL: Failed to run 'start': {}. Path: {:?}",
+                    e, abs_path
+                )
+            })?;
+
+        println!("[tauri] windows: 'start' command exit status: {:?}", status);
+        if !status.success() {
+            return Err(format!("'start' command failed with status: {:?}", status));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        println!("[tauri] linux: spawning 'xdg-open {:?}'", abs_path);
+        let status = Command::new("xdg-open")
+            .arg(&abs_path)
+            .status()
+            .map_err(|e| {
+                format!(
+                    "CRITICAL: Failed to run 'xdg-open': {}. Path: {:?}",
+                    e, abs_path
+                )
+            })?;
+
+        println!(
+            "[tauri] linux: 'xdg-open' command exit status: {:?}",
+            status
+        );
+        if !status.success() {
+            return Err(format!(
+                "'xdg-open' command failed with status: {:?}",
+                status
+            ));
+        }
+    }
+
+    Ok(abs_path.to_string_lossy().to_string())
+}
+
 /// Get current config
 #[tauri::command]
 fn get_config(state: State<AppState>) -> AppConfig {
@@ -534,6 +639,12 @@ fn update_lab_name(lab_name: String, state: State<AppState>) -> Result<(), Strin
     Ok(())
 }
 
+/// Exit the application
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 /// Update agent name (mDNS broadcast name for Agent mode)
 #[tauri::command]
 fn update_agent_name(agent_name: String, state: State<AppState>) -> Result<(), String> {
@@ -898,6 +1009,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
+            open_file_locally,
             needs_setup,
             scan_for_hubs,
             spawn_local_agent,
@@ -946,6 +1058,7 @@ pub fn run() {
             commands::get_experiment_assets,
             commands::upload_visualization_zip,
             commands::upload_visualization_folder,
+            exit_app,
         ])
         .setup(move |app| {
             // Check if running in Agent mode
